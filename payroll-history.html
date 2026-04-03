@@ -1,0 +1,2149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Payroll History — LF Advisory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;600;700&family=Source+Serif+4:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --teal:#2d6670;--teal-dark:#1e4a52;--teal-mid:#3a7f8c;
+  --olive:#6b7340;--olive-lt:#8a9456;
+  --bg:#e8ece8;--bg-light:#f0f3ef;--ink:#1a1f1a;--mid:#5a6060;--border:#cdd4cc;
+  --panel:#263d3f;
+  --serif:'Source Serif 4',Georgia,serif;
+  --display:'Raleway',system-ui,sans-serif;
+  --sans:'DM Sans',system-ui,sans-serif;
+}
+html{scroll-behavior:smooth}
+body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-size:16px;line-height:1.6;overflow-x:hidden}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 5vw;height:70px;background:rgba(240,243,239,0.96);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);transition:box-shadow .3s}
+nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
+.nav-logo{display:flex;align-items:center;text-decoration:none}
+.nav-logo img{height:44px;width:auto;display:block}
+.nav-links{display:flex;align-items:center;gap:2rem;list-style:none}
+.nav-links a{font-size:.8rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--mid);text-decoration:none;transition:color .2s}
+.nav-links a:hover{color:var(--teal)}
+.nav-cta{padding:.5rem 1.3rem;background:var(--panel);color:#f0f3ef!important;border-radius:2px;transition:background .2s!important}
+.nav-cta:hover{background:var(--olive)!important}
+.hamburger{display:none;flex-direction:column;gap:5px;cursor:pointer;background:none;border:none;padding:4px}
+.hamburger span{display:block;width:22px;height:1.5px;background:var(--ink)}
+.mobile-nav{display:none;position:fixed;top:70px;left:0;right:0;z-index:99;background:var(--bg-light);border-bottom:1px solid var(--border);padding:1.5rem 6vw;flex-direction:column;gap:1.2rem}
+.mobile-nav.open{display:flex}
+.mobile-nav a{font-size:.9rem;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.mobile-nav a.cta{color:var(--teal)}
+.hero{min-height:100vh;display:grid;grid-template-columns:55% 45%;padding-top:70px}
+.hero-text{display:flex;flex-direction:column;justify-content:center;padding:8vw 5vw 8vw 8vw}
+.eyebrow{font-family:var(--display);font-size:.72rem;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--olive);margin-bottom:2rem;display:flex;align-items:center;gap:.8rem}
+.eyebrow::before{content:'';width:2rem;height:1.5px;background:var(--olive)}
+.hero h1{font-family:var(--display);font-size:clamp(2.4rem,4.5vw,4.4rem);font-weight:300;line-height:1.1;letter-spacing:-.01em;margin-bottom:1.8rem;color:var(--ink)}
+.hero h1 strong{font-weight:700;color:var(--teal)}
+.hero-sub{font-size:1.05rem;font-weight:300;color:var(--mid);line-height:1.8;max-width:440px;margin-bottom:2.5rem}
+.hero-actions{display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap}
+.btn-primary{display:inline-block;padding:.8rem 2rem;background:var(--panel);color:#f0f3ef;font-family:var(--display);font-size:.8rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;text-decoration:none;border-radius:2px;transition:background .25s,transform .2s;cursor:pointer;border:none}
+.btn-primary:hover{background:var(--olive);transform:translateY(-1px)}
+.btn-ghost{display:inline-flex;align-items:center;gap:.5rem;font-family:var(--display);font-size:.8rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--teal);text-decoration:none;transition:gap .2s,color .2s}
+.btn-ghost:hover{gap:.9rem;color:var(--olive)}
+.hero-visual{background:var(--panel);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.hero-bg-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(45,102,112,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(45,102,112,.12) 1px,transparent 1px);background-size:50px 50px}
+.hero-bg-glow{position:absolute;inset:0;background:radial-gradient(ellipse at 60% 40%,rgba(107,115,64,.18) 0%,transparent 70%)}
+.hero-brand{position:relative;z-index:2;padding:4rem 3.5rem;display:flex;flex-direction:column;gap:3rem}
+.hero-brand-logo{opacity:.9}
+.hero-brand-logo img{height:56px;width:auto}
+.hero-brand-tagline{font-family:var(--display);font-size:clamp(1.6rem,2.5vw,2.4rem);font-weight:300;color:rgba(240,243,239,.9);line-height:1.25;letter-spacing:-.01em}
+.hero-brand-tagline strong{font-weight:700;color:var(--olive-lt)}
+.hero-brand-divider{width:48px;height:1.5px;background:rgba(255,255,255,.15)}
+.hero-brand-stats{display:flex;flex-direction:column;gap:1.5rem}
+.hbs{display:flex;align-items:flex-start;gap:1rem}
+.hbs-bar{width:3px;flex-shrink:0;background:var(--teal-mid);border-radius:2px;min-height:38px}
+.hbs-text{font-size:.9rem;font-weight:300;color:rgba(240,243,239,.65);line-height:1.65}
+.hbs-text strong{color:rgba(240,243,239,.9);font-weight:500}
+section{padding:7rem 8vw}
+.s-label{font-family:var(--display);font-size:.7rem;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--olive);margin-bottom:.8rem}
+.s-heading{font-family:var(--display);font-size:clamp(2rem,3.5vw,3.2rem);font-weight:300;line-height:1.12;color:var(--ink)}
+.s-heading strong{font-weight:700;color:var(--teal)}
+#gap{background:var(--panel);color:#f0f3ef}
+#gap .s-heading{color:#f0f3ef}
+#gap .s-heading strong{color:var(--olive-lt)}
+.gap-intro{font-size:1.05rem;font-weight:300;line-height:1.85;color:rgba(240,243,239,.65);max-width:680px;margin:1.5rem 0 4rem}
+.gap-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.1)}
+.gap-col{background:var(--panel);padding:2.5rem 2rem}
+.gap-col-title{font-family:var(--display);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--olive-lt);margin-bottom:1.5rem;padding-bottom:.8rem;border-bottom:1px solid rgba(255,255,255,.12)}
+.gap-items{display:flex;flex-direction:column;gap:.9rem}
+.gap-item{display:flex;align-items:flex-start;gap:.7rem}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:.55rem}
+.pro .dot{background:var(--olive-lt)}
+.con .dot{background:var(--olive-lt)}
+.gi-text{font-size:.87rem;font-weight:300;line-height:1.6;color:rgba(240,243,239,.82)}
+.gi-text.strong{color:rgba(240,243,239,.95)}
+.gap-lf{grid-column:1/-1;background:rgba(45,102,112,.22);border-top:2px solid rgba(45,102,112,.5);padding:2.2rem 2.5rem;display:flex;align-items:center;gap:2.5rem}
+.gap-lf-label{flex-shrink:0}
+.gap-lf-label img{height:36px;width:auto;opacity:.85}
+.gap-lf-text{font-family:var(--serif);font-style:italic;font-size:1.02rem;font-weight:300;color:rgba(240,243,239,.88);line-height:1.7;border-left:2px solid var(--olive-lt);padding-left:1.5rem}
+#niche{background:var(--bg)}
+.niche-intro{font-size:1rem;color:var(--mid);font-weight:300;line-height:1.8;margin-top:1.2rem;max-width:600px}
+.ladder{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);margin-top:4rem}
+.step{padding:2rem 1.8rem;background:var(--bg);opacity:.45}
+.step.active{opacity:1;background:var(--bg-light);border-bottom:3px solid var(--teal)}
+.step.active-primary{opacity:1;background:var(--bg-light);border-bottom:3px solid var(--olive)}
+.step-label{font-family:var(--display);font-size:.62rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);margin-bottom:.5rem}
+.step.active .step-label{color:var(--teal)}
+.step.active-primary .step-label{color:var(--olive)}
+.step-title{font-family:var(--display);font-size:1rem;font-weight:700;margin-bottom:.3rem;color:var(--ink)}
+.step-range{font-size:.8rem;color:var(--mid);margin-bottom:1rem}
+.step-desc{font-size:.85rem;color:var(--mid);font-weight:300;line-height:1.65}
+.step-badge{display:inline-block;margin-top:1rem;font-family:var(--display);font-size:.62rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;padding:.25rem .7rem;background:var(--teal);color:#f0f3ef;border-radius:2px}
+#value{background:var(--bg-light)}
+.value-intro-block{display:grid;grid-template-columns:1fr 1fr;gap:5vw;align-items:start;margin-top:2.5rem;margin-bottom:5rem}
+.value-philosophy{display:flex;flex-direction:column;gap:1.4rem}
+.value-philosophy-body{font-size:1.05rem;color:var(--mid);font-weight:300;line-height:1.85}
+.value-philosophy-callout{padding:1.4rem 1.6rem;border-left:3px solid var(--teal);background:var(--bg);font-family:var(--serif);font-style:italic;font-size:1rem;color:var(--ink);line-height:1.7}
+.venn-wrap{display:flex;flex-direction:column;align-items:center;gap:1.5rem}
+.venn-diagram{position:relative;width:262px;height:272px;flex-shrink:0}
+.vc{position:absolute;width:155px;height:155px;border-radius:50%;mix-blend-mode:multiply}
+.vc1{top:38px;left:54px;background:rgba(45,102,112,.38);border:2px solid rgba(45,102,112,.75)}
+.vc2{top:115px;left:0px;background:rgba(107,115,64,.38);border:2px solid rgba(107,115,64,.75)}
+.vc3{top:115px;left:108px;background:rgba(58,127,140,.38);border:2px solid rgba(58,127,140,.75)}
+.vl{position:absolute;font-family:var(--display);font-size:.75rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);white-space:nowrap;transform:translate(-50%,-50%);text-align:center;line-height:1.3}
+.vl1{top:115.5px;left:131.5px}
+.vl2{top:192.5px;left:77.5px}
+.vl3{top:192.5px;left:185.5px}
+.venn-centre{position:absolute;left:131.5px;top:167px;transform:translate(-50%,-50%)}
+.venn-centre img{width:26px;opacity:.7}
+.venn-arrow{position:absolute;display:flex;flex-direction:column;align-items:center;gap:4px}
+.venn-arrow-line{width:1.5px;background:var(--olive);flex-shrink:0}
+.venn-arrow-tip{width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--olive)}
+.venn-sweet-spot{font-family:var(--display);font-size:.6rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--olive)}
+.venn-caption{font-family:var(--display);font-size:.72rem;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--mid);text-align:center;margin-top:1rem}
+.practice-block{margin-top:3rem}
+.practice-header{margin-bottom:2rem}
+.practice-title{font-family:var(--display);font-size:1.2rem;font-weight:300;color:var(--ink);margin-top:.5rem;max-width:640px;line-height:1.4}
+.practice-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;background:var(--border);border:1px solid var(--border)}
+.practice-col{padding:2.2rem 2rem;background:var(--bg-light)}
+.practice-col-bad{background:var(--bg)}
+.practice-col-label{font-family:var(--display);font-size:.65rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;margin-bottom:1.4rem;padding-bottom:.7rem;border-bottom:1px solid var(--border)}
+.practice-col-bad .practice-col-label{color:var(--mid)}
+.practice-col-good .practice-col-label{color:var(--teal)}
+.practice-scenario{display:flex;flex-direction:column;gap:1.2rem}
+.practice-item{display:flex;align-items:flex-start;gap:.9rem}
+.practice-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:.45rem}
+.practice-dot-miss{background:rgba(90,96,96,.25)}
+.practice-dot-hit{background:var(--teal-mid)}
+.practice-text{font-size:.9rem;color:var(--mid);font-weight:300;line-height:1.75}
+.practice-text strong{color:var(--ink);font-weight:500}
+.practice-intro-text{font-size:.95rem;color:var(--mid);font-weight:300;line-height:1.8;margin-top:.7rem;max-width:680px}
+@media(max-width:760px){.practice-grid{grid-template-columns:1fr}}
+.tiers-title{font-family:var(--display);font-size:1.2rem;font-weight:300;color:var(--ink);margin-top:.5rem;line-height:1.4;max-width:600px}
+.tiers-intro{font-size:.95rem;color:var(--mid);font-weight:300;line-height:1.85;max-width:660px;margin-top:.8rem}
+.tiers-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;background:var(--border);border:1px solid var(--border)}
+.tier-card{background:var(--bg);padding:2.4rem 2rem;position:relative;display:flex;flex-direction:column;gap:1rem}
+.tier-card-featured{background:var(--bg-light);border-top:3px solid var(--teal)}
+.tier-badge{font-family:var(--display);font-size:.58rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--teal);margin-bottom:-.5rem}
+.tier-num{font-family:var(--display);font-size:2rem;font-weight:700;color:rgba(45,102,112,.15);line-height:1}
+.tier-name{font-family:var(--display);font-size:1.05rem;font-weight:700;color:var(--ink)}
+.tier-desc{font-size:.88rem;color:var(--mid);font-weight:300;line-height:1.75;flex:1}
+.tier-includes{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:auto}
+.tier-tag{font-family:var(--display);font-size:.58rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:.2rem .6rem;background:var(--bg-light);border:1px solid var(--border);color:var(--mid);border-radius:2px}
+.tier-card-featured .tier-tag{background:var(--bg);border-color:rgba(45,102,112,.3);color:var(--teal)}
+.tiers-callout{margin-top:2rem;padding:1.5rem 2rem;border-left:3px solid var(--teal);background:var(--bg);font-family:var(--serif);font-style:italic;font-size:1rem;color:var(--ink);line-height:1.75}
+@media(max-width:900px){.tiers-grid{grid-template-columns:1fr}}
+.trio{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;background:var(--border);border:1px solid var(--border)}
+.vcard{background:var(--bg-light);padding:2.8rem 2rem}
+.vcard-num{font-family:var(--display);font-size:2.5rem;font-weight:700;color:rgba(45,102,112,.18);line-height:1;margin-bottom:1rem}
+.vcard-title{font-family:var(--display);font-size:1.15rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--teal);margin-bottom:.9rem}
+.vcard-desc{font-size:.95rem;color:var(--mid);font-weight:300;line-height:1.8}
+.vcard-quote{margin-top:1.2rem;padding-top:1.2rem;border-top:1px solid var(--border);font-family:var(--serif);font-style:italic;font-size:.92rem;color:var(--olive);line-height:1.65}
+#services{background:var(--bg)}
+.svc-intro{font-size:1rem;color:var(--mid);font-weight:300;line-height:1.8;margin-top:1.2rem;max-width:580px;margin-bottom:4rem}
+.svc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border)}
+.svc-card{background:var(--bg);padding:2.2rem 2rem;transition:background .3s}
+.svc-card:hover{background:var(--bg-light)}
+.svc-icon{width:36px;height:36px;margin-bottom:1.3rem;display:flex;align-items:center;justify-content:center;border:1px solid var(--border)}
+.svc-icon svg{width:18px;height:18px;stroke:var(--teal);fill:none;stroke-width:1.6}
+.svc-title{font-family:var(--display);font-size:1rem;font-weight:700;color:var(--ink);margin-bottom:.6rem}
+.svc-desc{font-size:.88rem;color:var(--mid);font-weight:300;line-height:1.7}
+#process{background:var(--panel);color:#f0f3ef}
+#process .s-heading{color:#f0f3ef}
+#process .s-heading strong{color:var(--olive-lt)}
+.process-intro{font-size:1rem;font-weight:300;color:rgba(240,243,239,.6);line-height:1.8;max-width:580px;margin:1.5rem 0 4rem}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid rgba(255,255,255,.12)}
+.pstep{padding:2.5rem 2rem;border-right:1px solid rgba(255,255,255,.08)}
+.pstep:last-child{border-right:none}
+.pnum{font-family:var(--display);font-size:3.5rem;font-weight:700;color:rgba(45,102,112,.3);line-height:1;margin-bottom:1.3rem}
+.ptitle{font-family:var(--display);font-size:.95rem;font-weight:700;color:rgba(240,243,239,.9);margin-bottom:.7rem}
+.pdesc{font-size:.85rem;color:rgba(240,243,239,.5);font-weight:300;line-height:1.7}
+#certs{background:var(--bg-light);padding:4rem 8vw}
+.certs-label{font-family:var(--display);font-size:.7rem;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--mid);text-align:center;margin-bottom:2.5rem}
+.certs-row{display:flex;align-items:center;justify-content:center;gap:4rem;flex-wrap:wrap}
+.cert{display:flex;flex-direction:column;align-items:center;gap:.5rem}
+.cert-badge{width:64px;height:64px;border-radius:4px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center}
+.cert-name{font-family:var(--display);font-size:.62rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--mid);text-align:center}
+#contact{background:var(--bg)}
+.contact-intro{font-size:1rem;color:var(--mid);font-weight:300;line-height:1.8;margin:1.2rem 0 0;max-width:640px}
+.cd-label{font-family:var(--display);font-size:.62rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--olive);margin-bottom:.15rem}
+.cd-val{font-size:.95rem;color:var(--ink)}
+.cd-val a{color:var(--ink);text-decoration:none}
+.cd-val a:hover{color:var(--teal)}
+.contact-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);margin-top:3.5rem}
+.contact-card{background:var(--bg);padding:2.2rem 2rem}
+.contact-card-icon{width:36px;height:36px;margin-bottom:1rem;display:flex;align-items:center;justify-content:center;border:1px solid var(--border)}
+.contact-card-icon svg{width:15px;height:15px;stroke:var(--teal);fill:none;stroke-width:1.6}
+.contact-note{padding:1.5rem 2rem;background:var(--bg-light);border-left:3px solid var(--teal);font-size:.88rem;font-weight:300;color:var(--mid);line-height:1.7;margin-top:2rem}
+.fg{display:flex;flex-direction:column;gap:.35rem}
+.fg label{font-family:var(--display);font-size:.62rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--mid)}
+.fg input,.fg select,.fg textarea{padding:.7rem 1rem;border:1px solid var(--border);background:var(--bg-light);font-family:var(--sans);font-size:.9rem;color:var(--ink);border-radius:2px;transition:border-color .2s;outline:none;resize:vertical;width:100%}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--teal)}
+.form-btn{padding:.8rem 2rem;width:100%;background:var(--panel);color:#f0f3ef;border:none;cursor:pointer;font-family:var(--display);font-size:.8rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;border-radius:2px;transition:background .25s;margin-top:.5rem}
+.form-btn:hover{background:var(--olive)}
+footer{background:var(--ink);color:rgba(240,243,239,.5);padding:4rem 8vw 2.5rem}
+.footer-top{display:grid;grid-template-columns:2fr 1fr 1fr;gap:4rem;padding-bottom:3rem;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:2rem}
+.footer-brand{display:flex;flex-direction:column;align-items:flex-start}
+.footer-logo{height:100px;width:auto;display:block;margin-bottom:1rem}
+.footer-tagline{font-size:.85rem;font-weight:300;line-height:1.7}
+.fcol-title{font-family:var(--display);font-size:.62rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--olive-lt);margin-bottom:1.2rem}
+.flinks{list-style:none;display:flex;flex-direction:column;gap:.65rem}
+.flinks a{font-size:.85rem;color:rgba(240,243,239,.5);text-decoration:none;transition:color .2s}
+.flinks a:hover{color:#f0f3ef}
+.footer-bottom{display:flex;align-items:center;justify-content:space-between;font-size:.78rem;flex-wrap:wrap;gap:1rem}
+.portal-link{color:var(--olive-lt);text-decoration:none;font-family:var(--display);font-size:.75rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;display:flex;align-items:center;gap:.4rem}
+.portal-link:hover{color:var(--teal-mid)}
+.modal-overlay{display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.55);align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-box{background:#fff;border-radius:4px;padding:2.5rem;max-width:480px;width:90%;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:90vh;overflow-y:auto}
+.modal-close{position:absolute;top:1rem;right:1.2rem;background:none;border:none;font-size:1.4rem;cursor:pointer;color:#666;line-height:1}
+.modal-label{font-family:var(--display);font-size:.65rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--olive);margin-bottom:.6rem}
+.modal-title{font-family:var(--display);font-size:1.4rem;font-weight:300;color:var(--ink);margin-bottom:1.6rem}
+.modal-form{display:flex;flex-direction:column;gap:1rem}
+.modal-hint{font-size:.78rem;color:var(--mid);text-align:center;margin-top:.2rem}
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .65s ease,transform .65s ease}
+.reveal.visible{opacity:1;transform:none}
+.d1{transition-delay:.12s}.d2{transition-delay:.22s}.d3{transition-delay:.32s}.d4{transition-delay:.42s}
+@media(max-width:960px){
+  .hero{grid-template-columns:1fr}
+  .hero-visual{min-height:340px}
+  .hero-text{padding:4rem 6vw}
+  .gap-grid,.svc-grid,.contact-grid{grid-template-columns:1fr}
+  .ladder{grid-template-columns:1fr 1fr}
+  .value-intro-block,.trio{grid-template-columns:1fr}
+  .steps{grid-template-columns:1fr 1fr}
+  .footer-top{grid-template-columns:1fr 1fr;gap:2.5rem}
+  .nav-links{display:none}
+  .hamburger{display:flex}
+  section{padding:5rem 6vw}
+}
+@media(max-width:540px){
+  .ladder,.steps{grid-template-columns:1fr}
+  .footer-top{grid-template-columns:1fr}
+  .gap-lf{flex-direction:column;gap:1rem}
+}
+</style>
+<style>
+.history-hero{padding:5rem 8vw 2.5rem;background:var(--panel)}
+.history-hero h1{font-family:var(--display);font-size:clamp(1.4rem,2.5vw,2rem);font-weight:300;color:#f0f3ef}
+.history-hero h1 strong{color:var(--olive-lt);font-weight:700}
+.history-body{padding:2.5rem 8vw;max-width:1200px;margin:0 auto;width:100%;box-sizing:border-box}
+.od-bar{display:flex;align-items:center;gap:1rem;margin-bottom:2rem;padding:.8rem 1.2rem;background:var(--bg-light);border:1px solid var(--border)}
+#odStatus{font-size:.75rem;color:#888;font-family:monospace}
+.od-connect{font-family:var(--display);font-size:.6rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:.35rem .9rem;background:var(--teal);color:#fff;border:none;cursor:pointer;display:none}
+.client-block{margin-bottom:2.5rem}
+.client-heading{font-family:var(--display);font-size:.7rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--mid);margin-bottom:.8rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
+.rec-table{width:100%;border-collapse:collapse;font-size:.82rem}
+.rec-table th{font-family:var(--display);font-size:.58rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mid);padding:.5rem .8rem;text-align:left;background:var(--bg-light);border-bottom:1px solid var(--border)}
+.rec-table td{padding:.6rem .8rem;border-bottom:1px solid var(--border);color:var(--ink)}
+.rec-table tr:hover td{background:var(--bg-light);cursor:pointer}
+.rec-table .amount{text-align:right;font-variant-numeric:tabular-nums}
+.badge-ok{background:#e8f5e9;color:#2d6a4f;font-size:.6rem;padding:.15rem .5rem;border-radius:2px;font-family:var(--display);font-weight:700;letter-spacing:.08em}
+.badge-warn{background:#fff3e0;color:#e65100;font-size:.6rem;padding:.15rem .5rem;border-radius:2px;font-family:var(--display);font-weight:700;letter-spacing:.08em}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;z-index:1000;overflow-y:auto;padding:2rem}
+.modal-overlay.open{display:flex;align-items:flex-start;justify-content:center}
+.modal-box{background:var(--bg);width:100%;max-width:900px;border:1px solid var(--border);position:relative}
+.modal-header{padding:1.5rem 2rem;background:var(--panel);display:flex;justify-content:space-between;align-items:center}
+.modal-title{font-family:var(--display);font-size:1rem;font-weight:700;color:#f0f3ef}
+.modal-subtitle{font-size:.75rem;color:rgba(240,243,239,.5);margin-top:.2rem}
+.modal-close{background:none;border:none;color:rgba(240,243,239,.5);font-size:1.2rem;cursor:pointer;padding:.2rem .5rem}
+.modal-close:hover{color:#f0f3ef}
+.modal-body{padding:2rem}
+.modal-section{margin-bottom:2rem}
+.modal-section-title{font-family:var(--display);font-size:.62rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--mid);margin-bottom:1rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)}
+.modal-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;margin-bottom:1rem}
+.modal-field{display:flex;flex-direction:column;gap:.3rem}
+.modal-field label{font-family:var(--display);font-size:.58rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mid)}
+.modal-field input{padding:.5rem .7rem;border:1px solid var(--border);background:var(--bg-light);font-size:.85rem;color:var(--ink);font-family:inherit}
+.modal-field input:focus{outline:none;border-color:var(--teal)}
+.journal-table{width:100%;border-collapse:collapse;font-size:.78rem}
+.journal-table th{font-family:var(--display);font-size:.55rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--mid);padding:.4rem .6rem;background:var(--bg-light);border-bottom:1px solid var(--border);text-align:left}
+.journal-table td{padding:.45rem .6rem;border-bottom:1px solid var(--border)}
+.journal-table .dr{text-align:right;color:#1a5276}
+.journal-table .cr{text-align:right;color:#1e8449}
+.modal-footer{padding:1rem 2rem;border-top:1px solid var(--border);display:flex;gap:.8rem;justify-content:flex-end;background:var(--bg-light)}
+.btn-save{font-family:var(--display);font-size:.62rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:.6rem 1.4rem;background:var(--teal);color:#fff;border:none;cursor:pointer}
+.btn-save:hover{background:#235258}
+.btn-cancel{font-family:var(--display);font-size:.62rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:.6rem 1.4rem;background:transparent;color:var(--mid);border:1px solid var(--border);cursor:pointer}
+.empty-state{text-align:center;padding:4rem 2rem;color:var(--mid);font-size:.85rem}
+.loading-state{text-align:center;padding:3rem;color:var(--mid);font-size:.82rem}
+@media(max-width:700px){.modal-grid{grid-template-columns:1fr}}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+<nav id="nav">
+  <a href="index.html" class="nav-logo"><img src="data:image/png;base64,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" alt="LF Advisory"/></a>
+  <ul class="nav-links">
+    <li><a href="index.html#gap">Why LF Advisory</a></li>
+    <li><a href="about.html">About</a></li>
+    <li><a href="case-studies.html">Case Studies</a></li>
+    <li><a href="blog.html">Insights</a></li>
+    <li><a href="index.html#contact" class="nav-cta" onclick="openBooking();return false">Free Consultation</a></li>
+  </ul>
+  <button class="hamburger" onclick="toggleNav()"><span></span><span></span><span></span></button>
+</nav>
+<div class="mobile-nav" id="mobileNav">
+  <a href="index.html#gap" onclick="toggleNav()">Why LF Advisory</a>
+  <a href="about.html" onclick="toggleNav()">About</a>
+  <a href="case-studies.html" onclick="toggleNav()">Case Studies</a>
+  <a href="blog.html" onclick="toggleNav()">Insights</a>
+  <a href="index.html#contact" class="cta" onclick="openBooking();toggleNav();return false">Free Consultation &rarr;</a>
+</div>
+<main style="padding-top:64px">
+<section class="history-hero">
+  <div class="s-label" style="color:var(--olive-lt)">Staff Portal</div>
+  <h1>Payroll <strong>Reconciliation History</strong></h1>
+  <p style="font-size:.85rem;color:rgba(240,243,239,.4);font-weight:300;margin-top:.5rem">Review and edit past reconciliations by client.</p>
+</section>
+
+<div class="history-body">
+  <div class="od-bar">
+    <span id="odStatus">Connecting to OneDrive...</span>
+    <button class="od-connect" id="odConnectBtn" onclick="connectOneDrive()">Connect to OneDrive</button>
+  </div>
+  <div id="historyContent"><div class="loading-state">Loading reconciliation history...</div></div>
+</div>
+
+<!-- Review Modal -->
+<div class="modal-overlay" id="reviewModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="modalTitle">Reconciliation Review</div>
+        <div class="modal-subtitle" id="modalSubtitle"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">Close</button>
+      <button class="btn-cancel" onclick="exportJournalCSV(_currentEdit.snapshot)" style="color:var(--teal);border-color:var(--teal)">Download Journal CSV</button>
+      <button class="btn-cancel" onclick="exportAuditPDF(_currentEdit.snapshot)" style="color:var(--teal);border-color:var(--teal)">Download PDF</button>
+      <button class="btn-cancel" onclick="exportAuditExcel(_currentEdit.snapshot)" style="color:var(--teal);border-color:var(--teal)">Download Excel</button>
+      <button class="btn-save" onclick="saveEdits()">Save Changes to OneDrive</button>
+    </div>
+  </div>
+</div>
+</main>
+<footer>
+  <div class="footer-top">
+    <div class="footer-brand">
+      <img class="footer-logo" src="data:image/png;base64,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" alt="LF Advisory"/>
+      <p class="footer-tagline">Finance team services for growing businesses.<br>Timely. Accurate. Useful.</p>
+    </div>
+    <div>
+      <div class="fcol-title">Services</div>
+      <ul class="flinks">
+        <li><a href="#services">Management Reporting</a></li>
+        <li><a href="#services">Bookkeeping</a></li>
+        <li><a href="#services">BAS &amp; IAS Lodgements</a></li>
+        <li><a href="#services">Forecasting &amp; Advisory</a></li>
+        <li><a href="#services">Ad-hoc Accounting</a></li>
+      </ul>
+    </div>
+    <div>
+      <div class="fcol-title">Company</div>
+      <ul class="flinks">
+        <li><a href="#gap">Why LF Advisory</a></li>
+        <li><a href="#niche">Who We Serve</a></li>
+        <li><a href="#process">Our Process</a></li>
+        <li><a href="#contact">Contact Liam</a></li>
+        <li><a href="#">Privacy Policy</a> · <a href="portal.html">Staff Portal</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>&copy; 2025 LF Advisory Pty Ltd. All rights reserved.</span>
+    <a href="/app/login.html" class="portal-link">
+      <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Client Portal Login
+    </a>
+  </div>
+</footer>
+
+<script>
+const OD_CLIENT_ID = '981d2ee1-a2a9-4787-8972-b349938ba7ab';
+const OD_TENANT_ID = 'f869ffc9-81fa-4bbf-94ec-a9bd5ca6b3a3';
+const OD_SCOPES = 'Files.ReadWrite User.Read';
+const OD_REDIRECT = window.location.origin + window.location.pathname;
+const OD_AUTH_URL = 'https://login.microsoftonline.com/' + OD_TENANT_ID + '/oauth2/v2.0/authorize';
+const GRAPH_ENDPOINT = 'https://graph.microsoft.com/v1.0';
+const HISTORY_FILE = 'lf-advisory-payroll-history.json';
+
+let _odToken = null;
+let _history = null;
+let _currentEdit = null; // {client, period}
+
+function fmt(n) {
+    if (n === undefined || n === null) return '—';
+    return '$' + Number(n).toLocaleString('en-AU', {minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function updateODStatus(state) {
+    const el = document.getElementById('odStatus');
+    const btn = document.getElementById('odConnectBtn');
+    const map = {
+        loading:      ['⟳ Connecting to OneDrive...', '#888', false],
+        connected:    ['✓ Connected to OneDrive', '#2d6670', false],
+        saving:       ['⟳ Saving changes...', '#888', false],
+        saved:        ['✓ Changes saved to OneDrive', '#2d6670', false],
+        error:        ['⚠ OneDrive unavailable', '#c0392b', true],
+        disconnected: ['Not connected —', '#888', true]
+    };
+    const [text, color, showBtn] = map[state] || map.disconnected;
+    if (el) { el.textContent = text; el.style.color = color; }
+    if (btn) btn.style.display = showBtn ? 'inline-block' : 'none';
+}
+
+function parseTokenFromHash() {
+    const hash = window.location.hash.substring(1);
+    if (!hash) return null;
+    const params = Object.fromEntries(hash.split('&').map(p => p.split('=').map(decodeURIComponent)));
+    if (params.access_token) {
+        history.replaceState(null, '', window.location.pathname);
+        sessionStorage.setItem('od_token', params.access_token);
+        sessionStorage.setItem('od_token_exp', Date.now() + (parseInt(params.expires_in || '3600') * 1000));
+        return params.access_token;
+    }
+    return null;
+}
+
+function getStoredToken() {
+    const token = sessionStorage.getItem('od_token');
+    const exp = parseInt(sessionStorage.getItem('od_token_exp') || '0');
+    if (token && Date.now() < exp - 60000) return token;
+    sessionStorage.removeItem('od_token');
+    sessionStorage.removeItem('od_token_exp');
+    return null;
+}
+
+function connectOneDrive() {
+    const url = OD_AUTH_URL +
+        '?client_id=' + OD_CLIENT_ID +
+        '&response_type=token' +
+        '&redirect_uri=' + encodeURIComponent(OD_REDIRECT) +
+        '&scope=' + encodeURIComponent(OD_SCOPES) +
+        '&response_mode=fragment';
+    window.location.href = url;
+}
+
+async function loadHistory() {
+    const token = _odToken || getStoredToken();
+    if (!token) {
+        updateODStatus('disconnected');
+        document.getElementById('historyContent').innerHTML = '<div class="empty-state">Connect to OneDrive to load reconciliation history.</div>';
+        return;
+    }
+    _odToken = token;
+    updateODStatus('loading');
+    try {
+        const resp = await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers:/children', {
+            headers: { Authorization: 'Bearer ' + token }
+        });
+        const items = await resp.json();
+        const file = (items.value || []).find(f => f.name === HISTORY_FILE);
+        if (!file) {
+            updateODStatus('connected');
+            document.getElementById('historyContent').innerHTML = '<div class="empty-state">No reconciliation history found yet. Run your first reconciliation to get started.</div>';
+            return;
+        }
+        const fileResp = await fetch(file['@microsoft.graph.downloadUrl']);
+        _history = await fileResp.json();
+        updateODStatus('connected');
+        renderHistory();
+    } catch(e) {
+        console.error('[History] Load error:', e);
+        updateODStatus('error');
+        document.getElementById('historyContent').innerHTML = '<div class="empty-state">Failed to load history from OneDrive.</div>';
+    }
+}
+
+function renderHistory() {
+    if (!_history || Object.keys(_history).length === 0) {
+        document.getElementById('historyContent').innerHTML = '<div class="empty-state">No reconciliation history found yet.</div>';
+        return;
+    }
+    let html = '';
+    const clients = Object.keys(_history).sort();
+    clients.forEach(client => {
+        const periods = Object.keys(_history[client]).sort().reverse();
+        html += `<div class="client-block">
+            <div class="client-heading">${client}</div>
+            <table class="rec-table">
+                <thead><tr>
+                    <th>Period</th>
+                    <th>Date Processed</th>
+                    <th class="amount">Total Wages</th>
+                    <th class="amount">Payroll Tax</th>
+                    <th class="amount">Super</th>
+                    <th>Journal</th>
+                    <th></th>
+                </tr></thead>
+                <tbody>`;
+        periods.forEach(period => {
+            const s = _history[client][period];
+            const totalWages = Object.values(s.earningsByDept || {}).reduce((sum, d) => sum + (d.total || 0), 0);
+            const totalSuper = Object.values(s.earningsByDept || {}).reduce((sum, d) => sum + (d.superTotal || 0), 0);
+            const payrollTax = s.payrollTax || Object.values(s.payrollTaxByDept || {}).reduce((a,b) => a+b, 0);
+            const totalDr = (s.journalEntries || []).reduce((sum, e) => sum + (e.debit || 0), 0);
+            const totalCr = (s.journalEntries || []).reduce((sum, e) => sum + (e.credit || 0), 0);
+            const balanced = Math.abs(totalDr - totalCr) < 0.01;
+            const dateStr = s.date ? new Date(s.date).toLocaleDateString('en-AU') : '—';
+            html += `<tr onclick="openReview('${client}', '${period}')">
+                <td><strong>${period}</strong></td>
+                <td>${dateStr}</td>
+                <td class="amount">${fmt(totalWages)}</td>
+                <td class="amount">${fmt(payrollTax)}</td>
+                <td class="amount">${fmt(totalSuper)}</td>
+                <td><span class="${balanced ? 'badge-ok' : 'badge-warn'}">${balanced ? 'Balanced' : 'Unbalanced'}</span></td>
+                <td style="color:var(--teal);font-size:.7rem;font-family:var(--display);font-weight:700;letter-spacing:.1em">REVIEW →</td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+    });
+    document.getElementById('historyContent').innerHTML = html;
+}
+
+function openReview(client, period) {
+    const s = _history[client][period];
+    _currentEdit = { client, period, snapshot: JSON.parse(JSON.stringify(s)) };
+    document.getElementById('modalTitle').textContent = client;
+    document.getElementById('modalSubtitle').textContent = period + ' — Processed ' + (s.date ? new Date(s.date).toLocaleDateString('en-AU') : 'unknown');
+
+    const depts = s.departments || [];
+    let body = '';
+
+    // Key figures per department
+    depts.forEach(dept => {
+        const earn = (s.earningsByDept || {})[dept.id] || {};
+        const pt = (s.payrollTaxByDept || {})[dept.id] || 0;
+        const wc = (s.workcoverByDept || {})[dept.id] || 0;
+        const lm = (s.leaveMovement || {})[dept.id] || {};
+        const ob = (s.openingBalances || {})[dept.id] || 0;
+        const cb = (s.closingBalances || {})[dept.id] || 0;
+        const am = (s.accrualMovement || {})[dept.id] || 0;
+
+        body += `<div class="modal-section">
+            <div class="modal-section-title">${dept.name}</div>
+            <div class="modal-grid">
+                <div class="modal-field"><label>Gross Wages</label><input type="number" step="0.01" data-path="earningsByDept.${dept.id}.total" value="${(earn.total||0).toFixed(2)}"/></div>
+                <div class="modal-field"><label>Super</label><input type="number" step="0.01" data-path="earningsByDept.${dept.id}.superTotal" value="${(earn.superTotal||0).toFixed(2)}"/></div>
+                <div class="modal-field"><label>Payroll Tax</label><input type="number" step="0.01" data-path="payrollTaxByDept.${dept.id}" value="${pt.toFixed(2)}"/></div>
+                <div class="modal-field"><label>Workcover</label><input type="number" step="0.01" data-path="workcoverByDept.${dept.id}" value="${wc.toFixed(2)}"/></div>
+                <div class="modal-field"><label>Leave Movement</label><input type="number" step="0.01" data-path="leaveMovement.${dept.id}.movement" value="${(lm.movement||0).toFixed(2)}"/></div>
+                <div class="modal-field"><label>Accrual Movement</label><input type="number" step="0.01" data-path="accrualMovement.${dept.id}" value="${am.toFixed(2)}"/></div>
+                <div class="modal-field"><label>Opening Balance</label><input type="number" step="0.01" data-path="openingBalances.${dept.id}" value="${ob.toFixed(2)}"/></div>
+                <div class="modal-field"><label>Closing Balance</label><input type="number" step="0.01" data-path="closingBalances.${dept.id}" value="${cb.toFixed(2)}"/></div>
+            </div>
+        </div>`;
+    });
+
+    // Journal entries
+    if (s.journalEntries && s.journalEntries.length) {
+        body += `<div class="modal-section">
+            <div class="modal-section-title">Journal Entries</div>
+            <table class="journal-table">
+                <thead><tr><th>Account</th><th>Description</th><th class="dr">Debit</th><th class="cr">Credit</th></tr></thead>
+                <tbody>`;
+        s.journalEntries.forEach((e, i) => {
+            if (e.debit > 0 || e.credit > 0) {
+                body += `<tr>
+                    <td><input type="text" style="width:80px;padding:.2rem .4rem;border:1px solid var(--border);font-size:.75rem" data-path="journalEntries.${i}.account" value="${e.account||''}"/></td>
+                    <td><input type="text" style="width:100%;padding:.2rem .4rem;border:1px solid var(--border);font-size:.75rem" data-path="journalEntries.${i}.name" value="${e.name||''}"/></td>
+                    <td><input type="number" step="0.01" style="width:100px;text-align:right;padding:.2rem .4rem;border:1px solid var(--border);font-size:.75rem" class="dr" data-path="journalEntries.${i}.debit" value="${(e.debit||0).toFixed(2)}"/></td>
+                    <td><input type="number" step="0.01" style="width:100px;text-align:right;padding:.2rem .4rem;border:1px solid var(--border);font-size:.75rem" class="cr" data-path="journalEntries.${i}.credit" value="${(e.credit||0).toFixed(2)}"/></td>
+                </tr>`;
+            }
+        });
+        body += '</tbody></table></div>';
+    }
+
+    document.getElementById('modalBody').innerHTML = body;
+    document.getElementById('reviewModal').classList.add('open');
+}
+
+function closeModal() {
+    document.getElementById('reviewModal').classList.remove('open');
+    _currentEdit = null;
+}
+
+function saveEdits() {
+    if (!_currentEdit) return;
+    const inputs = document.querySelectorAll('#modalBody [data-path]');
+    inputs.forEach(input => {
+        const path = input.getAttribute('data-path').split('.');
+        let obj = _currentEdit.snapshot;
+        for (let i = 0; i < path.length - 1; i++) {
+            if (obj[path[i]] === undefined) obj[path[i]] = {};
+            obj = obj[path[i]];
+        }
+        const val = input.type === 'number' ? parseFloat(input.value) || 0 : input.value;
+        obj[path[path.length - 1]] = val;
+    });
+    _history[_currentEdit.client][_currentEdit.period] = _currentEdit.snapshot;
+    saveHistoryToOneDrive();
+    closeModal();
+}
+
+
+        async function ensureWorkpapersFolder(token) {
+            try {
+                await fetch(GRAPH_ENDPOINT + '/me/drive/root/children', {
+                    method: 'POST',
+                    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: 'LF Advisory Workpapers', folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
+                });
+            } catch(e) { /* already exists */ }
+        }
+
+async function saveHistoryToOneDrive() {
+    const token = _odToken || getStoredToken();
+    if (!token) return;
+    try {
+        await ensureWorkpapersFolder(token);
+        updateODStatus('saving');
+        await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers/' + HISTORY_FILE + ':/content', {
+            method: 'PUT',
+            headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify(_history, null, 2)
+        });
+        updateODStatus('saved');
+    } catch(e) {
+        console.error('[History] Save error:', e);
+        updateODStatus('error');
+    }
+}
+
+window.addEventListener('load', async function() {
+    const hashToken = parseTokenFromHash();
+    if (hashToken) _odToken = hashToken;
+    await loadHistory();
+});
+
+
+// ── Export Helper Functions ─────────────────────────────────────────────────
+
+function extractEmployeeLeaveBalances() {
+            // Extract employee-level annual leave from leave balances data
+            const employees = [];
+            
+            if (!leaveThisData || !leaveLastData) {
+                console.log('Missing leave data for employee extraction');
+                return employees;
+            }
+            
+            console.log('Extracting employee leave balances...');
+            
+            // Find header row in THIS month data
+            let headerRowThis = -1;
+            let empColThis = -1, deptColThis = -1, leaveTypeColThis = -1, amountColThis = -1;
+            
+            for (let i = 0; i < Math.min(20, leaveThisData.length); i++) {
+                const row = leaveThisData[i];
+                if (!row) continue;
+                
+                for (let col = 0; col < Math.min(15, row.length); col++) {
+                    if (row[col] === 'Employee' || row[col] === 'Employee Name') {
+                        headerRowThis = i;
+                        
+                        // Find other columns in the same row
+                        for (let c = 0; c < row.length; c++) {
+                            const header = row[c];
+                            if (header === 'Employee' || header === 'Employee Name') empColThis = c;
+                            if (header === 'Employee Group' || header === 'Department') deptColThis = c;
+                            if (header === 'Leave Type') leaveTypeColThis = c;
+                            if (header === 'Amount') amountColThis = c;
+                        }
+                        
+                        console.log('THIS month columns:', {empColThis, deptColThis, leaveTypeColThis, amountColThis});
+                        break;
+                    }
+                }
+                if (headerRowThis !== -1) break;
+            }
+            
+            if (headerRowThis === -1) {
+                console.log('Could not find employee header in THIS month');
+                return employees;
+            }
+            
+            // Find header row in LAST month data
+            let headerRowLast = -1;
+            let empColLast = -1, leaveTypeColLast = -1, amountColLast = -1;
+            
+            for (let i = 0; i < Math.min(20, leaveLastData.length); i++) {
+                const row = leaveLastData[i];
+                if (!row) continue;
+                
+                for (let col = 0; col < Math.min(15, row.length); col++) {
+                    if (row[col] === 'Employee' || row[col] === 'Employee Name') {
+                        headerRowLast = i;
+                        
+                        for (let c = 0; c < row.length; c++) {
+                            const header = row[c];
+                            if (header === 'Employee' || header === 'Employee Name') empColLast = c;
+                            if (header === 'Leave Type') leaveTypeColLast = c;
+                            if (header === 'Amount') amountColLast = c;
+                        }
+                        
+                        console.log('LAST month columns:', {empColLast, leaveTypeColLast, amountColLast});
+                        break;
+                    }
+                }
+                if (headerRowLast !== -1) break;
+            }
+            
+            // Extract THIS month annual leave balances
+            const thisMonthAL = {};
+            for (let i = headerRowThis + 1; i < leaveThisData.length; i++) {
+                const row = leaveThisData[i];
+                if (!row) continue;
+                
+                const employee = row[empColThis];
+                const department = deptColThis >= 0 ? row[deptColThis] : 'Unknown';
+                const leaveType = leaveTypeColThis >= 0 ? row[leaveTypeColThis] : '';
+                const amount = amountColThis >= 0 ? parseFloat(row[amountColThis]) || 0 : 0;
+                
+                if (!employee || employee === 'Total') break;
+                
+                if (leaveType && leaveType.toLowerCase().includes('annual leave')) {
+                    thisMonthAL[employee] = { department, amount };
+                }
+            }
+            
+            console.log(`Extracted ${Object.keys(thisMonthAL).length} employees from THIS month`);
+            
+            // Extract LAST month annual leave balances
+            const lastMonthAL = {};
+            if (headerRowLast !== -1) {
+                for (let i = headerRowLast + 1; i < leaveLastData.length; i++) {
+                    const row = leaveLastData[i];
+                    if (!row) continue;
+                    
+                    const employee = row[empColLast];
+                    const leaveType = leaveTypeColLast >= 0 ? row[leaveTypeColLast] : '';
+                    const amount = amountColLast >= 0 ? parseFloat(row[amountColLast]) || 0 : 0;
+                    
+                    if (!employee || employee === 'Total') break;
+                    
+                    if (leaveType && leaveType.toLowerCase().includes('annual leave')) {
+                        lastMonthAL[employee] = amount;
+                    }
+                }
+            }
+            
+            console.log(`Extracted ${Object.keys(lastMonthAL).length} employees from LAST month`);
+            
+            // Combine into employee records
+            for (let empName in thisMonthAL) {
+                const opening = lastMonthAL[empName] || 0;
+                const closing = thisMonthAL[empName].amount;
+                
+                employees.push({
+                    name: empName,
+                    department: thisMonthAL[empName].department,
+                    opening: opening,
+                    closing: closing,
+                    movement: closing - opening
+                });
+            }
+            
+            // Sort by department then name
+            employees.sort((a, b) => {
+                if (a.department !== b.department) return a.department.localeCompare(b.department);
+                return a.name.localeCompare(b.name);
+            });
+            
+            console.log(`Final employee leave records: ${employees.length}`);
+            return employees;
+        }
+
+function addLSLCalculationAppendix(doc, lslData) {
+            // Appendix A: Methodology
+            doc.addPage();
+            let yPos = 20;
+            
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text('APPENDIX A: LSL CALCULATION METHODOLOGY', 20, yPos);
+            yPos += 10;
+            
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'normal');
+            
+            doc.text('Standard: AASB 119 Employee Benefits', 20, yPos);
+            yPos += 6;
+            doc.text('Method: Probability-weighted, discounted present value', 20, yPos);
+            yPos += 10;
+            
+            doc.setFont(undefined, 'bold');
+            doc.text('Formula:', 20, yPos);
+            yPos += 6;
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(9);
+            doc.text('PV = Raw Liability × (1 + On-Cost) × Probability × (1 + Inflation)^n ÷ (1 + Discount)^n', 30, yPos);
+            yPos += 10;
+            
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'bold');
+            doc.text('Key Assumptions:', 20, yPos);
+            yPos += 8;
+            
+            doc.setFont(undefined, 'normal');
+            const settings = currentClientData.lslSettings || {};
+            const onCost = (settings.onCost || 0.1875) * 100;
+            const inflation = (settings.inflation || 0.035) * 100;
+            
+            doc.text(`1. On-Cost Rate: ${onCost.toFixed(2)}%`, 25, yPos);
+            yPos += 5;
+            doc.setFontSize(8);
+            doc.text('   (Includes superannuation, payroll tax, workers compensation)', 30, yPos);
+            yPos += 8;
+            
+            doc.setFontSize(10);
+            doc.text(`2. Salary Inflation: ${inflation.toFixed(2)}% per annum`, 25, yPos);
+            yPos += 5;
+            doc.setFontSize(8);
+            doc.text('   (Expected future salary growth)', 30, yPos);
+            yPos += 8;
+            
+            doc.setFontSize(10);
+            doc.text('3. Discount Rates: Australian Government Bond Curve (G100)', 25, yPos);
+            yPos += 5;
+            doc.setFontSize(8);
+            doc.text('   Year 1: 3.87% | Year 2: 3.88% | Year 3: 4.03% | Year 5: 4.44% | Year 7: 4.86%', 30, yPos);
+            yPos += 8;
+            
+            doc.setFontSize(10);
+            doc.text('4. Vesting Probabilities (based on years of service):', 25, yPos);
+            yPos += 6;
+            doc.setFontSize(8);
+            doc.text('   0-1 yrs: 10-20% | 2-3 yrs: 30-40% | 4-5 yrs: 50-60% | 6-7 yrs: 70-80% | 8-9 yrs: 90% | 10+ yrs: 100%', 30, yPos);
+            yPos += 8;
+            
+            doc.setFontSize(10);
+            doc.text('5. Expected Time to Entitlement:', 25, yPos);
+            yPos += 5;
+            doc.setFontSize(8);
+            doc.text('   Employees < 10 years: (10 - current years) until entitlement', 30, yPos);
+            yPos += 5;
+            doc.text('   Employees ≥ 10 years: Immediate entitlement (current liability, no discounting)', 30, yPos);
+            yPos += 12;
+            
+            // Appendix B: Full Employee Calculations (Multi-State)
+            doc.addPage();
+            yPos = 20;
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text('APPENDIX B: DETAILED EMPLOYEE CALCULATIONS (ALL EMPLOYEES)', 20, yPos);
+            yPos += 10;
+            
+            doc.setFontSize(8);
+            doc.setFont(undefined, 'normal');
+            doc.text('Complete AASB 119 calculation breakdown for every employee with LSL entitlement', 20, yPos);
+            yPos += 4;
+            doc.text('⚠️ = State with different vesting period  |  🔧 = Service date override applied', 20, yPos);
+            yPos += 10;
+            
+            // State summary
+            if (lslData.employeeProvisions && lslData.employeeProvisions.length > 0) {
+                doc.setFont(undefined, 'bold');
+                doc.setFontSize(9);
+                doc.text('LSL PROVISION BY STATE/TERRITORY', 20, yPos);
+                yPos += 6;
+                
+                doc.setFontSize(7);
+                doc.text('State', 20, yPos);
+                doc.text('Employees', 45, yPos);
+                doc.text('Vesting', 75, yPos);
+                doc.text('Total Provision', 105, yPos);
+                yPos += 2;
+                doc.line(20, yPos, 150, yPos);
+                yPos += 4;
+                
+                // Group by state
+                const stateGroups = {};
+                lslData.employeeProvisions.forEach(emp => {
+                    const state = emp.state || 'QLD';
+                    if (!stateGroups[state]) {
+                        stateGroups[state] = { count: 0, total: 0, vesting: emp.vestingYears || 10 };
+                    }
+                    stateGroups[state].count++;
+                    stateGroups[state].total += emp.provision;
+                });
+                
+                doc.setFont(undefined, 'normal');
+                for (let state in stateGroups) {
+                    const group = stateGroups[state];
+                    const warning = group.vesting !== 10 ? ' ⚠️' : '';
+                    doc.text(`${state}${warning}`, 20, yPos);
+                    doc.text(group.count.toString(), 45, yPos);
+                    doc.text(`${group.vesting} years`, 75, yPos);
+                    doc.text(`$${group.total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 105, yPos);
+                    yPos += 5;
+                }
+                
+                yPos += 3;
+                doc.line(20, yPos, 150, yPos);
+                yPos += 6;
+            }
+            
+            // Table header
+            doc.setFont(undefined, 'bold');
+            doc.text('Employee', 20, yPos);
+            doc.text('St', 68, yPos);
+            doc.text('Years', 77, yPos);
+            doc.text('Raw', 93, yPos);
+            doc.text('On-Cost', 113, yPos);
+            doc.text('Prob%', 133, yPos);
+            doc.text('Infl', 150, yPos);
+            doc.text('Disc', 167, yPos);
+            doc.text('Final', 185, yPos);
+            yPos += 2;
+            doc.line(20, yPos, 198, yPos);
+            yPos += 4;
+            
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(6.5);
+            
+            if (lslData.employeeProvisions && lslData.employeeProvisions.length > 0) {
+                lslData.employeeProvisions.forEach((emp, idx) => {
+                    if (yPos > 260) {
+                        doc.addPage();
+                        yPos = 20;
+                        doc.setFontSize(8);
+                        doc.setFont(undefined, 'bold');
+                        doc.text('Employee', 20, yPos);
+                        doc.text('St', 68, yPos);
+                        doc.text('Years', 77, yPos);
+                        doc.text('Raw', 93, yPos);
+                        doc.text('On-Cost', 113, yPos);
+                        doc.text('Prob%', 133, yPos);
+                        doc.text('Infl', 150, yPos);
+                        doc.text('Disc', 167, yPos);
+                        doc.text('Final', 185, yPos);
+                        yPos += 2;
+                        doc.line(20, yPos, 198, yPos);
+                        yPos += 4;
+                        doc.setFont(undefined, 'normal');
+                        doc.setFontSize(6.5);
+                    }
+                    
+                    const onCostRate = settings.onCost || 0.1875;
+                    const inflationRate = settings.inflation || 0.035;
+                    const empState = emp.state || 'QLD';
+                    const vestingYears = emp.vestingYears || 10;
+                    
+                    // Calculate steps
+                    const withOnCost = emp.rawLiability * (1 + onCostRate);
+                    
+                    // Display employee name with state and override indicators
+                    let empDisplay = emp.name.substring(0, 22);
+                    if (emp.hasOverride) empDisplay += ' 🔧';
+                    if (vestingYears !== 10) empDisplay += ' ⚠️';
+                    
+                    if (emp.yearsOfService >= vestingYears) {
+                        // Current liability - FULLY VESTED
+                        doc.text(empDisplay, 20, yPos);
+                        doc.text(empState, 68, yPos);
+                        doc.text(emp.yearsOfService.toFixed(1), 77, yPos);
+                        doc.text(`$${emp.rawLiability.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 93, yPos);
+                        doc.text(`$${withOnCost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 113, yPos);
+                        doc.text('100%', 133, yPos);
+                        doc.text('N/A', 150, yPos);
+                        doc.text('N/A', 167, yPos);
+                        doc.setFont(undefined, 'bold');
+                        doc.text(`$${emp.provision.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 185, yPos);
+                        doc.setFont(undefined, 'normal');
+                    } else {
+                        // Non-current liability - DISCOUNTED
+                        const probIndex = Math.floor(emp.yearsOfService);
+                        const defaultProbs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.9, 1.0];
+                        
+                        // Adjust probability for 7-year vesting states
+                        let prob;
+                        if (vestingYears === 7) {
+                            const adjustedIndex = Math.min(Math.floor((emp.yearsOfService / 7) * 10), 10);
+                            prob = settings[`prob${adjustedIndex}`] || defaultProbs[adjustedIndex];
+                        } else {
+                            prob = settings[`prob${probIndex}`] || defaultProbs[probIndex];
+                        }
+                        
+                        const withProb = withOnCost * prob;
+                        
+                        const yearsToGo = Math.max(1, vestingYears - emp.yearsOfService);
+                        const inflationFactor = Math.pow(1 + inflationRate, yearsToGo);
+                        const withInflation = withProb * inflationFactor;
+                        
+                        const discountYear = Math.min(Math.ceil(yearsToGo), 10);
+                        const g100Rates = settings.g100Rates || {};
+                        const discountRate = g100Rates[discountYear] || 0.05;
+                        const discountFactor = 1 / Math.pow(1 + discountRate, yearsToGo);
+                        
+                        doc.text(empDisplay, 20, yPos);
+                        doc.text(empState, 68, yPos);
+                        doc.text(emp.yearsOfService.toFixed(1), 77, yPos);
+                        doc.text(`$${emp.rawLiability.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 93, yPos);
+                        doc.text(`$${withOnCost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 113, yPos);
+                        doc.text(`${(prob * 100).toFixed(0)}%`, 133, yPos);
+                        doc.text(`${inflationFactor.toFixed(2)}`, 150, yPos);
+                        doc.text(`${discountFactor.toFixed(2)}`, 167, yPos);
+                        doc.setFont(undefined, 'bold');
+                        doc.text(`$${emp.provision.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 185, yPos);
+                        doc.setFont(undefined, 'normal');
+                    }
+                    
+                    yPos += 5;
+                });
+                
+                // Add totals
+                yPos += 2;
+                doc.line(20, yPos, 198, yPos);
+                yPos += 5;
+                doc.setFont(undefined, 'bold');
+                doc.setFontSize(8);
+                const totalRaw = lslData.employeeProvisions.reduce((sum, emp) => sum + emp.rawLiability, 0);
+                const totalProvision = lslData.employeeProvisions.reduce((sum, emp) => sum + emp.provision, 0);
+                doc.text('TOTAL', 20, yPos);
+                doc.text(`$${totalRaw.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 90, yPos);
+                doc.text(`$${totalProvision.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 185, yPos);
+            }
+            
+            // Appendix C: Full Detailed Step-by-Step Calculations for ALL Employees
+            doc.addPage();
+            yPos = 20;
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text('APPENDIX C: DETAILED STEP-BY-STEP CALCULATIONS (ALL EMPLOYEES)', 20, yPos);
+            yPos += 6;
+            doc.setFontSize(9);
+            doc.setFont(undefined, 'normal');
+            doc.text(`Full AASB 119 calculations for each employee — ${lslData.employeeProvisions ? lslData.employeeProvisions.length : 0} employees shown`, 20, yPos);
+            yPos += 10;
+            
+            const onCostRate = settings.onCost || 0.1875;
+            const inflationRate = settings.inflation || 0.035;
+            const defaultProbs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.9, 1.0];
+            const G100_RATES_C = settings.g100Rates || {0: 0, 1: 0.0387, 2: 0.0388, 3: 0.0403, 4: 0.0423, 5: 0.0444, 6: 0.0465, 7: 0.0486, 8: 0.0507, 9: 0.0528, 10: 0.0549};
+
+            if (lslData.employeeProvisions && lslData.employeeProvisions.length > 0) {
+                lslData.employeeProvisions.forEach((emp, idx) => {
+                    // Each employee block takes ~45-55px; check for page break
+                    const blockHeight = emp.yearsOfService >= (emp.vestingYears || 10) ? 42 : 68;
+                    if (yPos + blockHeight > 270) {
+                        doc.addPage();
+                        yPos = 20;
+                    }
+                    
+                    const empState = emp.state || 'QLD';
+                    const vestingYears = emp.vestingYears || (empState === 'VIC' || empState === 'ACT' ? 7 : 10);
+                    const isVested = emp.yearsOfService >= vestingYears;
+                    const empLabel = emp.hasOverride ? `${emp.name} \u{1F527}` : emp.name;
+                    
+                    // Employee header bar
+                    doc.setFillColor(44, 74, 94);
+                    doc.rect(20, yPos - 3, 178, 8, 'F');
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFont(undefined, 'bold');
+                    doc.setFontSize(8);
+                    doc.text(`${idx + 1}. ${empLabel}`, 22, yPos + 2);
+                    const statusLabel = isVested ? 'CURRENT LIABILITY' : 'NON-CURRENT LIABILITY';
+                    const statusX = 195 - doc.getTextWidth(statusLabel);
+                    doc.text(statusLabel, statusX, yPos + 2);
+                    doc.setTextColor(0, 0, 0);
+                    yPos += 10;
+                    
+                    doc.setFont(undefined, 'normal');
+                    doc.setFontSize(7.5);
+                    
+                    // Info line
+                    let infoLine = `State: ${empState}  |  Vesting: ${vestingYears} yrs  |  Years of Service: ${emp.yearsOfService.toFixed(2)}`;
+                    if (emp.hasOverride) {
+                        const overrideDate = emp.serviceStartDate ? new Date(emp.serviceStartDate).toLocaleDateString('en-AU') : 'N/A';
+                        infoLine += `  |  Service Date Override: ${overrideDate}`;
+                    }
+                    doc.text(infoLine, 22, yPos);
+                    yPos += 5;
+                    
+                    const withOnCost = emp.rawLiability * (1 + onCostRate);
+                    const fmt = (n) => `$${n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                    
+                    // Step 1
+                    doc.text(`Step 1: Raw LSL Balance (from leave file):`, 22, yPos);
+                    doc.setFont(undefined, 'bold');
+                    doc.text(fmt(emp.rawLiability), 130, yPos);
+                    doc.setFont(undefined, 'normal');
+                    yPos += 4.5;
+                    
+                    // Step 2
+                    doc.text(`Step 2: Apply On-Cost (${(onCostRate * 100).toFixed(2)}%)  =  ${fmt(emp.rawLiability)} × ${(1 + onCostRate).toFixed(4)}:`, 22, yPos);
+                    doc.setFont(undefined, 'bold');
+                    doc.text(fmt(withOnCost), 130, yPos);
+                    doc.setFont(undefined, 'normal');
+                    yPos += 4.5;
+                    
+                    if (isVested) {
+                        // Fully vested — no discounting
+                        doc.setTextColor(0, 100, 0);
+                        doc.text(`Fully vested (>= ${vestingYears} years) — No probability, inflation, or discounting required`, 22, yPos);
+                        doc.setTextColor(0, 0, 0);
+                        yPos += 4.5;
+                        
+                        doc.setFont(undefined, 'bold');
+                        doc.setFontSize(8.5);
+                        doc.text(`AASB 119 Provision (Current Liability — Account 21382):`, 22, yPos);
+                        doc.setTextColor(44, 74, 94);
+                        doc.text(fmt(emp.provision), 155, yPos);
+                        doc.setTextColor(0, 0, 0);
+                        doc.setFont(undefined, 'normal');
+                        doc.setFontSize(7.5);
+                        yPos += 7;
+                    } else {
+                        // Non-current — full 6-step calculation
+                        let prob;
+                        let probIndex;
+                        if (vestingYears === 7) {
+                            probIndex = Math.min(Math.floor((emp.yearsOfService / 7) * 10), 10);
+                        } else {
+                            probIndex = Math.min(Math.floor(emp.yearsOfService), 10);
+                        }
+                        prob = settings[`prob${probIndex}`] !== undefined ? settings[`prob${probIndex}`] : defaultProbs[probIndex];
+                        
+                        const withProb = withOnCost * prob;
+                        const yearsToGo = Math.max(1, vestingYears - emp.yearsOfService);
+                        const inflationFactor = Math.pow(1 + inflationRate, yearsToGo);
+                        const withInflation = withProb * inflationFactor;
+                        const discountYear = Math.min(Math.ceil(yearsToGo), 10);
+                        const discountRate = G100_RATES_C[discountYear] !== undefined ? G100_RATES_C[discountYear] : 0.05;
+                        const discountFactor = 1 / Math.pow(1 + discountRate, yearsToGo);
+                        const finalAmount = withInflation * discountFactor;
+                        
+                        // Step 3: Probability
+                        doc.text(`Step 3: Apply Probability (Prob. Index ${probIndex} = ${(prob * 100).toFixed(0)}%)  =  ${fmt(withOnCost)} × ${prob.toFixed(2)}:`, 22, yPos);
+                        doc.setFont(undefined, 'bold');
+                        doc.text(fmt(withProb), 130, yPos);
+                        doc.setFont(undefined, 'normal');
+                        yPos += 4.5;
+                        
+                        // Step 4: Years to vesting
+                        doc.text(`Step 4: Years to Vesting  =  ${vestingYears} - ${emp.yearsOfService.toFixed(2)} years:`, 22, yPos);
+                        doc.setFont(undefined, 'bold');
+                        doc.text(`${yearsToGo.toFixed(2)} years`, 130, yPos);
+                        doc.setFont(undefined, 'normal');
+                        yPos += 4.5;
+                        
+                        // Step 5: Inflation
+                        doc.text(`Step 5: Apply Inflation (${(inflationRate * 100).toFixed(1)}% p.a.)  =  ${fmt(withProb)} × (1.${(inflationRate * 1000).toFixed(0)})^${yearsToGo.toFixed(2)}  [Factor: ${inflationFactor.toFixed(4)}]:`, 22, yPos);
+                        doc.setFont(undefined, 'bold');
+                        doc.text(fmt(withInflation), 130, yPos);
+                        doc.setFont(undefined, 'normal');
+                        yPos += 4.5;
+                        
+                        // Step 6: Discount
+                        doc.text(`Step 6: Apply G100 Discount (Year ${discountYear} rate: ${(discountRate * 100).toFixed(2)}%)  Factor: ${discountFactor.toFixed(4)}:`, 22, yPos);
+                        doc.setFont(undefined, 'bold');
+                        doc.text(fmt(withInflation * discountFactor), 130, yPos);
+                        doc.setFont(undefined, 'normal');
+                        yPos += 5;
+                        
+                        // Final
+                        doc.setFont(undefined, 'bold');
+                        doc.setFontSize(8.5);
+                        doc.text(`AASB 119 Provision (Non-Current Liability — Account 24800):`, 22, yPos);
+                        doc.setTextColor(44, 74, 94);
+                        doc.text(fmt(emp.provision), 155, yPos);
+                        doc.setTextColor(0, 0, 0);
+                        doc.setFont(undefined, 'normal');
+                        doc.setFontSize(7.5);
+                        yPos += 8;
+                    }
+                    
+                    // Subtle separator
+                    doc.setDrawColor(200, 200, 200);
+                    doc.line(20, yPos - 1, 198, yPos - 1);
+                    doc.setDrawColor(0, 0, 0);
+                    yPos += 3;
+                });
+                
+                // Grand total footer
+                if (yPos + 20 > 270) { doc.addPage(); yPos = 20; }
+                yPos += 3;
+                doc.setFillColor(44, 74, 94);
+                doc.rect(20, yPos - 3, 178, 10, 'F');
+                doc.setTextColor(255, 255, 255);
+                doc.setFont(undefined, 'bold');
+                doc.setFontSize(9);
+                doc.text('TOTAL AASB 119 PROVISION', 22, yPos + 3);
+                const grandTotal = lslData.employeeProvisions.reduce((sum, e) => sum + e.provision, 0);
+                const grandTotalFmt = `$${grandTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                const gtX = 196 - doc.getTextWidth(grandTotalFmt);
+                doc.text(grandTotalFmt, gtX, yPos + 3);
+                doc.setTextColor(0, 0, 0);
+                yPos += 15;
+                
+                // Current / Non-Current split
+                doc.setFont(undefined, 'normal');
+                doc.setFontSize(8);
+                const totalCurrent = lslData.employeeProvisions.filter(e => e.yearsOfService >= (e.vestingYears || (e.state === 'VIC' || e.state === 'ACT' ? 7 : 10))).reduce((sum, e) => sum + e.provision, 0);
+                const totalNonCurrent = grandTotal - totalCurrent;
+                doc.text(`  Current Liability (Acc. 21382): $${totalCurrent.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 22, yPos);
+                yPos += 5;
+                doc.text(`  Non-Current Liability (Acc. 24800): $${totalNonCurrent.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 22, yPos);
+                yPos += 12;
+            }
+            
+            // Appendix D: Reconciliation
+            doc.addPage();
+            yPos = 20;
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text('APPENDIX D: PROVISION RECONCILIATION', 20, yPos);
+            yPos += 10;
+            
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'normal');
+            
+            if (lslData.employeeProvisions && lslData.employeeProvisions.length > 0) {
+                const recItems = [
+                    { label: 'Opening Balance (Prior Month Provision)', value: lslData.lastProvision || 0 },
+                    { label: 'Add: Current Month Movement (Expense)', value: lslData.movement || 0 },
+                    { label: 'Closing Balance (This Month Provision)', value: lslData.currentProvision || 0 },
+                    { label: '', value: null },
+                    { label: 'Current Liability (Acc. 21382 — vested employees)', value: lslData.currentLiability || 0 },
+                    { label: 'Non-Current Liability (Acc. 24800 — unvested employees)', value: lslData.nonCurrentLiability || 0 },
+                    { label: 'Total AASB 119 Provision', value: lslData.currentProvision || 0 },
+                ];
+                
+                recItems.forEach(item => {
+                    if (item.value === null) { yPos += 3; return; }
+                    doc.text(item.label, 25, yPos);
+                    const valStr = `$${item.value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                    doc.text(valStr, 190 - doc.getTextWidth(valStr), yPos);
+                    yPos += 6;
+                });
+            }
+        }
+
+
+
+function addBalanceSheetBreakdowns(doc) {
+            console.log('Starting balance sheet breakdowns...');
+            let yPos = 20;
+            
+            function checkPage() {
+                if (yPos > 260) {
+                    doc.addPage();
+                    yPos = 20;
+                    return true;
+                }
+                return false;
+            }
+            
+            // ========== ANNUAL LEAVE PROVISION ==========
+            doc.addPage();
+            yPos = 20;
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text('ANNUAL LEAVE PROVISION (21381)', 20, yPos);
+            yPos += 10;
+            
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'normal');
+            
+            // Employee-level detail from Leave Balances report
+            if (leaveThisData) {
+                doc.text('Employee-Level Detail (from Xero Leave Balances report):', 20, yPos);
+                yPos += 8;
+                
+                doc.setFont(undefined, 'bold');
+                doc.setFontSize(8);
+                doc.text('Employee', 20, yPos);
+                doc.text('Department', 80, yPos);
+                doc.text('Opening', 125, yPos);
+                doc.text('Movement', 150, yPos);
+                doc.text('Closing', 175, yPos);
+                yPos += 2;
+                doc.line(20, yPos, 195, yPos);
+                yPos += 4;
+                
+                doc.setFont(undefined, 'normal');
+                
+                // Extract employee leave data
+                const employeeLeaveData = extractEmployeeLeaveBalances();
+                let totalOpening = 0;
+                let totalClosing = 0;
+                
+                employeeLeaveData.forEach(emp => {
+                    if (checkPage()) {
+                        doc.setFont(undefined, 'bold');
+                        doc.text('Employee', 20, yPos);
+                        doc.text('Department', 80, yPos);
+                        doc.text('Opening', 125, yPos);
+                        doc.text('Movement', 150, yPos);
+                        doc.text('Closing', 175, yPos);
+                        yPos += 2;
+                        doc.line(20, yPos, 195, yPos);
+                        yPos += 4;
+                        doc.setFont(undefined, 'normal');
+                    }
+                    
+                    doc.text(emp.name.substring(0, 30), 20, yPos);
+                    doc.text(emp.department.substring(0, 20), 80, yPos);
+                    doc.text(`$${emp.opening.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 125, yPos);
+                    doc.text(`$${emp.movement.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 150, yPos);
+                    doc.text(`$${emp.closing.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 175, yPos);
+                    yPos += 5;
+                    
+                    totalOpening += emp.opening;
+                    totalClosing += emp.closing;
+                });
+                
+                yPos += 2;
+                doc.line(20, yPos, 195, yPos);
+                yPos += 5;
+                doc.setFont(undefined, 'bold');
+                doc.text('TOTAL', 20, yPos);
+                doc.text(`$${totalOpening.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 125, yPos);
+                doc.text(`$${(totalClosing - totalOpening).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 150, yPos);
+                doc.text(`$${totalClosing.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 175, yPos);
+            }
+            
+            // ========== WAGES ACCRUAL ==========
+            doc.addPage();
+            yPos = 20;
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text('WAGES ACCRUED (21450)', 20, yPos);
+            yPos += 10;
+            
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'normal');
+            
+            if (window.lastAccrualData) {
+                const accrualData = window.lastAccrualData;
+                
+                doc.text('Calculation Basis:', 20, yPos);
+                yPos += 6;
+                doc.text(`Method: ${accrualData.method}`, 30, yPos);
+                yPos += 5;
+                doc.text(`Next Pay Date: ${accrualData.nextPayDate || 'N/A'}`, 30, yPos);
+                yPos += 5;
+                doc.text(`Accrual Days: ${accrualData.days || 0}`, 30, yPos);
+                yPos += 10;
+                
+                doc.text('Department Breakdown:', 20, yPos);
+                yPos += 8;
+                
+                doc.setFont(undefined, 'bold');
+                doc.text('Department', 20, yPos);
+                doc.text('Opening', 100, yPos);
+                doc.text('Closing', 140, yPos);
+                doc.text('Movement', 175, yPos);
+                yPos += 2;
+                doc.line(20, yPos, 195, yPos);
+                yPos += 5;
+                
+                doc.setFont(undefined, 'normal');
+                
+                let totalMovement = 0;
+                for (let deptId in accrualData.byDepartment) {
+                    const dept = departments.find(d => d.id === deptId);
+                    if (dept) {
+                        checkPage();
+                        const movement = accrualData.byDepartment[deptId];
+                        doc.text(dept.name, 20, yPos);
+                        doc.text('$0.00', 100, yPos); // Opening
+                        doc.text(`$${movement.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 140, yPos);
+                        doc.text(`$${movement.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 175, yPos);
+                        yPos += 6;
+                        totalMovement += movement;
+                    }
+                }
+                
+                yPos += 2;
+                doc.line(20, yPos, 195, yPos);
+                yPos += 5;
+                doc.setFont(undefined, 'bold');
+                doc.text('TOTAL', 20, yPos);
+                doc.text(`$${totalMovement.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 140, yPos);
+                doc.text(`$${totalMovement.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 175, yPos);
+            } else {
+                doc.text('No accrual calculated (Arrears method or $NIL balance)', 20, yPos);
+                yPos += 10;
+                
+                doc.setFont(undefined, 'bold');
+                doc.text('Department', 20, yPos);
+                doc.text('Amount', 175, yPos);
+                yPos += 2;
+                doc.line(20, yPos, 195, yPos);
+                yPos += 5;
+                
+                doc.setFont(undefined, 'normal');
+                departments.forEach(dept => {
+                    checkPage();
+                    doc.text(dept.name, 20, yPos);
+                    doc.text('$0.00', 175, yPos);
+                    yPos += 6;
+                });
+                
+                yPos += 2;
+                doc.line(20, yPos, 195, yPos);
+                yPos += 5;
+                doc.setFont(undefined, 'bold');
+                doc.text('TOTAL', 20, yPos);
+                doc.text('$0.00', 175, yPos);
+            }
+            
+            // ========== LSL PROVISION - SUMMARY ==========
+            if (window.lastLSLData) {
+                doc.addPage();
+                yPos = 20;
+                doc.setFontSize(14);
+                doc.setFont(undefined, 'bold');
+                doc.text('LONG SERVICE LEAVE PROVISION (21382 + 24800)', 20, yPos);
+                yPos += 10;
+                
+                const lslData = window.lastLSLData;
+                
+                doc.setFontSize(10);
+                doc.setFont(undefined, 'normal');
+                doc.text(`Current Liability (10+ years): $${lslData.currentLiability.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 20, yPos);
+                yPos += 6;
+                doc.text(`Non-Current Liability (<10 years): $${lslData.nonCurrentLiability.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 20, yPos);
+                yPos += 6;
+                doc.setFont(undefined, 'bold');
+                doc.text(`Total AASB 119 Provision: $${lslData.currentProvision.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 20, yPos);
+                doc.setFont(undefined, 'normal');
+                yPos += 10;
+                
+                doc.text('Employee Detail:', 20, yPos);
+                yPos += 8;
+                
+                doc.setFont(undefined, 'bold');
+                doc.setFontSize(8);
+                doc.text('Employee', 20, yPos);
+                doc.text('Dept', 70, yPos);
+                doc.text('Years', 100, yPos);
+                doc.text('Raw', 120, yPos);
+                doc.text('AASB 119', 150, yPos);
+                doc.text('Type', 180, yPos);
+                yPos += 2;
+                doc.line(20, yPos, 195, yPos);
+                yPos += 4;
+                
+                doc.setFont(undefined, 'normal');
+                
+                if (lslData.employeeProvisions) {
+                    lslData.employeeProvisions.forEach(emp => {
+                        checkPage();
+                        doc.text(emp.name.substring(0, 22), 20, yPos);
+                        doc.text(emp.department.substring(0, 12), 70, yPos);
+                        doc.text(emp.yearsOfService.toFixed(1), 100, yPos);
+                        doc.text(`$${emp.rawLiability.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 120, yPos);
+                        doc.text(`$${emp.provision.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 150, yPos);
+                        doc.text(emp.isCurrent ? 'Current' : 'Non-Curr', 180, yPos);
+                        yPos += 5;
+                    });
+                }
+                
+                // ========== LSL APPENDIX - CALCULATION METHODOLOGY ==========
+                addLSLCalculationAppendix(doc, lslData);
+            }
+            
+            // ========== PAYROLL TAX ==========
+            if (window.lastPayrollTaxBreakdown) {
+                doc.addPage();
+                yPos = 20;
+                doc.setFontSize(14);
+                doc.setFont(undefined, 'bold');
+                doc.text('PAYROLL TAX PAYABLE (21422)', 20, yPos);
+                yPos += 10;
+                
+                const ptData = window.lastPayrollTaxBreakdown;
+                
+                doc.setFontSize(10);
+                doc.setFont(undefined, 'normal');
+                doc.text(`Total Payroll Tax: $${ptData.totalTax.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 20, yPos);
+                yPos += 10;
+                
+                doc.text('State Breakdown (Proportionate Deduction Method):', 20, yPos);
+                yPos += 8;
+                
+                doc.setFont(undefined, 'bold');
+                doc.setFontSize(8);
+                doc.text('State', 20, yPos);
+                doc.text('Wages', 50, yPos);
+                doc.text('% of Total', 85, yPos);
+                doc.text('Threshold', 115, yPos);
+                doc.text('Prop. Ded.', 145, yPos);
+                doc.text('Tax', 175, yPos);
+                yPos += 2;
+                doc.line(20, yPos, 195, yPos);
+                yPos += 5;
+                
+                doc.setFont(undefined, 'normal');
+                
+                if (ptData.breakdown) {
+                    ptData.breakdown.forEach(state => {
+                        checkPage();
+                        doc.text(state.state, 20, yPos);
+                        doc.text(`$${state.wages.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 50, yPos);
+                        doc.text(`${state.percentageOfTotal.toFixed(2)}%`, 85, yPos);
+                        doc.text(`$${state.threshold.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 115, yPos);
+                        doc.text(`$${state.proportionateDeduction.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 145, yPos);
+                        doc.text(`$${state.tax.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 175, yPos);
+                        yPos += 6;
+                    });
+                }
+            }
+        }
+
+function addSheet(name, rows, colWidths) {
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+                if (colWidths) ws['!cols'] = colWidths.map(w => ({ wch: w }));
+                XLSX.utils.book_append_sheet(wb, ws, name);
+                return ws;
+            }
+
+function bc(v) { return typeof v === 'number' ? { v, t: 'n', z: NUM_FMT } : { v: v||'', t: 's' }; }
+
+function checkPage() {
+                if (yPos > 270) {
+                    doc.addPage();
+                    yPos = 20;
+                    return true;
+                }
+                return false;
+            }
+
+function drawJournalHeader() {
+                doc.setFont(undefined, 'bold');
+                doc.setFontSize(9);
+                doc.text('Account', 20, yPos);
+                doc.text('Description', 50, yPos);
+                doc.text('Debit', 148, yPos, { align: 'right' });
+                doc.text('Credit', 190, yPos, { align: 'right' });
+                yPos += 2;
+                doc.setLineWidth(0.4);
+                doc.line(20, yPos, 195, yPos);
+                yPos += 5;
+                doc.setFont(undefined, 'normal');
+                doc.setFontSize(8);
+                doc.setLineWidth(0.1);
+            }
+
+function fc(formula, fmt) { return { f: formula, t: 'n', z: fmt || NUM_FMT }; }
+
+function nc(v, fmt) {
+                if (v === '' || v === null || v === undefined) return { v: '', t: 's' };
+                if (typeof v === 'number') return { v, t: 'n', z: fmt || NUM_FMT };
+                return { v, t: 's' };
+            }
+
+// ── Export Functions (copied from payroll reconciliation tool) ─────────────
+
+// Global state vars that export functions read from
+let journalEntries = [];
+let currentClientData = {};
+let departments = [];
+let lslData = null;
+let leaveThisData = null;
+let leaveLastData = null;
+
+// Stub DOM helpers so export functions can read "period" and "clientName"
+function getEl(id) {
+    return document.getElementById(id) || { value: '' };
+}
+
+// Override getElementById for export context
+const _origGetElById = document.getElementById.bind(document);
+function setupExportContext(snapshot) {
+    journalEntries = snapshot.journalEntries || [];
+    departments = snapshot.departments || [];
+    currentClientData = {
+        clientName: snapshot.clientName,
+        departments: snapshot.departments || [],
+        chartOfAccounts: snapshot.chartOfAccounts || {
+            wagesPayable: '21420',
+            superPayable: '52000',
+            payrollTaxPayable: '21422',
+            workcoverPrepaid: '11195',
+            annualLeaveProvision: '21381',
+            wagesAccrued: '21384',
+            lslCurrentProvision: '21382',
+            lslNonCurrentProvision: '27100'
+        },
+        lslSettings: snapshot.lslSettings || { enabled: false }
+    };
+    window.lastLSLData = snapshot.lslData || null;
+
+    // Create hidden inputs for period and clientName if needed
+    let periodEl = document.getElementById('period');
+    if (!periodEl) {
+        periodEl = document.createElement('input');
+        periodEl.id = 'period';
+        periodEl.style.display = 'none';
+        document.body.appendChild(periodEl);
+    }
+    periodEl.value = snapshot.period || '';
+
+    let clientEl = document.getElementById('clientName');
+    if (!clientEl) {
+        clientEl = document.createElement('input');
+        clientEl.id = 'clientName';
+        clientEl.style.display = 'none';
+        document.body.appendChild(clientEl);
+    }
+    clientEl.value = snapshot.clientName || '';
+
+    // Restore all globals needed for export functions
+    lslData = snapshot.lslData || null;
+    leaveThisData = null;
+    leaveLastData = null;
+    window.lastLSLData = snapshot.lastLSLData || null;
+    // Ensure employeeProvisions always exists to avoid crashes on old snapshots
+    if (window.lastLSLData && !window.lastLSLData.employeeProvisions) {
+        window.lastLSLData.employeeProvisions = [];
+    }
+    window.lastLeaveMovement = snapshot.lastLeaveMovement || null;
+    window._snap_employeeLeaveBalances = snapshot.employeeLeaveBalances || [];
+    window.lastAccrualData = snapshot.lastAccrualData || null;
+    window.lastPayrollTaxBreakdown = snapshot.lastPayrollTaxBreakdown || null;
+    // Set reconciliation data globals used by Excel export
+    window._snap_earningsByDept = snapshot.earningsByDept || {};
+    window._snap_leaveMovement = snapshot.leaveMovement || {};
+    window._snap_accrualMovement = snapshot.accrualMovement || {};
+    window._snap_payrollTaxByDept = snapshot.payrollTaxByDept || {};
+    window._snap_workcoverByDept = snapshot.workcoverByDept || {};
+    window._snap_openingBalances = snapshot.openingBalances || {};
+    window._snap_closingBalances = snapshot.closingBalances || {};
+
+    // Also set CoA hidden fields if they exist
+    const coa = currentClientData.chartOfAccounts;
+    const coaMap = {
+        coa_wagesPayable: coa.wagesPayable,
+        coa_superPayable: coa.superPayable,
+        coa_payrollTaxPayable: coa.payrollTaxPayable,
+        coa_workcoverPrepaid: coa.workcoverPrepaid,
+        coa_annualLeaveProvision: coa.annualLeaveProvision,
+        coa_wagesAccrued: coa.wagesAccrued,
+        coa_lslCurrentProvision: coa.lslCurrentProvision,
+        coa_lslNonCurrentProvision: coa.lslNonCurrentProvision
+    };
+    Object.entries(coaMap).forEach(([id, val]) => {
+        let el = document.getElementById(id);
+        if (!el) {
+            el = document.createElement('input');
+            el.id = id;
+            el.style.display = 'none';
+            document.body.appendChild(el);
+        }
+        el.value = val || '';
+    });
+}
+
+// In history context, use saved leave data from snapshot
+function extractEmployeeLeaveBalances() {
+    return window._snap_employeeLeaveBalances || [];
+}
+
+function exportAuditPDF(snapshot) {
+    setupExportContext(snapshot);
+    // Build hidden output div with journal table that generateAuditReport reads from
+    let outputDiv = document.getElementById('output');
+    if (!outputDiv) {
+        outputDiv = document.createElement('div');
+        outputDiv.id = 'output';
+        outputDiv.style.display = 'none';
+        document.body.appendChild(outputDiv);
+    }
+    // Build journal table HTML
+    const entries = snapshot.journalEntries || [];
+    const totalDr = entries.reduce((s, e) => s + (e.debit || 0), 0);
+    const totalCr = entries.reduce((s, e) => s + (e.credit || 0), 0);
+    let rows = entries.map(e => {
+        if (!e.debit && !e.credit) return '';
+        const dr = e.debit > 0 ? '$' + e.debit.toFixed(2) : '';
+        const cr = e.credit > 0 ? '$' + e.credit.toFixed(2) : '';
+        return `<tr><td>${e.account||''}</td><td>${e.name||''}</td><td>${dr}</td><td>${cr}</td></tr>`;
+    }).join('');
+    rows += `<tr class="highlight"><td colspan="2">TOTALS</td><td>$${totalDr.toFixed(2)}</td><td>$${totalCr.toFixed(2)}</td></tr>`;
+    outputDiv.innerHTML = `<table><thead><tr><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>${rows}</tbody></table>`;
+    generateAuditReport();
+}
+
+function exportAuditExcel(snapshot) {
+    setupExportContext(snapshot);
+    // Build hidden output div with journal table
+    let outputDiv = document.getElementById('output');
+    if (!outputDiv) {
+        outputDiv = document.createElement('div');
+        outputDiv.id = 'output';
+        outputDiv.style.display = 'none';
+        document.body.appendChild(outputDiv);
+    }
+    const entries = snapshot.journalEntries || [];
+    const totalDr = entries.reduce((s, e) => s + (e.debit || 0), 0);
+    const totalCr = entries.reduce((s, e) => s + (e.credit || 0), 0);
+    let rows = entries.map(e => {
+        if (!e.debit && !e.credit) return '';
+        const dr = e.debit > 0 ? '$' + e.debit.toFixed(2) : '';
+        const cr = e.credit > 0 ? '$' + e.credit.toFixed(2) : '';
+        return `<tr><td>${e.account||''}</td><td>${e.name||''}</td><td>${dr}</td><td>${cr}</td></tr>`;
+    }).join('');
+    rows += `<tr class="highlight"><td colspan="2">TOTALS</td><td>$${totalDr.toFixed(2)}</td><td>$${totalCr.toFixed(2)}</td></tr>`;
+    outputDiv.innerHTML = `<table><thead><tr><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>${rows}</tbody></table>`;
+    generateExcelAuditReport();
+}
+
+function exportJournalCSV(snapshot) {
+    setupExportContext(snapshot);
+    downloadJournalCSV();
+}
+
+function generateAuditReport() {
+            try {
+                const { jsPDF } = window.jspdf;
+                
+                if (!jsPDF) {
+                    alert('PDF library not loaded. Please refresh the page and try again.');
+                    return;
+                }
+                
+                const doc = new jsPDF();
+            
+            const period = document.getElementById('period').value || 'Unknown Period';
+            const clientName = document.getElementById('clientName').value || 'Client';
+            let yPos = 20;
+            
+            // Helper function to add new page if needed
+            function checkPage() {
+                if (yPos > 270) {
+                    doc.addPage();
+                    yPos = 20;
+                    return true;
+                }
+                return false;
+            }
+            
+            // Page 1: Cover Page
+            doc.setFontSize(24);
+            doc.setFont(undefined, 'bold');
+            doc.text('PAYROLL RECONCILIATION', 105, 60, { align: 'center' });
+            doc.text('AUDIT REPORT', 105, 75, { align: 'center' });
+            
+            doc.setFontSize(16);
+            doc.setFont(undefined, 'normal');
+            doc.text(clientName, 105, 100, { align: 'center' });
+            doc.text(period, 105, 110, { align: 'center' });
+            
+            doc.setFontSize(10);
+            const today = new Date();
+            const formattedDate = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+            doc.text(`Generated: ${formattedDate}`, 105, 130, { align: 'center' });
+            
+            // Page 2: Journal Entries — read directly from the on-screen table
+            doc.addPage();
+            yPos = 20;
+
+            doc.setFontSize(16);
+            doc.setFont(undefined, 'bold');
+            doc.text('JOURNAL ENTRY SUMMARY', 20, yPos);
+            yPos += 12;
+
+            // Helper: draw column headers and rule
+            function drawJournalHeader() {
+                doc.setFont(undefined, 'bold');
+                doc.setFontSize(9);
+                doc.text('Account', 20, yPos);
+                doc.text('Description', 50, yPos);
+                doc.text('Debit', 148, yPos, { align: 'right' });
+                doc.text('Credit', 190, yPos, { align: 'right' });
+                yPos += 2;
+                doc.setLineWidth(0.4);
+                doc.line(20, yPos, 195, yPos);
+                yPos += 5;
+                doc.setFont(undefined, 'normal');
+                doc.setFontSize(8);
+                doc.setLineWidth(0.1);
+            }
+            drawJournalHeader();
+
+            // Pull rows directly from the rendered on-screen journal table
+            const journalTable = document.querySelector('#output table');
+            if (!journalTable) {
+                doc.text('No journal data available — please run reconciliation first.', 20, yPos);
+            } else {
+                const rows = journalTable.querySelectorAll('tbody tr');
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (!cells.length) return;
+
+                    // Check for page overflow
+                    if (yPos > 272) {
+                        doc.addPage();
+                        yPos = 20;
+                        drawJournalHeader();
+                    }
+
+                    const isTotalsRow = row.classList.contains('highlight') ||
+                                       (cells[0] && cells[0].colSpan > 1);
+
+                    if (isTotalsRow) {
+                        // Totals row — separator then bold line
+                        doc.setLineWidth(0.4);
+                        doc.line(20, yPos, 195, yPos);
+                        yPos += 4;
+                        doc.setFont(undefined, 'bold');
+                        doc.setFontSize(9);
+                        doc.text('TOTALS', 20, yPos);
+                        // Pull debit/credit from last two cells
+                        const debitCell = cells[cells.length - 2];
+                        const creditCell = cells[cells.length - 1];
+                        const debitTxt = debitCell ? debitCell.innerText.trim() : '';
+                        const creditTxt = creditCell ? creditCell.innerText.trim() : '';
+                        if (debitTxt) doc.text(debitTxt, 148, yPos, { align: 'right' });
+                        if (creditTxt) doc.text(creditTxt, 190, yPos, { align: 'right' });
+                        doc.setFont(undefined, 'normal');
+                        doc.setFontSize(8);
+                        doc.setLineWidth(0.1);
+                        yPos += 6;
+                    } else {
+                        // Regular data row — 4 cells: account, name, debit, credit
+                        const accountTxt = cells[0] ? cells[0].innerText.trim() : '';
+                        const nameTxt    = cells[1] ? cells[1].innerText.trim() : '';
+                        const debitTxt   = cells[2] ? cells[2].innerText.trim() : '';
+                        const creditTxt  = cells[3] ? cells[3].innerText.trim() : '';
+
+                        // Truncate name to fit column width (account 20-50, desc 50-130)
+                        const maxNameWidth = 85; // mm at font size 8
+                        let displayName = nameTxt;
+                        while (doc.getTextWidth(displayName) > maxNameWidth && displayName.length > 5) {
+                            displayName = displayName.slice(0, -1);
+                        }
+                        if (displayName !== nameTxt) displayName += '…';
+
+                        doc.text(accountTxt, 20, yPos);
+                        doc.text(displayName, 50, yPos);
+                        if (debitTxt)  doc.text(debitTxt,  148, yPos, { align: 'right' });
+                        if (creditTxt) doc.text(creditTxt, 190, yPos, { align: 'right' });
+                        yPos += 5;
+                    }
+                });
+            }
+            
+            // Page 3+: Balance Sheet Account Breakdowns
+            console.log('Generating balance sheet breakdowns...');
+            addBalanceSheetBreakdowns(doc);
+            
+            // Save the PDF
+            doc.save(`Payroll-Audit-Report-${period.replace(/ /g, '-')}.pdf`);
+            alert('Audit report generated successfully!');
+            
+            } catch (error) {
+                console.error('Error generating audit report:', error);
+                alert(`Error generating audit report:\n\n${error.message}\n\nPlease check the console for details.`);
+            }
+        }
+
+function generateExcelAuditReport() {
+            if (!window.XLSX) { alert('Excel library not loaded. Please refresh the page.'); return; }
+
+            const period     = document.getElementById('period').value || 'Unknown Period';
+            const clientName = document.getElementById('clientName').value || 'Client';
+            const today      = new Date();
+            const dateStr    = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+            const wb         = XLSX.utils.book_new();
+
+            const NUM_FMT = '#,##0.00';
+            const PCT_FMT = '0.00%';
+            const INT_FMT = '#,##0';
+
+            function nc(v, fmt) {
+                if (v === '' || v === null || v === undefined) return { v: '', t: 's' };
+                if (typeof v === 'number') return { v, t: 'n', z: fmt || NUM_FMT };
+                return { v, t: 's' };
+            }
+            function fc(formula, fmt) { return { f: formula, t: 'n', z: fmt || NUM_FMT }; }
+            function bc(v) { return typeof v === 'number' ? { v, t: 'n', z: NUM_FMT } : { v: v||'', t: 's' }; }
+
+            function addSheet(name, rows, colWidths) {
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+                if (colWidths) ws['!cols'] = colWidths.map(w => ({ wch: w }));
+                XLSX.utils.book_append_sheet(wb, ws, name);
+                return ws;
+            }
+
+            // ── SHEET 1: Journal (DOM mirror) ─────────────────────────────
+            const journalRows = [
+                [clientName, '', '', ''],
+                [`Payroll Reconciliation — ${period}`, '', '', ''],
+                [`Generated: ${dateStr}`, '', '', ''],
+                ['', '', '', ''],
+                ['Account Code', 'Description', 'Debit', 'Credit'],
+            ];
+            const jTable = document.querySelector('#output table');
+            let totalDebitVal = 0, totalCreditVal = 0;
+            const jDataStart = 6;
+            let jRowCount = 0;
+            if (jTable) {
+                jTable.querySelectorAll('tbody tr').forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (!cells.length) return;
+                    if (row.classList.contains('highlight') || cells[0]?.colSpan > 1) return;
+                    const acct  = cells[0]?.innerText.trim()||'';
+                    const name  = cells[1]?.innerText.trim()||'';
+                    const dRaw  = parseFloat((cells[2]?.innerText||'').replace(/[$,]/g,''))||0;
+                    const cRaw  = parseFloat((cells[3]?.innerText||'').replace(/[$,]/g,''))||0;
+                    if (!acct && !name) return;
+                    totalDebitVal += dRaw; totalCreditVal += cRaw; jRowCount++;
+                    journalRows.push([acct, name, dRaw ? nc(dRaw) : '', cRaw ? nc(cRaw) : '']);
+                });
+            } else {
+                journalEntries.forEach(e => {
+                    if (e.debit > 0 || e.credit > 0) {
+                        totalDebitVal += e.debit; totalCreditVal += e.credit; jRowCount++;
+                        journalRows.push([e.account, e.name, e.debit ? nc(e.debit) : '', e.credit ? nc(e.credit) : '']);
+                    }
+                });
+            }
+            const jEnd = jDataStart - 1 + jRowCount;
+            journalRows.push(['', '', '', '']);
+            journalRows.push(['TOTALS', '', fc(`SUM(C${jDataStart}:C${jEnd})`), fc(`SUM(D${jDataStart}:D${jEnd})`)]);
+            const balanced = Math.abs(totalDebitVal - totalCreditVal) < 0.01;
+            journalRows.push([balanced ? '✅ BALANCED' : `⚠️ OUT OF BALANCE $${Math.abs(totalDebitVal-totalCreditVal).toFixed(2)}`, '', '', '']);
+            addSheet('Journal', journalRows, [16, 50, 16, 16]);
+
+            // ── SHEET 2: Earnings Summary ─────────────────────────────────
+            const earnRows = [
+                [clientName, '', '', '', '', ''],
+                [`Earnings Summary — ${period}`, '', '', '', '', ''],
+                ['', '', '', '', '', ''],
+                ['Department', 'Wages', 'Bonus / OT', 'Allowances', 'Superannuation', 'Total'],
+            ];
+            let grandWages=0, grandBonus=0, grandAllow=0, grandSuper=0;
+            const eStart = 5; let eCount = 0;
+            departments.forEach(dept => {
+                const p = dept.accountPrefix;
+                const w = journalEntries.find(e=>e.account===`${p}30`)?.debit||0;
+                const b = journalEntries.find(e=>e.account===`${p}31`)?.debit||0;
+                const a = journalEntries.find(e=>e.account===`${p}32`)?.debit||0;
+                const s = journalEntries.find(e=>e.account===`${p}33`)?.debit||0;
+                if (!w&&!b&&!a&&!s) return;
+                grandWages+=w; grandBonus+=b; grandAllow+=a; grandSuper+=s; eCount++;
+                const r = eStart + eCount - 1;
+                earnRows.push([dept.name, nc(w), nc(b), nc(a), nc(s), fc(`SUM(B${r}:E${r})`)]);
+            });
+            const eEnd = eStart + eCount - 1;
+            earnRows.push(['', '', '', '', '', '']);
+            earnRows.push(['TOTAL', fc(`SUM(B${eStart}:B${eEnd})`), fc(`SUM(C${eStart}:C${eEnd})`), fc(`SUM(D${eStart}:D${eEnd})`), fc(`SUM(E${eStart}:E${eEnd})`), fc(`SUM(F${eStart}:F${eEnd})`)]);
+            addSheet('Earnings', earnRows, [24, 16, 16, 16, 18, 18]);
+
+            // ── SHEET 3: Annual Leave ─────────────────────────────────────
+            const provEntry = journalEntries.find(e=>e.account===(currentClientData.chartOfAccounts?.annualLeaveProvision||'21381'));
+            const provMove = provEntry ? (provEntry.credit > 0 ? provEntry.credit : -provEntry.debit) : 0;
+            const alRows = [
+                [clientName, '', ''],
+                [`Annual Leave Movement — ${period}`, '', ''],
+                ['', '', ''],
+                ['Department', 'AL Movement', 'Account'],
+            ];
+            let alStart = 5; let alCount = 0;
+            departments.forEach(dept => {
+                const alE = journalEntries.find(e=>e.account===`${dept.accountPrefix}34`);
+                if (!alE) return;
+                alCount++;
+                alRows.push([dept.name, nc(alE.debit > 0 ? alE.debit : -alE.credit), `${dept.accountPrefix}34`]);
+            });
+            const alEnd2 = alStart + alCount - 1;
+            alRows.push(['', '', '']);
+            alRows.push(['Total AL Movement', fc(`SUM(B${alStart}:B${alEnd2})`), '']);
+            alRows.push(['Provision for Annual Leave (21381)', nc(provMove), currentClientData.chartOfAccounts?.annualLeaveProvision||'21381']);
+            addSheet('Annual Leave', alRows, [30, 20, 14]);
+
+            // ── SHEET 4: Payroll Tax Calculations ─────────────────────────
+            const ptData = window.lastPayrollTaxBreakdown;
+            const ptRows = [
+                [clientName, '', '', '', '', '', ''],
+                [`Payroll Tax Calculation — ${period}`, '', '', '', '', '', ''],
+                ['', '', '', '', '', '', ''],
+            ];
+            if (ptData && ptData.breakdown && ptData.breakdown.length) {
+                ptRows.push(['Method:', 'Proportionate Deduction (Multi-State)', '', '', '', '', '']);
+                ptRows.push(['Total Payroll Tax:', nc(ptData.totalTax), '', '', '', '', '']);
+                ptRows.push(['', '', '', '', '', '', '']);
+                ptRows.push(['State', 'Taxable Wages', '% of Total', 'Annual Threshold', 'Proportionate Deduction', 'Taxable Amount', 'Tax Payable']);
+                const ptStart = ptRows.length + 1; let ptCount = 0;
+                ptData.breakdown.forEach(state => {
+                    ptCount++;
+                    const r = ptStart + ptCount - 1;
+                    const totalRows = `B${ptStart}:B${ptStart+ptData.breakdown.length-1}`;
+                    ptRows.push([
+                        state.state,
+                        nc(state.wages),
+                        fc(`B${r}/SUM(${totalRows})`, PCT_FMT),
+                        nc(state.threshold),
+                        nc(state.proportionateDeduction),
+                        fc(`MAX(0,B${r}-E${r})`),
+                        nc(state.tax),
+                    ]);
+                });
+                const ptEnd = ptStart + ptCount - 1;
+                ptRows.push(['', '', '', '', '', '', '']);
+                ptRows.push(['TOTAL', fc(`SUM(B${ptStart}:B${ptEnd})`), '', '', '', fc(`SUM(F${ptStart}:F${ptEnd})`), fc(`SUM(G${ptStart}:G${ptEnd})`)]);
+            } else {
+                ptRows.push(['No payroll tax data — run reconciliation first.', '', '', '', '', '', '']);
+            }
+            addSheet('Payroll Tax', ptRows, [20, 18, 14, 20, 22, 18, 16]);
+
+            // ── SHEET 5: LSL Provision Calculations (AASB 119) ───────────
+            const lslData = window.lastLSLData;
+            const settings = currentClientData.lslSettings || {};
+            const onCostRate    = settings.onCost    || 0.1875;
+            const inflationRate = settings.inflation || 0.035;
+            const defaultProbs  = [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,0.9,1.0];
+            const g100Rates     = settings.g100Rates || {0:0,1:0.0387,2:0.0388,3:0.0403,4:0.0423,5:0.0444,6:0.0465,7:0.0486,8:0.0507,9:0.0528,10:0.0549};
+
+            const lslRows = [
+                [clientName, '', '', '', '', '', '', '', '', '', ''],
+                [`LSL Provision (AASB 119) — ${period}`, '', '', '', '', '', '', '', '', '', ''],
+                ['AASB 119 | Formula: PV = Raw × (1 + On-Cost) × Probability × (1 + Inflation)^n ÷ (1 + Discount)^n', '', '', '', '', '', '', '', '', '', ''],
+                ['', '', '', '', '', '', '', '', '', '', ''],
+                ['Assumptions', '', '', '', '', '', '', '', '', '', ''],
+                ['On-Cost Rate', nc(onCostRate, PCT_FMT), '', '', '', '', '', '', '', '', ''],
+                ['Salary Inflation Rate', nc(inflationRate, PCT_FMT), '', '', '', '', '', '', '', '', ''],
+                ['', '', '', '', '', '', '', '', '', '', ''],
+                ['Employee', 'State', 'Vesting Yrs', 'Years Service', 'Raw LSL Balance', 'After On-Cost', 'Probability', 'Years to Vest', 'Inflation Factor', 'Discount Factor', 'AASB 119 Provision'],
+            ];
+            const lslStart = lslRows.length + 1; let lslCount = 0;
+            if (lslData && lslData.employeeProvisions) {
+                lslData.employeeProvisions.forEach(emp => {
+                    lslCount++;
+                    const r = lslStart + lslCount - 1;
+                    const vestingYrs = emp.vestingYears || 10;
+                    const isVested   = emp.yearsOfService >= vestingYrs;
+                    let probVal;
+                    if (isVested) { probVal = 1.0; }
+                    else {
+                        const pIdx = vestingYrs === 7 ? Math.min(Math.floor((emp.yearsOfService/7)*10),10) : Math.min(Math.floor(emp.yearsOfService),10);
+                        probVal = settings[`prob${pIdx}`] !== undefined ? settings[`prob${pIdx}`] : defaultProbs[pIdx];
+                    }
+                    const yToVest   = isVested ? 0 : Math.max(1, vestingYrs - emp.yearsOfService);
+                    const inflFact  = isVested ? 1 : Math.pow(1 + inflationRate, yToVest);
+                    const dYear     = isVested ? 0 : Math.min(Math.ceil(yToVest), 10);
+                    const dRate     = isVested ? 0 : (g100Rates[dYear] || 0.05);
+                    const dFact     = isVested ? 1 : (1 / Math.pow(1 + dRate, yToVest));
+                    lslRows.push([
+                        emp.name + (emp.hasOverride ? ' 🔧' : ''),
+                        emp.state || 'QLD',
+                        nc(vestingYrs, INT_FMT),
+                        nc(parseFloat(emp.yearsOfService.toFixed(4))),
+                        nc(emp.rawLiability),
+                        fc(`E${r}*(1+$B$6)`),
+                        nc(probVal, PCT_FMT),
+                        nc(parseFloat(yToVest.toFixed(4))),
+                        nc(parseFloat(inflFact.toFixed(6))),
+                        nc(parseFloat(dFact.toFixed(6))),
+                        fc(`F${r}*G${r}*I${r}*J${r}`),
+                    ]);
+                });
+            }
+            const lslEnd = lslStart + lslCount - 1;
+            lslRows.push(['', '', '', '', '', '', '', '', '', '', '']);
+            lslRows.push(['TOTALS', '', '', '', fc(`SUM(E${lslStart}:E${lslEnd})`), fc(`SUM(F${lslStart}:F${lslEnd})`), '', '', '', '', fc(`SUM(K${lslStart}:K${lslEnd})`)]);
+            lslRows.push(['', '', '', '', '', '', '', '', '', '', '']);
+            lslRows.push(['Current Liability (21382 — vested)',       '', '', '', '', '', '', '', '', '', nc(lslData?.currentLiability||0)]);
+            lslRows.push(['Non-Current Liability (24800 — unvested)', '', '', '', '', '', '', '', '', '', nc(lslData?.nonCurrentLiability||0)]);
+            lslRows.push(['Total AASB 119 Provision',                 '', '', '', '', '', '', '', '', '', nc(lslData?.currentProvision||0)]);
+            lslRows.push(['Monthly Movement',                         '', '', '', '', '', '', '', '', '', nc(lslData?.movement||0)]);
+            addSheet('LSL Provision', lslRows, [28, 8, 12, 14, 16, 16, 12, 13, 14, 14, 18]);
+
+            // ── SHEET 6: Summary ──────────────────────────────────────────
+            const grandTotal = grandWages + grandBonus + grandAllow + grandSuper;
+            const ptEntry2 = journalEntries.find(e=>e.account===(currentClientData.chartOfAccounts?.payrollTaxPayable||'21422'));
+            const wcEntry2 = journalEntries.find(e=>e.account===(currentClientData.chartOfAccounts?.workcoverPrepaid||'11195'));
+            const covRows = [
+                ['LF ADVISORY', ''],
+                ['PAYROLL RECONCILIATION AUDIT REPORT', ''],
+                ['', ''],
+                ['Client',    clientName],
+                ['Period',    period],
+                ['Generated', dateStr],
+                ['', ''],
+                ['EARNINGS SUMMARY', ''],
+                ['Wages & Salaries',  nc(grandWages)],
+                ['Bonus / Overtime',  nc(grandBonus)],
+                ['Allowances',        nc(grandAllow)],
+                ['Superannuation',    nc(grandSuper)],
+                ['Total Payroll',     nc(grandTotal)],
+                ['', ''],
+            ];
+            if (ptEntry2) covRows.push(['Payroll Tax Payable', nc(ptEntry2.credit||0)]);
+            if (wcEntry2) covRows.push(['Workers Compensation', nc(wcEntry2.credit||0)]);
+            covRows.push(['Annual Leave Movement', nc(provMove)]);
+            if (lslData) {
+                covRows.push(['', '']);
+                covRows.push(['LSL PROVISION (AASB 119)', '']);
+                covRows.push(['Current Liability (21382)',    nc(lslData.currentLiability||0)]);
+                covRows.push(['Non-Current Liability (24800)', nc(lslData.nonCurrentLiability||0)]);
+                covRows.push(['Total AASB 119 Provision',    nc(lslData.currentProvision||0)]);
+                covRows.push(['Monthly Movement',            nc(lslData.movement||0)]);
+                covRows.push(['Employees in scope',          nc(lslData.employeeCount||0, INT_FMT)]);
+            }
+            covRows.push(['', '']);
+            covRows.push(['JOURNAL STATUS', '']);
+            covRows.push(['Total Debits',  nc(totalDebitVal)]);
+            covRows.push(['Total Credits', nc(totalCreditVal)]);
+            covRows.push(['Status', balanced ? 'BALANCED ✅' : `OUT OF BALANCE ⚠️`]);
+            addSheet('Summary', covRows, [34, 22]);
+
+            // Summary first
+            const idx = wb.SheetNames.indexOf('Summary');
+            wb.SheetNames.splice(idx, 1);
+            wb.SheetNames.unshift('Summary');
+
+            const safeClient = clientName.replace(/[^a-z0-9]/gi, '_');
+            const safePeriod = period.replace(/[^a-z0-9]/gi, '_');
+            XLSX.writeFile(wb, `${safeClient}_PayrollRecon_${safePeriod}.xlsx`);
+        }
+
+function downloadJournalCSV() {
+            const period = document.getElementById('period').value;
+            let csv = '*Narration,*Date,Description,*AccountCode,*TaxRate,*Amount\n';
+            journalEntries.forEach(e => {
+                if (e.debit > 0) csv += `"PR ${period}",${new Date().toISOString().split('T')[0]},"${e.name}",${e.account},Tax Exempt,${e.debit.toFixed(2)}\n`;
+                if (e.credit > 0) csv += `"PR ${period}",${new Date().toISOString().split('T')[0]},"${e.name}",${e.account},Tax Exempt,-${e.credit.toFixed(2)}\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `payroll-journal-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        }
+window.addEventListener('scroll', function() { document.getElementById('nav').classList.toggle('scrolled', window.scrollY > 20); });
+function toggleNav() { document.getElementById('mobileNav').classList.toggle('open'); }
+function openBooking() { document.getElementById('bookingModal') && document.getElementById('bookingModal').classList.add('open'); }
+function closeBooking() { document.getElementById('bookingModal') && document.getElementById('bookingModal').classList.remove('open'); }
+</script>
+</body>
+</html>

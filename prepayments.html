@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prepayments Manager — LF Advisory</title>
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;600;700;800&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --primary:#2d6670; --primary-dark:#1e4a52; --secondary:#5a7a3a;
+  --accent:#c8a96e; --dark:#1a2332; --mid:#6b7c8d; --light:#f5f7f8;
+  --white:#fff; --danger:#c0392b; --warn:#e67e22; --ok:#27ae60;
+  --border:#dde3e8; --sans:'Lato',sans-serif; --head:'Raleway',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--light);color:var(--dark);font-size:14px}
+
+nav{background:var(--dark);padding:0 2rem;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100}
+.nav-brand{font-family:var(--head);font-weight:700;font-size:1.1rem;color:#fff;letter-spacing:.05em}
+.nav-brand span{color:var(--accent)}
+.nav-links a{color:#aab4be;text-decoration:none;font-size:.8rem;font-family:var(--head);font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-left:1.5rem;transition:color .2s}
+.nav-links a:hover{color:var(--accent)}
+
+.page-header{background:linear-gradient(135deg,var(--primary-dark) 0%,var(--primary) 60%,#3d8a96 100%);color:#fff;padding:2.5rem 2rem 2rem}
+.page-header h1{font-family:var(--head);font-weight:800;font-size:2rem;letter-spacing:-.02em;margin-bottom:.3rem}
+.page-header p{opacity:.8;font-size:.95rem}
+
+.container{max-width:1320px;margin:0 auto;padding:2rem 1.5rem}
+
+/* Tiles */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem}
+.tile{background:var(--white);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07);padding:1.2rem 1.5rem;border-left:4px solid var(--primary)}
+.tile.t2{border-left-color:var(--accent)}.tile.t3{border-left-color:var(--secondary)}.tile.t4{border-left-color:var(--warn)}
+.tile-lbl{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--mid);margin-bottom:.25rem}
+.tile-val{font-family:var(--head);font-size:1.55rem;font-weight:800;color:var(--dark)}
+.tile-sub{font-size:.72rem;color:var(--mid);margin-top:.15rem}
+
+/* Card */
+.card{background:var(--white);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07);padding:1.5rem;margin-bottom:1.5rem}
+.card-head{font-family:var(--head);font-weight:700;font-size:.85rem;text-transform:uppercase;letter-spacing:.08em;color:var(--primary);margin-bottom:1.2rem;padding-bottom:.7rem;border-bottom:2px solid var(--light);display:flex;align-items:center;justify-content:space-between}
+
+/* Controls */
+.ctrl-bar{display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap}
+.cg{display:flex;flex-direction:column;gap:.3rem}
+.cg label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mid)}
+.cg input,.cg select{border:1.5px solid var(--border);border-radius:6px;padding:.5rem .75rem;font-family:var(--sans);font-size:.9rem;color:var(--dark);background:var(--white);transition:border-color .2s}
+.cg input:focus,.cg select:focus{outline:none;border-color:var(--primary)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:.35rem;padding:.5rem 1rem;border-radius:6px;border:none;cursor:pointer;font-family:var(--head);font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;transition:all .2s;white-space:nowrap}
+.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:var(--primary-dark)}
+.btn-secondary{background:var(--secondary);color:#fff}.btn-secondary:hover{background:#496430}
+.btn-accent{background:var(--accent);color:var(--dark)}.btn-accent:hover{background:#b8953e}
+.btn-outline{background:transparent;color:var(--primary);border:1.5px solid var(--primary)}.btn-outline:hover{background:var(--primary);color:#fff}
+.btn-danger{background:var(--danger);color:#fff}.btn-danger:hover{background:#a93226}
+.btn-sm{padding:.33rem .7rem;font-size:.7rem}
+.btn-group{display:flex;gap:.5rem}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:1.5rem}
+.tab{padding:.7rem 1.4rem;cursor:pointer;font-family:var(--head);font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mid);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab.on{color:var(--primary);border-bottom-color:var(--primary)}
+.tc{display:none}.tc.on{display:block}
+
+/* Table */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+thead th{background:var(--dark);color:#fff;font-family:var(--head);font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;padding:.7rem .75rem;text-align:left;white-space:nowrap}
+th.r,td.r{text-align:right}
+tbody tr{border-bottom:1px solid var(--border);transition:background .12s}
+tbody tr:hover{background:#f0f5f6}
+tbody td{padding:.6rem .75rem;vertical-align:middle}
+.done-row{opacity:.55}
+.manual-row td:first-child::before{content:'';display:inline-block;width:3px;height:3px;background:var(--accent);border-radius:50%;margin-right:6px;vertical-align:middle}
+
+/* Progress */
+.prog{background:var(--border);border-radius:3px;height:5px;margin-top:4px;overflow:hidden}
+.prog-fill{height:100%;border-radius:3px;background:var(--primary);transition:width .3s}
+.prog-fill.amber{background:var(--accent)}.prog-fill.grey{background:var(--mid)}
+
+/* Badge */
+.badge{display:inline-block;padding:.15rem .5rem;border-radius:20px;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.b-active{background:#d4edda;color:#155724}.b-done{background:#e2e3e5;color:#495057}
+.b-manual{background:#fff3cd;color:#856404}.b-sep{background:#cce5ff;color:#004085}
+
+/* Journal */
+.jnl-tbl thead th{background:var(--secondary)}
+.jnl-tbl tfoot td{font-weight:700;font-family:var(--head);background:var(--light);border-top:2px solid var(--border);font-size:.8rem}
+.dr-amt{color:var(--dark)}.cr-amt{color:var(--mid)}
+
+/* Modal */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;padding:2rem 1rem;overflow-y:auto}
+.modal.on{display:flex;align-items:flex-start;justify-content:center}
+.modal-box{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:580px;position:relative;margin:auto}
+.modal-ttl{font-family:var(--head);font-weight:700;font-size:1.1rem;color:var(--primary);margin-bottom:1.5rem}
+.modal-x{position:absolute;top:1rem;right:1rem;background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--mid)}
+.modal-x:hover{color:var(--danger)}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
+.frow.full{grid-template-columns:1fr}
+.fg{display:flex;flex-direction:column;gap:.3rem}
+.fg label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mid)}
+.fg input,.fg select{border:1.5px solid var(--border);border-radius:6px;padding:.52rem .75rem;font-family:var(--sans);font-size:.9rem;color:var(--dark)}
+.fg input:focus,.fg select:focus{outline:none;border-color:var(--primary)}
+.fg small{color:var(--mid);font-size:.72rem}
+.modal-foot{display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border)}
+
+/* Drop zone */
+.drop{border:2px dashed var(--border);border-radius:10px;padding:2.5rem;text-align:center;cursor:pointer;transition:all .2s;color:var(--mid)}
+.drop:hover,.drop.over{border-color:var(--primary);background:#f0f8fa;color:var(--primary)}
+.drop-icon{font-size:2.5rem;margin-bottom:.6rem}
+.drop p{font-family:var(--head);font-weight:600}
+
+/* Alert */
+.alert{padding:.85rem 1.1rem;border-radius:8px;margin-bottom:1rem;font-size:.87rem}
+.a-info{background:#e8f4f8;border-left:4px solid var(--primary);color:var(--primary-dark)}
+.a-ok{background:#d4edda;border-left:4px solid var(--ok);color:#155724}
+.a-warn{background:#fff3cd;border-left:4px solid var(--warn);color:#7d5a00}
+
+code{font-family:monospace;background:var(--light);padding:.1rem .35rem;border-radius:3px;font-size:.85em}
+
+footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-top:2rem;border-top:1px solid var(--border)}
+@media(max-width:900px){.tiles{grid-template-columns:1fr 1fr}.frow{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">LF <span>Advisory</span></div>
+  <div class="nav-links">
+    <a href="portal.html">← Portal</a>
+    <a href="payroll-reconciliation.html">Payroll Rec</a>
+  </div>
+</nav>
+
+<div class="page-header">
+  <div class="container" style="padding:0">
+    <h1>📋 Prepayments Manager</h1>
+    <p>Amortise prepaid expenses by month · generate journals · track balances</p>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- TILES -->
+  <div class="tiles">
+    <div class="tile"><div class="tile-lbl">Total Prepaid Balance</div><div class="tile-val" id="tBalance">$0.00</div><div class="tile-sub">Remaining on B/S</div></div>
+    <div class="tile t2"><div class="tile-lbl">This Period Amortisation</div><div class="tile-val" id="tMonthly">$0.00</div><div class="tile-sub" id="tPeriodLbl">–</div></div>
+    <div class="tile t3"><div class="tile-lbl">Active Items</div><div class="tile-val" id="tActive">0</div><div class="tile-sub">being amortised</div></div>
+    <div class="tile t4"><div class="tile-lbl">Fully Amortised</div><div class="tile-val" id="tDone">0</div><div class="tile-sub">ready to clear</div></div>
+  </div>
+
+  <!-- SETTINGS BAR -->
+  <div class="card">
+    <div class="card-head">
+      <span>Period & Settings</span>
+      <div class="btn-group">
+        <button class="btn btn-outline btn-sm" onclick="openImport()">⬆ Import Excel</button>
+        <button class="btn btn-primary btn-sm" onclick="openAdd()">+ Add Item</button>
+        <button class="btn btn-secondary btn-sm" onclick="persist()">💾 Save</button>
+      </div>
+    </div>
+    <div class="ctrl-bar">
+      <div class="cg">
+        <label>Current Period</label>
+        <input type="month" id="period" onchange="recalc()">
+      </div>
+      <div class="cg">
+        <label>Prepaid Asset Account</label>
+        <input type="text" id="assetAcct" value="5400" style="width:110px" onchange="recalc()">
+      </div>
+      <div class="cg" style="margin-left:auto">
+        <label>Show</label>
+        <select id="filterSel" onchange="renderSchedule()">
+          <option value="all">All Items</option>
+          <option value="active">Active Only</option>
+          <option value="done">Fully Amortised</option>
+          <option value="manual">Manual / No Calc</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab on" data-tab="schedule" onclick="switchTab(this)">Amortisation Schedule</div>
+    <div class="tab" data-tab="journal" onclick="switchTab(this)">Journal Entry</div>
+    <div class="tab" data-tab="byacct" onclick="switchTab(this)">By GL Account</div>
+  </div>
+
+  <!-- TAB: SCHEDULE -->
+  <div class="tc on" id="tc-schedule">
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table id="schedTbl">
+          <thead><tr>
+            <th>Supplier</th><th>Particulars</th>
+            <th class="r">Amount</th><th class="r">Months</th>
+            <th>Date Started</th><th>Start Month</th><th>End Month</th>
+            <th class="r">Elapsed</th><th class="r">Mthly Charge</th>
+            <th class="r">Remaining</th><th>Expense Acct</th>
+            <th>Status</th><th></th>
+          </tr></thead>
+          <tbody id="schedBody"><tr><td colspan="13" style="text-align:center;padding:2.5rem;color:var(--mid)">No items yet — import an Excel file or add items manually.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-outline" onclick="exportSchedPDF()">📄 Export PDF</button>
+      <button class="btn btn-accent" onclick="exportSchedXLSX()">📊 Export Excel</button>
+    </div>
+  </div>
+
+  <!-- TAB: JOURNAL -->
+  <div class="tc" id="tc-journal">
+    <div class="alert a-info" id="jnlNote">–</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table class="jnl-tbl">
+          <thead><tr><th>Account</th><th>Description</th><th class="r">Debit</th><th class="r">Credit</th></tr></thead>
+          <tbody id="jnlBody"></tbody>
+          <tfoot id="jnlFoot"></tfoot>
+        </table>
+      </div>
+    </div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-outline" onclick="exportJnlPDF()">📄 Export PDF</button>
+      <button class="btn btn-accent" onclick="exportJnlXLSX()">📊 Export Excel</button>
+    </div>
+  </div>
+
+  <!-- TAB: BY ACCOUNT -->
+  <div class="tc" id="tc-byacct">
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Expense Account</th><th class="r">This Period Charge</th><th class="r">Remaining Balance</th><th class="r">Items</th></tr></thead>
+          <tbody id="acctBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ADD/EDIT MODAL -->
+<div class="modal" id="addModal">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeAdd()">✕</button>
+    <div class="modal-ttl" id="addTitle">Add Prepayment Item</div>
+    <input type="hidden" id="editIdx" value="-1">
+    <div class="frow">
+      <div class="fg"><label>Supplier *</label><input id="fSup" placeholder="e.g. Graphisoft"></div>
+      <div class="fg"><label>Particulars *</label><input id="fPart" placeholder="e.g. Annual Subscription - Archicad"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Amount ($) *</label><input type="number" id="fAmt" placeholder="0.00" step="0.01" min="0"></div>
+      <div class="fg"><label>Length (months)</label><input type="number" id="fLen" placeholder="12" min="1" max="600"><small>Leave blank for manual balance items</small></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Date Started</label><input type="date" id="fDate"><small>Actual invoice / commencement date</small></div>
+      <div class="fg"><label>Expense Account</label><input id="fAcct" placeholder="e.g. 3475"><small>Type "Separate jnl" to exclude from journal</small></div>
+    </div>
+    <div class="frow full">
+      <div class="fg"><label>Notes</label><input id="fNotes" placeholder="Optional"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeAdd()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveItem()">Save Item</button>
+    </div>
+  </div>
+</div>
+
+<!-- IMPORT MODAL -->
+<div class="modal" id="importModal">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeImport()">✕</button>
+    <div class="modal-ttl">Import from Excel</div>
+    <div class="alert a-info">
+      Expected columns: <strong>Supplier, Particulars, Amount, Prepayment Length (months), Date Started, Offset Account</strong>.<br>
+      Headers on row 7, data from row 9 (matching the standard template). Manual balance items (no calc data) are also imported.
+    </div>
+    <div class="drop" id="dropZone" onclick="document.getElementById('impFile').click()">
+      <div class="drop-icon">📂</div>
+      <p>Click to browse or drag & drop</p>
+      <small>.xlsx or .xls accepted</small>
+    </div>
+    <input type="file" id="impFile" accept=".xlsx,.xls" style="display:none" onchange="handleFile(this.files[0])">
+    <div id="impPreview" style="display:none;margin-top:1rem">
+      <div class="alert a-ok" id="impStatus"></div>
+      <div style="display:flex;gap:.6rem;justify-content:flex-end">
+        <button class="btn btn-outline btn-sm" onclick="closeImport()">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="confirmImport()">Import Items</button>
+      </div>
+    </div>
+    <div class="alert a-warn" id="impErr" style="display:none;margin-top:1rem"></div>
+  </div>
+</div>
+
+<footer>LF Advisory Prepayments Manager &nbsp;·&nbsp; <a href="portal.html" style="color:var(--mid)">Back to Portal</a></footer>
+
+<script>
+// ─── Auth ────────────────────────────────────────────────────────────────────
+if (sessionStorage.getItem('portalAuth') !== 'true') location.href = 'portal.html';
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let items = [];
+let staged = [];
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const eom = (y, m) => new Date(y, m + 1, 0);   // end of month (0-based m)
+const fmt$ = v => v == null || isNaN(v) ? '—' : '$' + parseFloat(v).toLocaleString('en-AU', {minimumFractionDigits:2, maximumFractionDigits:2});
+const fmtDate = d => { if (!d) return '—'; const dt = new Date(d); return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`; };
+const fmtISO = d => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; };
+
+function getPeriod() {
+  const v = $('period').value;
+  if (!v) return new Date();
+  const [y, m] = v.split('-').map(Number);
+  return new Date(y, m - 1, 1);
+}
+
+function periodLabel() {
+  return getPeriod().toLocaleString('en-AU', {month:'long', year:'numeric'});
+}
+
+// ─── Core calculation ────────────────────────────────────────────────────────
+function calcItem(raw) {
+  const item = {...raw};
+  const hasCalc = item.amount && item.length && item.dateStarted;
+
+  if (!hasCalc) {
+    item._manual = true;
+    item._remaining = parseFloat(item.manualBalance || item.amount || 0);
+    item._status = 'manual';
+    item._charge = 0;
+    return item;
+  }
+
+  const amt = parseFloat(item.amount);
+  const len = parseInt(item.length);
+  const ds  = new Date(item.dateStarted);
+  const cp  = getPeriod();  // first day of current period month
+
+  // Start Month = last day of month BEFORE date started
+  const smEOM = eom(ds.getFullYear(), ds.getMonth() - 1);
+
+  // End Month = last day of (StartMonth + len months)
+  const emEOM = eom(smEOM.getFullYear(), smEOM.getMonth() + len);
+
+  // Months elapsed = (cpYear - smYear)*12 + (cpMonth - smMonth)
+  const elapsed = Math.max(0, (cp.getFullYear() - smEOM.getFullYear()) * 12 + (cp.getMonth() - smEOM.getMonth()));
+  const clampedElapsed = Math.min(elapsed, len);
+
+  const monthly    = amt / len;
+  const remaining  = Math.max(0, amt - monthly * clampedElapsed);
+  const chargeThis = (elapsed >= 1 && elapsed <= len) ? monthly : 0;
+  const pct        = clampedElapsed / len;
+
+  item._manual        = false;
+  item._startMonth    = smEOM;
+  item._endMonth      = emEOM;
+  item._elapsed       = clampedElapsed;
+  item._monthly       = monthly;
+  item._charge        = chargeThis;
+  item._remaining     = remaining;
+  item._pct           = pct;
+  item._status        = clampedElapsed >= len ? 'done' : 'active';
+
+  return item;
+}
+
+function recalc() {
+  items = items.map(calcItem);
+  renderAll();
+}
+
+function renderAll() {
+  renderTiles();
+  renderSchedule();
+  renderJournal();
+  renderByAcct();
+}
+
+// ─── Tiles ───────────────────────────────────────────────────────────────────
+function renderTiles() {
+  let balance = 0, monthly = 0, active = 0, done = 0;
+  items.forEach(i => {
+    balance += i._remaining || 0;
+    monthly += i._charge || 0;
+    if (!i._manual) { if (i._status === 'done') done++; else active++; }
+  });
+  $('tBalance').textContent  = fmt$(balance);
+  $('tMonthly').textContent  = fmt$(monthly);
+  $('tActive').textContent   = active;
+  $('tDone').textContent     = done;
+  $('tPeriodLbl').textContent = periodLabel();
+}
+
+// ─── Schedule table ───────────────────────────────────────────────────────────
+function renderSchedule() {
+  const filter = $('filterSel').value;
+  let vis = items.filter(i => {
+    if (filter === 'active') return i._status === 'active';
+    if (filter === 'done')   return i._status === 'done';
+    if (filter === 'manual') return i._manual;
+    return true;
+  });
+
+  const tbody = $('schedBody');
+  if (!vis.length) { tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:2rem;color:var(--mid)">No items match filter.</td></tr>'; return; }
+
+  tbody.innerHTML = vis.map(item => {
+    const idx  = items.indexOf(item);
+    const pct  = Math.round((item._pct || 0) * 100);
+    const bar  = pct >= 100 ? 'grey' : pct >= 75 ? 'amber' : '';
+    const sep  = item.account && item.account.toString().toLowerCase().includes('separate');
+    let badge  = '';
+    if (item._manual)            badge = '<span class="badge b-manual">Manual</span>';
+    else if (item._status==='done') badge = '<span class="badge b-done">Done</span>';
+    else                         badge = '<span class="badge b-active">Active</span>';
+
+    return `<tr class="${item._status==='done'?'done-row':''} ${item._manual?'manual-row':''}">
+      <td>${(item.supplier||'').trim()}</td>
+      <td>${item.particulars||''}</td>
+      <td class="r">${item.amount ? fmt$(item.amount) : '—'}</td>
+      <td class="r">${item.length || '—'}</td>
+      <td>${item.dateStarted ? fmtDate(item.dateStarted) : '—'}</td>
+      <td>${item._startMonth ? fmtDate(item._startMonth) : '—'}</td>
+      <td>${item._endMonth   ? fmtDate(item._endMonth)   : '—'}</td>
+      <td class="r">${item._elapsed != null && !item._manual ? `${item._elapsed} / ${item.length}` : '—'}</td>
+      <td class="r">${item._monthly ? fmt$(item._monthly) : '—'}</td>
+      <td class="r">
+        ${fmt$(item._remaining)}
+        ${!item._manual && item._pct != null ? `<div class="prog"><div class="prog-fill ${bar}" style="width:${pct}%"></div></div>` : ''}
+      </td>
+      <td>${item.account ? `<code>${item.account}</code>${sep?' <span class="badge b-sep" style="font-size:.6rem">Sep</span>':''}` : '—'}</td>
+      <td>${badge}</td>
+      <td><div style="display:flex;gap:.3rem">
+        <button class="btn btn-outline btn-sm" onclick="openEdit(${idx})">✏</button>
+        <button class="btn btn-danger btn-sm" onclick="delItem(${idx})">✕</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── Journal ──────────────────────────────────────────────────────────────────
+function buildJournalGroups() {
+  const groups = {};
+  let total = 0;
+  items.forEach(item => {
+    if (item._manual || !item._charge || item._charge <= 0) return;
+    const acct = (item.account || '').toString();
+    if (acct.toLowerCase().includes('separate')) return;
+    if (!groups[acct]) groups[acct] = { account: acct, rows: [], total: 0 };
+    groups[acct].rows.push(item);
+    groups[acct].total += item._charge;
+    total += item._charge;
+  });
+  return { groups, total };
+}
+
+function renderJournal() {
+  const asset = $('assetAcct').value || '5400';
+  const lbl   = periodLabel();
+  $('jnlNote').innerHTML = `<strong>Journal for ${lbl}</strong> — Dr Expense Account / Cr <strong>${asset}</strong> (Prepaid Asset). Items marked "Separate jnl" are excluded.`;
+
+  const { groups, total } = buildJournalGroups();
+  const tbody = $('jnlBody');
+  const tfoot = $('jnlFoot');
+
+  if (!Object.keys(groups).length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--mid)">No amortisation charges for this period.</td></tr>';
+    tfoot.innerHTML = ''; return;
+  }
+
+  tbody.innerHTML = Object.values(groups).map(g => {
+    const desc = g.rows.map(r => `${(r.supplier||'').trim()} — ${r.particulars||''}`).join('; ');
+    return `<tr>
+      <td><code>${g.account}</code></td>
+      <td>${desc}</td>
+      <td class="r dr-amt">${fmt$(g.total)}</td>
+      <td class="r">—</td>
+    </tr>`;
+  }).join('') + `<tr style="border-top:1px solid var(--border)">
+    <td><code>${asset}</code></td>
+    <td>Prepaid Expenses — ${lbl} amortisation</td>
+    <td class="r">—</td>
+    <td class="r cr-amt">${fmt$(total)}</td>
+  </tr>`;
+
+  tfoot.innerHTML = `<tr>
+    <td colspan="2" style="text-transform:uppercase;letter-spacing:.06em">Totals</td>
+    <td class="r">${fmt$(total)}</td>
+    <td class="r">${fmt$(total)}</td>
+  </tr>`;
+}
+
+// ─── By account ───────────────────────────────────────────────────────────────
+function renderByAcct() {
+  const map = {};
+  items.forEach(i => {
+    if (i._manual) return;
+    const a = (i.account || 'UNKNOWN').toString();
+    if (!map[a]) map[a] = { acct: a, charge: 0, bal: 0, n: 0 };
+    map[a].charge += i._charge || 0;
+    map[a].bal    += i._remaining || 0;
+    map[a].n++;
+  });
+  const rows = Object.values(map).sort((a,b) => a.acct.localeCompare(b.acct, undefined, {numeric:true}));
+  $('acctBody').innerHTML = rows.length
+    ? rows.map(r => `<tr><td><code>${r.acct}</code></td><td class="r">${fmt$(r.charge)}</td><td class="r">${fmt$(r.bal)}</td><td class="r">${r.n}</td></tr>`).join('')
+    : '<tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--mid)">No data.</td></tr>';
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+function switchTab(el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  document.querySelectorAll('.tc').forEach(t => t.classList.remove('on'));
+  el.classList.add('on');
+  $('tc-' + el.dataset.tab).classList.add('on');
+}
+
+// ─── Add / Edit ───────────────────────────────────────────────────────────────
+function openAdd() {
+  $('editIdx').value = -1;
+  $('addTitle').textContent = 'Add Prepayment Item';
+  ['fSup','fPart','fDate','fAcct','fNotes'].forEach(id => $(id).value = '');
+  $('fAmt').value = ''; $('fLen').value = '12';
+  $('addModal').classList.add('on');
+}
+
+function openEdit(idx) {
+  const it = items[idx];
+  $('editIdx').value = idx;
+  $('addTitle').textContent = 'Edit Prepayment Item';
+  $('fSup').value   = it.supplier || '';
+  $('fPart').value  = it.particulars || '';
+  $('fAmt').value   = it.amount || '';
+  $('fLen').value   = it.length || '';
+  $('fDate').value  = it.dateStarted ? fmtISO(it.dateStarted) : '';
+  $('fAcct').value  = it.account || '';
+  $('fNotes').value = it.notes || '';
+  $('addModal').classList.add('on');
+}
+
+function closeAdd() { $('addModal').classList.remove('on'); }
+
+function saveItem() {
+  const sup  = $('fSup').value.trim();
+  const part = $('fPart').value.trim();
+  if (!sup || !part) { alert('Supplier and Particulars are required.'); return; }
+
+  const raw = {
+    supplier:    sup,
+    particulars: part,
+    amount:      $('fAmt').value ? parseFloat($('fAmt').value) : null,
+    length:      $('fLen').value ? parseInt($('fLen').value) : null,
+    dateStarted: $('fDate').value || null,
+    account:     $('fAcct').value.trim() || '',
+    notes:       $('fNotes').value.trim(),
+  };
+
+  const idx = parseInt($('editIdx').value);
+  if (idx >= 0) items[idx] = calcItem(raw);
+  else items.push(calcItem(raw));
+
+  closeAdd();
+  renderAll();
+  persist();
+}
+
+function delItem(idx) {
+  if (!confirm(`Delete "${items[idx].supplier} — ${items[idx].particulars}"?`)) return;
+  items.splice(idx, 1);
+  renderAll();
+  persist();
+}
+
+// ─── Import ───────────────────────────────────────────────────────────────────
+function openImport()  { $('importModal').classList.add('on'); }
+function closeImport() {
+  $('importModal').classList.remove('on');
+  $('impPreview').style.display = 'none';
+  $('impErr').style.display = 'none';
+  $('impFile').value = '';
+  staged = [];
+}
+
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb   = XLSX.read(e.target.result, {type:'array', cellDates:true});
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, dateNF:'yyyy-mm-dd'});
+
+      // Find header row (contains 'Supplier')
+      let hdrRow = -1;
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i] && rows[i].some(c => typeof c === 'string' && c.toLowerCase().includes('supplier'))) { hdrRow = i; break; }
+      }
+      if (hdrRow < 0) throw new Error('Cannot find header row. Expected a row with "Supplier" column.');
+
+      const hdrs = rows[hdrRow].map(h => (h||'').toString().toLowerCase().trim());
+      const ci = {
+        sup:  hdrs.findIndex(h => h.includes('supplier')),
+        part: hdrs.findIndex(h => h.includes('particular')),
+        amt:  hdrs.findIndex(h => h === 'amount'),
+        len:  hdrs.findIndex(h => h.includes('length') || (h.includes('month') && !h.includes('current') && !h.includes('start') && !h.includes('end'))),
+        date: hdrs.findIndex(h => h.includes('date') && h.includes('start')),
+        acct: hdrs.findIndex(h => h.includes('offset') || (h.includes('account') && !h.includes('offset') && hdrs.indexOf(h) > 8)),
+      };
+      // fallback for account column
+      if (ci.acct < 0) ci.acct = hdrs.length - 1;
+
+      staged = [];
+      for (let i = hdrRow + 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !row.some(c => c !== null && c !== undefined && c !== '')) continue;
+        const sup = ci.sup >= 0 ? (row[ci.sup]||'').toString().trim() : '';
+        if (!sup) continue;
+        const rawAmt  = ci.amt  >= 0 ? row[ci.amt]  : null;
+        const rawLen  = ci.len  >= 0 ? row[ci.len]  : null;
+        const rawDate = ci.date >= 0 ? row[ci.date] : null;
+        const rawAcct = ci.acct >= 0 ? (row[ci.acct]||'').toString().trim() : '';
+        const amt  = rawAmt  ? parseFloat(rawAmt.toString().replace(/[$,]/g,'')) : null;
+        const len  = rawLen  ? parseInt(rawLen.toString()) : null;
+        let dateStr = null;
+        if (rawDate) {
+          const d = new Date(rawDate);
+          if (!isNaN(d.getTime())) dateStr = fmtISO(d);
+        }
+        staged.push({ supplier: sup, particulars: (ci.part>=0?row[ci.part]:'').toString().trim(), amount: (amt && !isNaN(amt)) ? amt : null, length: (len && !isNaN(len)) ? len : null, dateStarted: dateStr, account: rawAcct, notes:'' });
+      }
+      if (!staged.length) throw new Error('No valid rows found.');
+      $('impStatus').textContent = `✅ Ready to import ${staged.length} items. This will replace all current items.`;
+      $('impPreview').style.display = 'block';
+      $('impErr').style.display = 'none';
+    } catch(err) {
+      $('impErr').textContent = '❌ ' + err.message;
+      $('impErr').style.display = 'block';
+      $('impPreview').style.display = 'none';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function confirmImport() {
+  if (!staged.length) return;
+  items = staged.map(calcItem);
+  staged = [];
+  closeImport();
+  renderAll();
+  persist();
+  alert(`✅ Imported ${items.length} items.`);
+}
+
+// Drag-drop
+const dz = $('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
+
+// ─── Persist ──────────────────────────────────────────────────────────────────
+function persist() {
+  const clean = items.map(({ supplier, particulars, amount, length, dateStarted, account, notes, manualBalance }) =>
+    ({ supplier, particulars, amount, length, dateStarted, account, notes, manualBalance }));
+  localStorage.setItem('lfa_prepayments_v1', JSON.stringify({ items: clean, assetAcct: $('assetAcct').value, period: $('period').value }));
+}
+
+// ─── PDF: Schedule ─────────────────────────────────────────────────────────────
+function exportSchedPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc  = new jsPDF({ orientation:'landscape' });
+  const lbl  = periodLabel();
+  const asset = $('assetAcct').value || '5400';
+  const today = new Date();
+  const ds = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+
+  // Header band
+  doc.setFillColor(29,66,82); doc.rect(0,0,297,28,'F');
+  doc.setTextColor(255,255,255);
+  doc.setFont(undefined,'bold'); doc.setFontSize(15);
+  doc.text('PREPAYMENTS AMORTISATION SCHEDULE', 148.5, 11, {align:'center'});
+  doc.setFont(undefined,'normal'); doc.setFontSize(9);
+  doc.text(`Period: ${lbl}  ·  Prepaid Asset: ${asset}  ·  Generated: ${ds}`, 148.5, 20, {align:'center'});
+
+  // Summary line
+  let balance = 0, monthly = 0;
+  items.forEach(i => { balance += i._remaining||0; monthly += i._charge||0; });
+  doc.setTextColor(0,0,0); doc.setFontSize(8.5); doc.setFont(undefined,'bold');
+  let y = 34;
+  doc.text(`Total Prepaid Balance: ${fmt$(balance)}`, 14, y);
+  doc.text(`This Period Amortisation: ${fmt$(monthly)}`, 100, y);
+  y += 9;
+
+  // Column x positions (landscape 297mm)
+  const cx = [14, 62, 108, 124, 140, 162, 182, 200, 218, 240, 263, 283];
+  const ch = ['Supplier','Particulars','Amount','Mths','Date Started','Start Mth','End Mth','Elapsed','Mthly Charge','Remaining','Acct','Status'];
+
+  doc.setFillColor(29,66,82); doc.rect(10, y-5, 277, 8, 'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(7);
+  ch.forEach((h,i) => doc.text(h, cx[i], y));
+  y += 7; doc.setTextColor(0,0,0); doc.setFont(undefined,'normal');
+
+  items.forEach(item => {
+    if (y > 188) { doc.addPage(); y = 14; }
+    const even = items.indexOf(item) % 2 === 0;
+    doc.setFillColor(even ? 250 : 255, even ? 252 : 255, even ? 252 : 255);
+    doc.rect(10, y-5, 277, 7, 'F');
+    doc.setFontSize(6.5);
+    doc.text((item.supplier||'').trim().substring(0,24), cx[0], y);
+    doc.text((item.particulars||'').substring(0,22),     cx[1], y);
+    doc.text(item.amount  ? fmt$(item.amount)   : '—',   cx[2], y);
+    doc.text(item.length  ? String(item.length) : '—',   cx[3], y);
+    doc.text(item.dateStarted ? fmtDate(item.dateStarted) : '—', cx[4], y);
+    doc.text(item._startMonth ? fmtDate(item._startMonth) : '—', cx[5], y);
+    doc.text(item._endMonth   ? fmtDate(item._endMonth)   : '—', cx[6], y);
+    doc.text(!item._manual && item._elapsed!=null ? `${item._elapsed}/${item.length}` : '—', cx[7], y);
+    doc.text(item._monthly ? fmt$(item._monthly) : '—', cx[8], y);
+    doc.text(fmt$(item._remaining), cx[9], y);
+    doc.text((item.account||'').toString().substring(0,10), cx[10], y);
+    doc.text(item._manual?'Manual':item._status==='done'?'Done':'Active', cx[11], y);
+    y += 7;
+    doc.setDrawColor(220,220,220); doc.line(10, y-3.5, 287, y-3.5);
+  });
+
+  y += 3;
+  doc.setFont(undefined,'bold'); doc.setFontSize(8);
+  doc.text('TOTAL', cx[0], y);
+  doc.text(fmt$(balance), cx[9], y);
+
+  doc.save(`Prepayments_Schedule_${lbl.replace(/ /g,'_')}.pdf`);
+}
+
+// ─── PDF: Journal ─────────────────────────────────────────────────────────────
+function exportJnlPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc   = new jsPDF();
+  const lbl   = periodLabel();
+  const asset = $('assetAcct').value || '5400';
+  const today = new Date();
+  const ds = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+
+  doc.setFillColor(29,66,82); doc.rect(0,0,210,28,'F');
+  doc.setTextColor(255,255,255);
+  doc.setFont(undefined,'bold'); doc.setFontSize(14);
+  doc.text('PREPAYMENTS JOURNAL ENTRY', 105, 11, {align:'center'});
+  doc.setFont(undefined,'normal'); doc.setFontSize(9);
+  doc.text(`Period: ${lbl}  ·  Generated: ${ds}`, 105, 20, {align:'center'});
+
+  let y = 36;
+  doc.setTextColor(0,0,0); doc.setFont(undefined,'bold'); doc.setFontSize(9);
+  doc.text('Account', 18, y); doc.text('Description', 48, y);
+  doc.text('Debit', 158, y, {align:'right'}); doc.text('Credit', 193, y, {align:'right'});
+  y += 3; doc.setLineWidth(0.5); doc.line(18, y, 195, y); y += 7;
+  doc.setFont(undefined,'normal'); doc.setFontSize(8);
+
+  const { groups, total } = buildJournalGroups();
+
+  Object.values(groups).forEach(g => {
+    if (y > 268) { doc.addPage(); y = 18; }
+    const desc = g.rows.map(r => `${(r.supplier||'').trim()} — ${r.particulars||''}`).join('; ');
+    const short = desc.length > 75 ? desc.substring(0,75)+'…' : desc;
+    doc.text(g.account.toString(), 18, y);
+    doc.text(short, 48, y);
+    doc.text(fmt$(g.total), 158, y, {align:'right'});
+    doc.text('—', 193, y, {align:'right'});
+    y += 6;
+  });
+
+  doc.text(asset.toString(), 18, y);
+  doc.text(`Prepaid Expenses — ${lbl} amortisation`, 48, y);
+  doc.text('—', 158, y, {align:'right'});
+  doc.text(fmt$(total), 193, y, {align:'right'});
+  y += 4; doc.setLineWidth(0.5); doc.line(18, y, 195, y); y += 6;
+  doc.setFont(undefined,'bold');
+  doc.text('TOTALS', 18, y);
+  doc.text(fmt$(total), 158, y, {align:'right'});
+  doc.text(fmt$(total), 193, y, {align:'right'});
+
+  doc.save(`Prepayments_Journal_${lbl.replace(/ /g,'_')}.pdf`);
+}
+
+// ─── Excel: Schedule ──────────────────────────────────────────────────────────
+function exportSchedXLSX() {
+  const lbl   = periodLabel();
+  const asset = $('assetAcct').value || '5400';
+  const today = new Date();
+  const ds    = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+  const NUM   = '#,##0.00';
+  const wb    = XLSX.utils.book_new();
+  const s = v => ({v:v||'',t:'s'});
+  const n = v => ({v:parseFloat(v)||0, t:'n', z:NUM});
+  const i0 = v => ({v:parseInt(v)||0, t:'n', z:'0'});
+  const ff = (formula) => ({f:formula, t:'n', z:NUM});
+
+  // ── Schedule sheet ──────────────────────────────────────────────────────────
+  const schedRows = [
+    [`Prepayments Amortisation Schedule — ${lbl}`,'','','','','','','','','',''],
+    [`Prepaid Asset Account: ${asset}  |  Generated: ${ds}`,'','','','','','','','','',''],
+    ['','','','','','','','','','',''],
+    ['Supplier','Particulars','Amount','Length (Mths)','Date Started','Start Month','End Month','Months Elapsed','Monthly Charge','Remaining Balance','Expense Account'],
+  ];
+  const SROW = 5; let cnt = 0;
+  items.forEach(item => {
+    cnt++;
+    const r = SROW + cnt - 1;
+    schedRows.push([
+      s(item.supplier),
+      s(item.particulars),
+      item.amount ? n(item.amount) : s(''),
+      item.length ? i0(item.length) : s(''),
+      item.dateStarted ? s(fmtDate(item.dateStarted)) : s(''),
+      item._startMonth  ? s(fmtDate(item._startMonth)) : s(''),
+      item._endMonth    ? s(fmtDate(item._endMonth))   : s(''),
+      item._elapsed != null && !item._manual ? i0(item._elapsed) : s(''),
+      item.amount && item.length ? ff(`C${r}/D${r}`) : s(''),
+      item.amount && item.length
+        ? ff(`MAX(0,C${r}-I${r}*H${r})`)
+        : item._remaining ? n(item._remaining) : s(''),
+      s((item.account||'').toString()),
+    ]);
+  });
+  const EROW = SROW + cnt - 1;
+  schedRows.push(['','','','','','','','','','','']);
+  schedRows.push([s('TOTAL'),'',ff(`SUM(C${SROW}:C${EROW})`),'','','','','',ff(`SUM(I${SROW}:I${EROW})`),ff(`SUM(J${SROW}:J${EROW})`),'']);
+
+  const ws = XLSX.utils.aoa_to_sheet(schedRows);
+  ws['!cols'] = [28,28,14,12,14,14,14,12,14,16,14].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws, 'Schedule');
+
+  // ── Journal sheet ───────────────────────────────────────────────────────────
+  const { groups, total } = buildJournalGroups();
+  const jRows = [
+    [`Prepayments Journal Entry — ${lbl}`,'','',''],
+    [`Dr Expense Account / Cr ${asset} (Prepaid Asset)`,'','',''],
+    ['','','',''],
+    ['Account','Description','Debit','Credit'],
+  ];
+  const JROW = 5; let jcnt = 0;
+  Object.values(groups).forEach(g => {
+    jcnt++;
+    jRows.push([s(g.account), s(g.rows.map(r=>`${(r.supplier||'').trim()} — ${r.particulars||''}`).join('; ')), n(g.total), s('')]);
+  });
+  jRows.push([s(asset), s(`Prepaid Expenses — ${lbl} amortisation`), s(''), n(total)]);
+  jRows.push(['','','','']);
+  jRows.push([s('TOTALS'),'', ff(`SUM(C${JROW}:C${JROW+jcnt-1})`), ff(`SUM(D${JROW}:D${JROW+jcnt})`)]);
+
+  const ws2 = XLSX.utils.aoa_to_sheet(jRows);
+  ws2['!cols'] = [12,65,16,16].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws2, 'Journal Entry');
+
+  // ── By Account sheet ────────────────────────────────────────────────────────
+  const amap = {};
+  items.forEach(i => {
+    if (i._manual) return;
+    const a = (i.account||'UNKNOWN').toString();
+    if (!amap[a]) amap[a] = {a, ch:0, bal:0, n:0};
+    amap[a].ch  += i._charge||0;
+    amap[a].bal += i._remaining||0;
+    amap[a].n++;
+  });
+  const aRows = [
+    [`By Expense Account — ${lbl}`,'','',''],
+    ['','','',''],
+    ['Expense Account','This Period Charge','Remaining Balance','Items'],
+  ];
+  Object.values(amap).sort((x,y)=>x.a.localeCompare(y.a,undefined,{numeric:true})).forEach(g => {
+    aRows.push([s(g.a), n(g.ch), n(g.bal), i0(g.n)]);
+  });
+  const ws3 = XLSX.utils.aoa_to_sheet(aRows);
+  ws3['!cols'] = [18,18,18,10].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws3, 'By Account');
+
+  XLSX.writeFile(wb, `Prepayments_${lbl.replace(/ /g,'_')}.xlsx`);
+}
+
+// ─── Excel: Journal only ──────────────────────────────────────────────────────
+function exportJnlXLSX() {
+  const lbl   = periodLabel();
+  const asset = $('assetAcct').value || '5400';
+  const NUM   = '#,##0.00';
+  const wb    = XLSX.utils.book_new();
+  const s = v => ({v:v||'',t:'s'});
+  const n = v => ({v:parseFloat(v)||0, t:'n', z:NUM});
+  const ff = f => ({f, t:'n', z:NUM});
+
+  const { groups, total } = buildJournalGroups();
+  const rows = [
+    [`Prepayments Journal — ${lbl}`,'','',''],
+    [`Dr Expense / Cr ${asset}`,'','',''],
+    ['','','',''],
+    ['Account','Description','Debit','Credit'],
+  ];
+  const S = 5; let c = 0;
+  Object.values(groups).forEach(g => { c++; rows.push([s(g.account), s(g.rows.map(r=>`${(r.supplier||'').trim()} — ${r.particulars||''}`).join('; ')), n(g.total), s('')]); });
+  rows.push([s(asset), s(`Prepaid Expenses — ${lbl}`), s(''), n(total)]);
+  rows.push(['','','','']);
+  rows.push([s('TOTALS'),'', ff(`SUM(C${S}:C${S+c-1})`), ff(`SUM(D${S}:D${S+c})`)]);
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [12,65,16,16].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws, 'Journal');
+  XLSX.writeFile(wb, `Prepayments_Journal_${lbl.replace(/ /g,'_')}.xlsx`);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+(function() {
+  const today = new Date();
+  $('period').value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+
+  const saved = localStorage.getItem('lfa_prepayments_v1');
+  if (saved) {
+    try {
+      const d = JSON.parse(saved);
+      if (d.assetAcct) $('assetAcct').value = d.assetAcct;
+      if (d.period)    $('period').value     = d.period;
+      items = (d.items || []).map(calcItem);
+    } catch(e) { console.warn('Could not load saved data:', e); }
+  }
+  renderAll();
+})();
+</script>
+</body>
+</html>
