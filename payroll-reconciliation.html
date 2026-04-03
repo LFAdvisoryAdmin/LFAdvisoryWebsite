@@ -1668,6 +1668,19 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                     renderDepartmentList();
                     updateOpeningBalances();
                 }
+
+                // Populate Balance Sheet (CoA) inputs so journal generation picks up saved values
+                if (clientData.chartOfAccounts) {
+                    const coa = clientData.chartOfAccounts;
+                    document.getElementById('coa_wagesPayable').value = coa.wagesPayable || '21420';
+                    document.getElementById('coa_superPayable').value = coa.superPayable || '52000';
+                    document.getElementById('coa_payrollTaxPayable').value = coa.payrollTaxPayable || '21422';
+                    document.getElementById('coa_workcoverPrepaid').value = coa.workcoverPrepaid || '11195';
+                    document.getElementById('coa_annualLeaveProvision').value = coa.annualLeaveProvision || '21381';
+                    document.getElementById('coa_wagesAccrued').value = coa.wagesAccrued || '21450';
+                    document.getElementById('coa_lslCurrentProvision').value = coa.lslCurrentProvision || '21382';
+                    document.getElementById('coa_lslNonCurrentProvision').value = coa.lslNonCurrentProvision || '24800';
+                }
                 
                 if (clientData.lastReconciliation && clientData.lastReconciliation.closingBalances) {
                     Object.keys(clientData.lastReconciliation.closingBalances).forEach(deptId => {
