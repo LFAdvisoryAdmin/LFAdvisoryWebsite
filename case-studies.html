@@ -449,8 +449,8 @@ footer{background:var(--ink);color:rgba(240,243,239,.5);padding:4rem 8vw 2.5rem}
         </select>
       </div>
       <div class="fg"><label>Brief note (optional)</label><textarea id="b-note" rows="2" placeholder="e.g. Construction business, ~$8M revenue..."></textarea></div>
-      <button class="form-btn" id="bookBtn" onclick="generateICS()">Download Calendar Invite &rarr;</button>
-      <p class="modal-hint">Opens in Outlook, Apple Calendar or Google Calendar. Liam will confirm by email.</p>
+      <button class="form-btn" id="bookBtn" onclick="sendEnquiry()">Send Enquiry &rarr;</button>
+      <p class="modal-hint">Opens your email client with the details pre-filled. Liam will be in touch shortly.</p>
     </div>
   </div>
 </div>
@@ -479,61 +479,21 @@ document.getElementById('bookingModal').addEventListener('click',function(e){
   if(e.target===this)closeBooking();
 });
 
-function pad(n){return n<10?'0'+n:''+n;}
-function toICSDate(dateStr,timeStr){
-  var p=dateStr.split('-'),t=timeStr.split(':');
-  return p[0]+p[1]+p[2]+'T'+t[0]+t[1]+'00';
-}
-function addMins(dateStr,timeStr,mins){
-  var p=dateStr.split('-'),t=timeStr.split(':');
-  var d=new Date(+p[0],+p[1]-1,+p[2],+t[0],+t[1]+mins);
-  return ''+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'T'+pad(d.getHours())+pad(d.getMinutes())+'00';
-}
-function generateICS(){
-  var name=document.getElementById('b-name').value.trim()||'Prospective Client';
-  var email=document.getElementById('b-email').value.trim();
+function sendEnquiry(){
+  var name=document.getElementById('b-name').value.trim()||'Not provided';
+  var email=document.getElementById('b-email').value.trim()||'Not provided';
   var date=document.getElementById('b-date').value;
   var time=document.getElementById('b-time').value;
+  var timeLabel=document.getElementById('b-time').selectedOptions[0].text;
   var note=document.getElementById('b-note').value.trim();
-  if(!date||!time){alert('Please select a date and time.');return;}
-  var dtStart=toICSDate(date,time);
-  var dtEnd=addMins(date,time,30);
-  var now=new Date();
-  var stamp=now.getFullYear()+pad(now.getMonth()+1)+pad(now.getDate())+'T'+pad(now.getHours())+pad(now.getMinutes())+pad(now.getSeconds())+'Z';
-  var uid=stamp+'-lfadvisory@lfadvisory.com.au';
-  var desc='LF Advisory Free Consultation\\nLiam will confirm this time by email.\\nliam@lfadvisory.com.au | 0479 078 284';
-  if(note)desc='Notes: '+note+'\\n\\n'+desc;
-  var lines=[
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//LF Advisory//Free Consultation//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:REQUEST',
-    'BEGIN:VEVENT',
-    'UID:'+uid,
-    'DTSTAMP:'+stamp,
-    'DTSTART;TZID=Australia/Brisbane:'+dtStart,
-    'DTEND;TZID=Australia/Brisbane:'+dtEnd,
-    'SUMMARY:Free Consultation - LF Advisory',
-    'DESCRIPTION:'+desc,
-    'ORGANIZER;CN=Liam (LF Advisory):mailto:liam@lfadvisory.com.au',
-    'LOCATION:Brisbane (phone or video call)',
-    'STATUS:TENTATIVE',
-    'END:VEVENT',
-    'END:VCALENDAR'
-  ];
-  if(email)lines.splice(lines.length-2,0,'ATTENDEE;ROLE=REQ-PARTICIPANT;CN='+name+':mailto:'+email);
-  var ics=lines.join('\r\n');
-  var blob=new Blob([ics],{type:'text/calendar;charset=utf-8'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');
-  a.href=url;a.download='lf-advisory-consultation.ics';
-  document.body.appendChild(a);a.click();
-  document.body.removeChild(a);URL.revokeObjectURL(url);
+  var subject='Free Consultation Request - '+name;
+  var body='Name: '+name+'\n'+'Email: '+email+'\n'+'Preferred Date: '+date+'\n'+'Preferred Time: '+timeLabel+'\n';
+  if(note)body+='\nNotes:\n'+note+'\n';
+  window.location.href='mailto:liam@lfadvisory.com.au?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
   var btn=document.getElementById('bookBtn');
-  btn.textContent='\u2713 Calendar invite downloaded!';
+  btn.textContent='\u2713 Opening your email client...';
   btn.style.background='#3a7f8c';
-  setTimeout(function(){closeBooking();},1800);
+  setTimeout(function(){closeBooking();btn.textContent='Send Enquiry \u2192';btn.style.background='';},2500);
 }
 
 var obs=new IntersectionObserver(function(entries){
