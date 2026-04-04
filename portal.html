@@ -426,8 +426,8 @@ footer{background:var(--ink);color:rgba(240,243,239,.5);padding:4rem 8vw 2.5rem}
         </select>
       </div>
       <div class="fg"><label>Brief note (optional)</label><textarea id="b-note" rows="2" placeholder="e.g. Construction business, ~$8M revenue..."></textarea></div>
-      <button class="form-btn" id="bookBtn" onclick="generateICS()">Download Calendar Invite &rarr;</button>
-      <p class="modal-hint">Opens in Outlook, Apple Calendar or Google Calendar. Liam will confirm by email.</p>
+      <button class="form-btn" id="bookBtn" onclick="sendEnquiry()">Send Enquiry &rarr;</button>
+      <p class="modal-hint">Opens your email client with the details pre-filled. Liam will be in touch shortly.</p>
     </div>
   </div>
 </div>
@@ -502,8 +502,25 @@ function signOut() {
 
 window.addEventListener('scroll',function(){document.getElementById('nav').classList.toggle('scrolled',window.scrollY>20);});
 function toggleNav(){document.getElementById('mobileNav').classList.toggle('open');}
-function openBooking(){document.getElementById('bookingModal').classList.add('open');}
-function closeBooking(){document.getElementById('bookingModal').classList.remove('open');}
+function openBooking(){document.getElementById('bookingModal').classList.add('open');document.body.style.overflow='hidden';}
+function closeBooking(){document.getElementById('bookingModal').classList.remove('open');document.body.style.overflow='';}
+document.getElementById('bookingModal').addEventListener('click',function(e){if(e.target===this)closeBooking();});
+function sendEnquiry(){
+  var name=document.getElementById('b-name').value.trim()||'Not provided';
+  var email=document.getElementById('b-email').value.trim()||'Not provided';
+  var date=document.getElementById('b-date').value;
+  var time=document.getElementById('b-time').value;
+  var timeLabel=document.getElementById('b-time').selectedOptions[0].text;
+  var note=document.getElementById('b-note').value.trim();
+  var subject='Free Consultation Request - '+name;
+  var body='Name: '+name+'\n'+'Email: '+email+'\n'+'Preferred Date: '+date+'\n'+'Preferred Time: '+timeLabel+'\n';
+  if(note)body+='\nNotes:\n'+note+'\n';
+  window.location.href='mailto:liam@lfadvisory.com.au?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+  var btn=document.getElementById('bookBtn');
+  btn.textContent='\u2713 Opening your email client...';
+  btn.style.background='#3a7f8c';
+  setTimeout(function(){closeBooking();btn.textContent='Send Enquiry \u2192';btn.style.background='';},2500);
+}
 </script>
 </body>
 </html>
