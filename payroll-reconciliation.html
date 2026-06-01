@@ -983,7 +983,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
         // ── OneDrive Integration ──────────────────────────────────────────────────
         const OD_CLIENT_ID = '981d2ee1-a2a9-4787-8972-b349938ba7ab';
         const OD_TENANT_ID = 'f869ffc9-81fa-4bbf-94ec-a9bd5ca6b3a3';
-        const OD_SCOPES = 'Files.ReadWrite User.Read';
+        const OD_SCOPES = 'Files.ReadWrite Sites.ReadWrite.All User.Read';
         const OD_REDIRECT = window.location.origin + window.location.pathname;
         const OD_AUTH_URL = 'https://login.microsoftonline.com/' + OD_TENANT_ID + '/oauth2/v2.0/authorize';
         const GRAPH_ENDPOINT = 'https://graph.microsoft.com/v1.0';
@@ -1038,73 +1038,31 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             window.location.href = url;
         }
 
-        // Resolve the workpapers folder for the signed-in user. Tries personal
-        // OneDrive first (folder owner case), then sharedWithMe (shared folder
-        // case — covers staff who've been given access but don't own the data).
+        // SharePoint site resolver — reads from / writes to the tenant root site's
+        // Documents library, under the "LF Advisory Workpapers" folder. Site access
+        // is shared via SharePoint permissions so it scales cleanly to future staff.
+        const SP_HOSTNAME = 'lfadvisoryptyltd.sharepoint.com';
         const FOLDER_NAME = 'LF Advisory Workpapers';
-        let _folderRef = null; // { owned: bool, driveId, itemId } once resolved
+        let _siteId = sessionStorage.getItem('sp_site_id') || null;
 
-        async function resolveFolder(token) {
-            if (_folderRef) return _folderRef;
-            try {
-                const r = await fetch(GRAPH_ENDPOINT + '/me/drive/root:/' + encodeURIComponent(FOLDER_NAME), {
-                    headers: { Authorization: 'Bearer ' + token }
-                });
-                if (r.ok) {
-                    const item = await r.json();
-                    if (item.folder) {
-                        _folderRef = { owned: true, driveId: item.parentReference && item.parentReference.driveId, itemId: item.id };
-                        return _folderRef;
-                    }
-                }
-            } catch (e) { console.warn('[Folder] Owner lookup failed:', e); }
-            try {
-                const r = await fetch(GRAPH_ENDPOINT + '/me/drive/sharedWithMe', {
-                    headers: { Authorization: 'Bearer ' + token }
-                });
-                if (r.ok) {
-                    const data = await r.json();
-                    const item = (data.value || []).find(i => i.name === FOLDER_NAME && i.folder && i.remoteItem);
-                    if (item) {
-                        _folderRef = {
-                            owned: false,
-                            driveId: item.remoteItem.parentReference.driveId,
-                            itemId: item.remoteItem.id
-                        };
-                        return _folderRef;
-                    }
-                }
-            } catch (e) { console.warn('[Folder] Shared lookup failed:', e); }
-            return null;
+        async function getSiteId(token) {
+            if (_siteId) return _siteId;
+            const resp = await fetch(GRAPH_ENDPOINT + '/sites/' + SP_HOSTNAME, {
+                headers: { Authorization: 'Bearer ' + token }
+            });
+            if (!resp.ok) throw new Error('SharePoint site lookup failed: ' + resp.status);
+            const site = await resp.json();
+            _siteId = site.id;
+            sessionStorage.setItem('sp_site_id', _siteId);
+            return _siteId;
         }
 
-        function folderChildrenUrl(ref) {
-            return ref.owned
-                ? GRAPH_ENDPOINT + '/me/drive/items/' + ref.itemId + '/children'
-                : GRAPH_ENDPOINT + '/drives/' + ref.driveId + '/items/' + ref.itemId + '/children';
+        function folderChildrenUrl(siteId) {
+            return GRAPH_ENDPOINT + '/sites/' + siteId + '/drive/root:/' + encodeURIComponent(FOLDER_NAME) + ':/children';
         }
 
-        function folderFileUrl(ref, filename) {
-            const enc = encodeURIComponent(filename);
-            return ref.owned
-                ? GRAPH_ENDPOINT + '/me/drive/items/' + ref.itemId + ':/' + enc + ':/content'
-                : GRAPH_ENDPOINT + '/drives/' + ref.driveId + '/items/' + ref.itemId + ':/' + enc + ':/content';
-        }
-
-        // Resolve or create the folder. Only attempts creation in the user's own
-        // drive root — staff with shared access never need to create anything.
-        async function ensureFolder(token) {
-            const ref = await resolveFolder(token);
-            if (ref) return ref;
-            try {
-                await fetch(GRAPH_ENDPOINT + '/me/drive/root/children', {
-                    method: 'POST',
-                    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: FOLDER_NAME, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
-                });
-            } catch (e) { /* may already exist, ignore */ }
-            _folderRef = null;
-            return await resolveFolder(token);
+        function folderFileUrl(siteId, filename) {
+            return GRAPH_ENDPOINT + '/sites/' + siteId + '/drive/root:/' + encodeURIComponent(FOLDER_NAME) + '/' + encodeURIComponent(filename) + ':/content';
         }
 
         async function odLoad() {
@@ -1118,9 +1076,8 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             _odToken = token;
             try {
                 updateODStatus('loading');
-                const ref = await resolveFolder(token);
-                if (!ref) { updateODStatus('connected'); return {}; }
-                const resp = await fetch(folderChildrenUrl(ref), {
+                const siteId = await getSiteId(token);
+                const resp = await fetch(folderChildrenUrl(siteId), {
                     headers: { Authorization: 'Bearer ' + token }
                 });
                 if (resp.status === 404) { updateODStatus('connected'); return {}; }
@@ -1145,10 +1102,9 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             const token = _odToken || getStoredToken();
             if (!token) return;
             try {
-                const ref = await ensureFolder(token);
-                if (!ref) throw new Error('Could not resolve workpapers folder');
+                const siteId = await getSiteId(token);
                 updateODStatus('saving');
-                await fetch(folderFileUrl(ref, DATA_FILE), {
+                await fetch(folderFileUrl(siteId, DATA_FILE), {
                     method: 'PUT',
                     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
                     body: JSON.stringify(clients, null, 2)
@@ -1172,10 +1128,9 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             if (!token) { console.warn('[History] No token, skipping history save'); return; }
             try {
                 const HISTORY_FILE = 'lf-advisory-payroll-history.json';
-                const ref = await ensureFolder(token);
-                if (!ref) throw new Error('Could not resolve workpapers folder');
+                const siteId = await getSiteId(token);
                 let history = {};
-                const resp = await fetch(folderChildrenUrl(ref), {
+                const resp = await fetch(folderChildrenUrl(siteId), {
                     headers: { Authorization: 'Bearer ' + token }
                 });
                 if (resp.ok) {
@@ -1188,7 +1143,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 }
                 if (!history[clientName]) history[clientName] = {};
                 history[clientName][period] = snapshot;
-                await fetch(folderFileUrl(ref, HISTORY_FILE), {
+                await fetch(folderFileUrl(siteId, HISTORY_FILE), {
                     method: 'PUT',
                     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
                     body: JSON.stringify(history, null, 2)
@@ -1280,9 +1235,8 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             if (!token) return {};
             try {
                 const HISTORY_FILE = 'lf-advisory-payroll-history.json';
-                const ref = await resolveFolder(token);
-                if (!ref) return {};
-                const resp = await fetch(folderChildrenUrl(ref), {
+                const siteId = await getSiteId(token);
+                const resp = await fetch(folderChildrenUrl(siteId), {
                     headers: { Authorization: 'Bearer ' + token }
                 });
                 if (!resp.ok) return {};
