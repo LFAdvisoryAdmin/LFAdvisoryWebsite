@@ -699,17 +699,6 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                     <input type="text" id="period" placeholder="e.g., December 2025">
                 </div>
 
-                <div class="input-group" id="pastRecGroup">
-                    <label>Load Previous Reconciliation</label>
-                    <div style="display:flex;gap:.5rem;align-items:stretch">
-                        <select id="pastPeriodSelect" style="flex:1" onchange="loadPastPeriod()" disabled>
-                            <option value="">— Select a client first —</option>
-                        </select>
-                        <button class="btn btn-secondary" onclick="clearActiveRec()" style="width:auto;padding:.5rem 1rem" title="Clear loaded results and start fresh">🧹 Clear</button>
-                    </div>
-                    <small>Restores a previously processed reconciliation for the selected client.</small>
-                </div>
-
                 <div class="input-group">
                     <label>Payroll Frequency</label>
                     <select id="payrollFrequency">
@@ -983,27 +972,13 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
         // ── OneDrive Integration ──────────────────────────────────────────────────
         const OD_CLIENT_ID = '981d2ee1-a2a9-4787-8972-b349938ba7ab';
         const OD_TENANT_ID = 'f869ffc9-81fa-4bbf-94ec-a9bd5ca6b3a3';
-        const OD_SCOPES = 'Files.ReadWrite Sites.ReadWrite.All User.Read';
+        const OD_SCOPES = 'Files.ReadWrite User.Read';
         const OD_REDIRECT = window.location.origin + window.location.pathname;
         const OD_AUTH_URL = 'https://login.microsoftonline.com/' + OD_TENANT_ID + '/oauth2/v2.0/authorize';
         const GRAPH_ENDPOINT = 'https://graph.microsoft.com/v1.0';
-        const SP_HOSTNAME = 'lfadvisoryptyltd.sharepoint.com';
         const DATA_FILE = 'lf-advisory-payroll-data.json';
         let _odToken = null;
-        let _siteId = sessionStorage.getItem('sp_site_id') || null;
         let _saveTimer = null;
-
-        async function getSiteId(token) {
-            if (_siteId) return _siteId;
-            const resp = await fetch(GRAPH_ENDPOINT + '/sites/' + SP_HOSTNAME, {
-                headers: { Authorization: 'Bearer ' + token }
-            });
-            if (!resp.ok) throw new Error('SharePoint site lookup failed: ' + resp.status);
-            const site = await resp.json();
-            _siteId = site.id;
-            sessionStorage.setItem('sp_site_id', _siteId);
-            return _siteId;
-        }
 
         function updateODStatus(state) {
             const el = document.getElementById('odStatus');
@@ -1063,8 +1038,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             _odToken = token;
             try {
                 updateODStatus('loading');
-                const siteId = await getSiteId(token);
-                const resp = await fetch(GRAPH_ENDPOINT + '/sites/' + siteId + '/drive/root:/LF Advisory Workpapers:/children', {
+                const resp = await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers:/children', {
                     headers: { Authorization: 'Bearer ' + token }
                 });
                 if (resp.status === 404) { updateODStatus('connected'); return {}; }
@@ -1086,9 +1060,9 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
 
 
         async function ensureWorkpapersFolder(token) {
+            // Create "LF Advisory Workpapers" folder if it doesn't exist
             try {
-                const siteId = await getSiteId(token);
-                await fetch(GRAPH_ENDPOINT + '/sites/' + siteId + '/drive/root/children', {
+                await fetch(GRAPH_ENDPOINT + '/me/drive/root/children', {
                     method: 'POST',
                     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: 'LF Advisory Workpapers', folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
@@ -1102,8 +1076,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             try {
                 await ensureWorkpapersFolder(token);
                 updateODStatus('saving');
-                const siteId = await getSiteId(token);
-                await fetch(GRAPH_ENDPOINT + '/sites/' + siteId + '/drive/root:/LF Advisory Workpapers/' + DATA_FILE + ':/content', {
+                await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers/' + DATA_FILE + ':/content', {
                     method: 'PUT',
                     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
                     body: JSON.stringify(clients, null, 2)
@@ -1129,8 +1102,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 // Load existing history
                 const HISTORY_FILE = 'lf-advisory-payroll-history.json';
                 let history = {};
-                const siteId = await getSiteId(token);
-                const resp = await fetch(GRAPH_ENDPOINT + '/sites/' + siteId + '/drive/root:/LF Advisory Workpapers:/children', {
+                const resp = await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers:/children', {
                     headers: { Authorization: 'Bearer ' + token }
                 });
                 if (resp.status === 404) { updateODStatus('connected'); return {}; }
@@ -1144,7 +1116,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 if (!history[clientName]) history[clientName] = {};
                 history[clientName][period] = snapshot;
                 // Save back
-                await fetch(GRAPH_ENDPOINT + '/sites/' + siteId + '/drive/root:/LF Advisory Workpapers/' + HISTORY_FILE + ':/content', {
+                await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers/' + HISTORY_FILE + ':/content', {
                     method: 'PUT',
                     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
                     body: JSON.stringify(history, null, 2)
@@ -1155,144 +1127,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 console.error('[History] Full error:', e);
             }
         }
-        // ── End OneDrive Integration ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-        // ── Active Reconciliation Persistence ──────────────────────────────────
-        // Snapshots a completed rec into localStorage so refresh / reopening the
-        // page restores the results view. Past periods are fetched from the
-        // history file already maintained by saveReconciliationHistory().
-        const ACTIVE_REC_KEY = 'lfa_activeRec';
-        let _historyData = null;
-
-        function persistActiveRec(snapshot) {
-            try { localStorage.setItem(ACTIVE_REC_KEY, JSON.stringify(snapshot)); }
-            catch (e) { console.warn('[ActiveRec] Persist failed:', e); }
-        }
-
-        function clearActiveRec() {
-            localStorage.removeItem(ACTIVE_REC_KEY);
-            journalEntries = [];
-            delete window.lastLeaveMovement;
-            delete window.lastAccrualData;
-            delete window.lastLSLData;
-            delete window.lastPayrollTaxBreakdown;
-            const out = document.getElementById('output');
-            if (out) out.innerHTML = '';
-            const past = document.getElementById('pastPeriodSelect');
-            if (past) past.value = '';
-        }
-
-        function restoreActiveRec(snapshot) {
-            if (!snapshot) return;
-            const select = document.getElementById('clientSelect');
-            if (select && snapshot.clientName) {
-                select.value = snapshot.clientName;
-                // Programmatic value changes don't fire onchange, so call loadClientSettings directly.
-                if (typeof loadClientSettings === 'function') loadClientSettings();
-            }
-            // Fallback: if the client name isn't in the dropdown (deleted/never-saved),
-            // restore the name input directly so the rec doesn't appear orphaned.
-            const clientNameInput = document.getElementById('clientName');
-            if (clientNameInput && snapshot.clientName && !clientNameInput.value) {
-                clientNameInput.value = snapshot.clientName;
-            }
-            const periodInput = document.getElementById('period');
-            if (periodInput) periodInput.value = snapshot.period || '';
-
-            journalEntries = snapshot.journalEntries || [];
-            if (snapshot.departments) {
-                departments = snapshot.departments.map(d => ({...d, glCodes: d.glCodes || {}}));
-            }
-            window.lastLeaveMovement = snapshot.lastLeaveMovement;
-            window.lastAccrualData = snapshot.lastAccrualData;
-            window.lastLSLData = snapshot.lastLSLData;
-            window.lastPayrollTaxBreakdown = snapshot.lastPayrollTaxBreakdown;
-            if (snapshot.leaveThisSnapshot) leaveThisData = snapshot.leaveThisSnapshot;
-
-            if (typeof displayResultsMultiDept === 'function') {
-                try {
-                    displayResultsMultiDept(
-                        snapshot.earningsByDept || {},
-                        snapshot.leaveMovement || {},
-                        snapshot.closingBalances || {},
-                        snapshot.openingBalances || {},
-                        snapshot.accrualMovement || {},
-                        snapshot.payrollTaxByDept || {},
-                        snapshot.workcoverByDept || {},
-                        snapshot.period || '',
-                        snapshot.journalEntries || [],
-                        snapshot.payrollTaxBreakdown || null,
-                        snapshot.accrualDays || 0
-                    );
-                } catch (e) {
-                    console.error('[ActiveRec] Restore display failed:', e);
-                }
-            }
-        }
-
-        async function fetchHistory() {
-            if (_historyData) return _historyData;
-            const token = _odToken || getStoredToken();
-            if (!token) return {};
-            try {
-                const HISTORY_FILE = 'lf-advisory-payroll-history.json';
-                const siteId = await getSiteId(token);
-                const resp = await fetch(GRAPH_ENDPOINT + '/sites/' + siteId + '/drive/root:/LF Advisory Workpapers:/children', {
-                    headers: { Authorization: 'Bearer ' + token }
-                });
-                if (!resp.ok) return {};
-                const items = await resp.json();
-                const file = (items.value || []).find(f => f.name === HISTORY_FILE);
-                if (!file) return {};
-                const fileResp = await fetch(file['@microsoft.graph.downloadUrl']);
-                _historyData = await fileResp.json();
-                return _historyData;
-            } catch (e) {
-                console.error('[History] Fetch failed:', e);
-                return {};
-            }
-        }
-
-        async function populatePastPeriodsDropdown() {
-            const select = document.getElementById('pastPeriodSelect');
-            if (!select) return;
-            const clientName = document.getElementById('clientSelect').value
-                || document.getElementById('clientName').value.trim();
-            if (!clientName) {
-                select.innerHTML = '<option value="">— Select a client first —</option>';
-                select.disabled = true;
-                return;
-            }
-            select.innerHTML = '<option value="">— Loading history… —</option>';
-            select.disabled = true;
-            const history = await fetchHistory();
-            const clientHistory = history[clientName];
-            if (!clientHistory || Object.keys(clientHistory).length === 0) {
-                select.innerHTML = '<option value="">— No past reconciliations for this client —</option>';
-                select.disabled = true;
-                return;
-            }
-            select.innerHTML = '<option value="">— Select a past period —</option>';
-            Object.keys(clientHistory).sort().reverse().forEach(p => {
-                const opt = document.createElement('option');
-                opt.value = p;
-                opt.textContent = p;
-                select.appendChild(opt);
-            });
-            select.disabled = false;
-        }
-
-        function loadPastPeriod() {
-            const clientName = document.getElementById('clientSelect').value
-                || document.getElementById('clientName').value.trim();
-            const period = document.getElementById('pastPeriodSelect').value;
-            if (!clientName || !period || !_historyData
-                || !_historyData[clientName] || !_historyData[clientName][period]) return;
-            const snapshot = _historyData[clientName][period];
-            persistActiveRec(snapshot);
-            restoreActiveRec(snapshot);
-        }
-        // ── End Active Reconciliation Persistence ──────────────────────────────────
+        // ── End OneDrive Integration ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
         // ========================================
         // LSL STATE-BASED RULES CONFIGURATION
@@ -1809,7 +1644,6 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             const clientName = document.getElementById('clientSelect').value;
             if (!clientName) {
                 document.getElementById('clientName').value = '';
-                if (typeof populatePastPeriodsDropdown === 'function') populatePastPeriodsDropdown();
                 return;
             }
 
@@ -1889,7 +1723,6 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 }
 
                 toggleAccrualFields();
-                if (typeof populatePastPeriodsDropdown === 'function') populatePastPeriodsDropdown();
                 console.log(`Loaded settings for ${clientName}`);
             }
         }
@@ -1902,40 +1735,15 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             }
 
             currentClientData.clientName = clientName;
-            currentClientData.payrollFrequency = document.getElementById('payrollFrequency').value;
-            currentClientData.workcover = parseFloat(document.getElementById('workcover').value) || 0;
-            currentClientData.accrualMethod = document.getElementById('accrualMethod').value;
-            currentClientData.autoCalculatePayrollTax = document.getElementById('autoCalculatePayrollTax').checked;
             currentClientData.departments = departments;
-
-            // CoA inputs live inside the Departments modal but persist in the DOM
-            // after it closes, so we can snapshot them without forcing the user to
-            // reopen the modal mid-setup.
-            const coa = { ...(currentClientData.chartOfAccounts || {}) };
-            const coaDefaults = {
-                wagesPayable: '21420', superPayable: '52000', payrollTaxPayable: '21422',
-                workcoverPrepaid: '11195', annualLeaveProvision: '21381', wagesAccrued: '21450',
-                lslCurrentProvision: '21382', lslNonCurrentProvision: '24800'
-            };
-            Object.keys(coaDefaults).forEach(k => {
-                const el = document.getElementById('coa_' + k);
-                if (el) coa[k] = el.value || coaDefaults[k];
-            });
-            // Only refresh allowanceItems if the list has actually been rendered,
-            // otherwise an unopened modal would wipe out previously-saved items.
-            const allowanceList = document.getElementById('allowanceItemsList');
-            if (allowanceList && allowanceList.children.length > 0) {
-                coa.allowanceItems = getAllowanceItems();
-            }
-            currentClientData.chartOfAccounts = coa;
 
             const clients = JSON.parse(localStorage.getItem('payrollClients') || '{}');
             clients[clientName] = currentClientData;
             localStorage.setItem('payrollClients', JSON.stringify(clients));
             scheduleSave(clients);
-            loadClientsList();
+        // loadClientsList() is now called by CloudStorage.init()
             document.getElementById('clientSelect').value = clientName;
-
+            
             alert(`Client "${clientName}" saved successfully!`);
         }
 
@@ -2441,10 +2249,6 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
 
                 // Save history snapshot to OneDrive
                 saveReconciliationHistory(clientName, period, snapshot);
-
-                // Persist as active rec so refresh / reopen restores the results view
-                persistActiveRec(snapshot);
-                _historyData = null; // bust history cache so the new period appears in the dropdown next time
 
                 localStorage.setItem('payrollClients', JSON.stringify(clients));
             scheduleSave(clients);
@@ -3139,31 +2943,15 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
 
         function downloadJournalCSV() {
             const period = document.getElementById('period').value;
-            const today = new Date().toISOString().split('T')[0];
-
-            // Resolve the journal date to the last day of the period (e.g. "December 2025" → 2025-12-31).
-            // Falls back to today if the period text can't be parsed — check Xero's date column before posting.
-            let journalDate = today;
-            const months = {jan:0,january:0,feb:1,february:1,mar:2,march:2,apr:3,april:3,may:4,jun:5,june:5,jul:6,july:6,aug:7,august:7,sep:8,sept:8,september:8,oct:9,october:9,nov:10,november:10,dec:11,december:11};
-            const m = (period || '').toLowerCase().match(/([a-z]+)\s*,?\s*(\d{4})/);
-            if (m && months[m[1]] !== undefined) {
-                const year = parseInt(m[2]);
-                const monthIdx = months[m[1]];
-                const lastDay = new Date(year, monthIdx + 1, 0).getDate();
-                journalDate = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-            } else if (period) {
-                console.warn('[Journal CSV] Could not parse period "' + period + '" — defaulting Date column to today (' + today + ')');
-            }
-
-            let csv = '*Narration,*Date,Description,*AccountCode,*TaxRate,*Amount,TrackingName1,TrackingOption1,TrackingName2,TrackingOption2\n';
+            let csv = '*Narration,*Date,Description,*AccountCode,*TaxRate,*Amount\n';
             journalEntries.forEach(e => {
-                if (e.debit > 0) csv += `"PR ${period}",${journalDate},"${e.name}",${e.account},BAS Excluded,${e.debit.toFixed(2)},,,,\n`;
-                if (e.credit > 0) csv += `"PR ${period}",${journalDate},"${e.name}",${e.account},BAS Excluded,-${e.credit.toFixed(2)},,,,\n`;
+                if (e.debit > 0) csv += `"PR ${period}",${new Date().toISOString().split('T')[0]},"${e.name}",${e.account},Tax Exempt,${e.debit.toFixed(2)}\n`;
+                if (e.credit > 0) csv += `"PR ${period}",${new Date().toISOString().split('T')[0]},"${e.name}",${e.account},Tax Exempt,-${e.credit.toFixed(2)}\n`;
             });
             const blob = new Blob([csv], { type: 'text/csv' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `payroll-journal-${today}.csv`;
+            a.download = `payroll-journal-${new Date().toISOString().split('T')[0]}.csv`;
             a.click();
         }
 
@@ -6385,14 +6173,6 @@ By design. AASB 119 paragraphs 11–23 classify AL as a <em>short-term</em> empl
             if (data && Object.keys(data).length > 0) {
                 localStorage.setItem('payrollClients', JSON.stringify(data));
                 loadClientsList();
-            }
-
-            // Restore any active reconciliation so refresh / reopen doesn't lose work
-            try {
-                const raw = localStorage.getItem(ACTIVE_REC_KEY);
-                if (raw) restoreActiveRec(JSON.parse(raw));
-            } catch (e) {
-                console.warn('[ActiveRec] Restore on load failed:', e);
             }
         });
 </script>
