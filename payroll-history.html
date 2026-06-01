@@ -384,29 +384,15 @@ footer{background:var(--ink);color:rgba(240,243,239,.5);padding:4rem 8vw 2.5rem}
 <script>
 const OD_CLIENT_ID = '981d2ee1-a2a9-4787-8972-b349938ba7ab';
 const OD_TENANT_ID = 'f869ffc9-81fa-4bbf-94ec-a9bd5ca6b3a3';
-const OD_SCOPES = 'Files.ReadWrite Sites.ReadWrite.All User.Read';
+const OD_SCOPES = 'Files.ReadWrite User.Read';
 const OD_REDIRECT = window.location.origin + window.location.pathname;
 const OD_AUTH_URL = 'https://login.microsoftonline.com/' + OD_TENANT_ID + '/oauth2/v2.0/authorize';
 const GRAPH_ENDPOINT = 'https://graph.microsoft.com/v1.0';
-const SP_HOSTNAME = 'lfadvisoryptyltd.sharepoint.com';
 const HISTORY_FILE = 'lf-advisory-payroll-history.json';
 
 let _odToken = null;
-let _siteId = sessionStorage.getItem('sp_site_id') || null;
 let _history = null;
 let _currentEdit = null; // {client, period}
-
-async function getSiteId(token) {
-    if (_siteId) return _siteId;
-    const resp = await fetch(GRAPH_ENDPOINT + '/sites/' + SP_HOSTNAME, {
-        headers: { Authorization: 'Bearer ' + token }
-    });
-    if (!resp.ok) throw new Error('SharePoint site lookup failed: ' + resp.status);
-    const site = await resp.json();
-    _siteId = site.id;
-    sessionStorage.setItem('sp_site_id', _siteId);
-    return _siteId;
-}
 
 function fmt(n) {
     if (n === undefined || n === null) return '—';
@@ -471,8 +457,7 @@ async function loadHistory() {
     _odToken = token;
     updateODStatus('loading');
     try {
-        const siteId = await getSiteId(token);
-        const resp = await fetch(GRAPH_ENDPOINT + '/sites/' + siteId + '/drive/root:/LF Advisory Workpapers:/children', {
+        const resp = await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers:/children', {
             headers: { Authorization: 'Bearer ' + token }
         });
         const items = await resp.json();
@@ -623,8 +608,7 @@ function saveEdits() {
 
         async function ensureWorkpapersFolder(token) {
             try {
-                const siteId = await getSiteId(token);
-                await fetch(GRAPH_ENDPOINT + '/sites/' + siteId + '/drive/root/children', {
+                await fetch(GRAPH_ENDPOINT + '/me/drive/root/children', {
                     method: 'POST',
                     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: 'LF Advisory Workpapers', folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
@@ -638,8 +622,7 @@ async function saveHistoryToOneDrive() {
     try {
         await ensureWorkpapersFolder(token);
         updateODStatus('saving');
-        const siteId = await getSiteId(token);
-        await fetch(GRAPH_ENDPOINT + '/sites/' + siteId + '/drive/root:/LF Advisory Workpapers/' + HISTORY_FILE + ':/content', {
+        await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers/' + HISTORY_FILE + ':/content', {
             method: 'PUT',
             headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
             body: JSON.stringify(_history, null, 2)
