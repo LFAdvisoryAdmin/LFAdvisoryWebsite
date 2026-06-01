@@ -3203,6 +3203,22 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             };
             const fmt$ = (v) => '$' + (v||0).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
 
+            // ── SHEET: Cover ─────────────────────────────────────────────
+            // Built first so it lands at sheet index 0 (no manual reordering needed).
+            const coverRows = [
+                ['LF ADVISORY',''],
+                ['',''],
+                ['',''],
+                ['PAYROLL RECONCILIATION',''],
+                ['AUDIT REPORT',''],
+                ['',''],
+                ['',''],
+                ['Client', clientName],
+                ['Period', period],
+                ['Generated', dateStr],
+            ];
+            addSheet('Cover', coverRows, [40, 40]);
+
             // ── SHEET: Journal ───────────────────────────────────────────
             const jRows = [
                 [clientName,'','',''],
@@ -3504,70 +3520,258 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             }
             addSheet('Payroll Tax', ptRows, [28,18,14,20,22,18,16]);
 
-            // ── SHEET: Summary ───────────────────────────────────────────
-            let grandWages=0, grandBonus=0, grandAllow=0, grandSuper=0;
-            departments.forEach(dept => {
-                const gc = (key, suf) => (dept.glCodes&&dept.glCodes[key]) ? dept.glCodes[key] : (dept.accountPrefix||'')+suf;
-                grandWages += journalEntries.find(e=>e.account===gc('wages','30'))?.debit||0;
-                grandBonus += journalEntries.find(e=>e.account===gc('bonusOvertime','31'))?.debit||0;
-                grandAllow += journalEntries.find(e=>e.account===gc('allowances','32'))?.debit||0;
-                grandSuper += journalEntries.find(e=>e.account===gc('super','33'))?.debit||0;
-            });
-            const grandTotal = grandWages+grandBonus+grandAllow+grandSuper;
-            const provEntry  = journalEntries.find(e=>e.account===alAccount);
-            const provMove   = provEntry ? (provEntry.credit>0?provEntry.credit:-provEntry.debit) : 0;
-            const ptEntry2   = journalEntries.find(e=>e.account===ptAccount);
-            const wcAccount  = coa.workcoverPrepaid || '11195';
-            const wcEntry2   = journalEntries.find(e=>e.account===wcAccount);
+            // ── SHEET: Appendix A — LSL Methodology ──────────────────────
+            // Key assumption cells ($B$12 on-cost, $B$14 inflation) are referenced
+            // by Appendices B and C so editing them flows through.
+            const aSettings = currentClientData.lslSettings || {};
+            const aOnCost = aSettings.onCost || 0.1875;
+            const aInflation = aSettings.inflation || 0.035;
+            const aG100 = aSettings.g100Rates || {0:0,1:0.0387,2:0.0388,3:0.0403,4:0.0423,5:0.0444,6:0.0465,7:0.0486,8:0.0507,9:0.0528,10:0.0549};
+            const aDefaultProbs = [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,0.9,1.0];
 
-            const sumRows = [
-                ['LF ADVISORY',''],
-                ['PAYROLL RECONCILIATION AUDIT REPORT',''],
-                ['',''],
-                ['Client',    clientName],
-                ['Period',    period],
-                ['Generated', dateStr],
-                ['',''],
-                ['EARNINGS SUMMARY',''],
-                ['Wages & Salaries',  n(grandWages)],
-                ['Bonus / Overtime',  n(grandBonus)],
-                ['Allowances',        n(grandAllow)],
-                ['Superannuation',    n(grandSuper)],
-                ['Total Payroll',     n(grandTotal)],
-                ['',''],
-                ['STATUTORY COSTS',''],
-                ['Payroll Tax',        ptEntry2 ? n(ptEntry2.credit||0) : n(0)],
-                ['Workers Compensation', wcEntry2 ? n(wcEntry2.credit||0) : n(0)],
-                ['',''],
-                ['PROVISIONS',''],
-                ['Annual Leave Movement', n(provMove)],
+            const APP_A = 'Appendix A';
+            const aRows = [
+                [clientName, ''],                                                       // r1
+                [`APPENDIX A: LSL CALCULATION METHODOLOGY — ${period}`, ''],            // r2
+                ['', ''],                                                               // r3
+                ['Standard: AASB 119 Employee Benefits', ''],                           // r4
+                ['Method: Probability-weighted, discounted present value', ''],         // r5
+                ['', ''],                                                               // r6
+                ['Formula:', ''],                                                       // r7
+                ['PV = Raw Liability × (1 + On-Cost) × Probability × (1 + Inflation)^n ÷ (1 + Discount)^n', ''], // r8
+                ['', ''],                                                               // r9
+                ['KEY ASSUMPTIONS', ''],                                                // r10
+                ['', ''],                                                               // r11
+                ['On-Cost Rate', n(aOnCost, PCT)],                                      // r12  ← $B$12
+                ['  (Superannuation, payroll tax, workers compensation)', ''],          // r13
+                ['Salary Inflation Rate', n(aInflation, PCT)],                          // r14  ← $B$14
+                ['  (Expected future salary growth)', ''],                              // r15
+                ['', ''],                                                               // r16
+                ['Discount Rates: Australian Government Bond Curve (G100)', ''],        // r17
+                ['Year', 'Rate'],                                                       // r18
             ];
-            if (lslData) {
-                sumRows.push(['','']);
-                sumRows.push(['LSL PROVISION (AASB 119)','']);
-                sumRows.push([`Current Liability (${lslCurrentAcct})`,    n(lslData.currentLiability||0)]);
-                sumRows.push([`Non-Current Liability (${lslNonCurrentAcct})`, n(lslData.nonCurrentLiability||0)]);
-                sumRows.push(['Total AASB 119 Provision',    n(lslData.currentProvision||0)]);
-                sumRows.push(['Monthly Movement',            n(lslData.movement||0)]);
-                sumRows.push(['Employees in scope',          n(lslData.employeeCount||0, INT)]);
+            for (let yr = 0; yr <= 10; yr++) {
+                aRows.push([n(yr, INT), n(aG100[yr] !== undefined ? aG100[yr] : 0.05, PCT)]);
             }
-            if (accrualData) {
-                sumRows.push(['','']);
-                sumRows.push(['WAGES ACCRUAL','']);
-                const totalThis = accrualData.detail ? Object.values(accrualData.detail).reduce((s,d)=>s+(d.accrualAmount||0),0) : 0;
-                sumRows.push([`Wages Accrued (${coa.wagesAccrued||'21450'})`, n(totalThis)]);
+            aRows.push(['', '']);
+            aRows.push(['Vesting Probabilities (default by years of service)', '']);
+            aRows.push(['Years of Service', 'Probability']);
+            for (let yr = 0; yr <= 10; yr++) {
+                const p = aSettings[`prob${yr}`] !== undefined ? aSettings[`prob${yr}`] : aDefaultProbs[yr];
+                aRows.push([n(yr, INT), n(p, PCT)]);
             }
-            sumRows.push(['','']);
-            sumRows.push(['JOURNAL STATUS','']);
-            sumRows.push(['Total Debits',  n(totalDr)]);
-            sumRows.push(['Total Credits', n(totalCr)]);
-            sumRows.push(['Status', balanced ? 'BALANCED ✅' : `OUT OF BALANCE ⚠️`]);
-            addSheet('Summary', sumRows, [34,22]);
+            aRows.push(['', '']);
+            aRows.push(['Expected Time to Entitlement', '']);
+            aRows.push(['  Employees with < vesting years', 'Years to entitlement = vesting − current years of service']);
+            aRows.push(['  Employees with ≥ vesting years', 'Immediate entitlement (current liability, no discounting)']);
+            addSheet(APP_A, aRows, [60, 22]);
 
-            // ── Sheet order: Summary first ────────────────────────────────
-            const si = wb.SheetNames.indexOf('Summary');
-            wb.SheetNames.splice(si,1);
-            wb.SheetNames.unshift('Summary');
+            // ── SHEET: Appendix B — Detailed Employee Calculations ───────
+            const APP_B = 'Appendix B';
+            const lslEmpAll = (lslData && lslData.employeeProvisions) || [];
+            const lslEmps = lslEmpAll.filter(e => e.yearsOfService !== undefined && e.yearsOfService !== null && !isNaN(e.yearsOfService));
+
+            // Group by state to build the summary subtable
+            const bStateGroups = {};
+            lslEmps.forEach(emp => {
+                const st = emp.state || 'QLD';
+                if (!bStateGroups[st]) bStateGroups[st] = { count: 0, vesting: emp.vestingYears || 10 };
+                bStateGroups[st].count++;
+            });
+            const bStates = Object.keys(bStateGroups).sort();
+
+            const bRows = [];
+            let bR = 0;
+            const pushB = (row) => { bRows.push(row); bR++; };
+            const blankB = () => pushB(Array(12).fill(''));
+
+            pushB([clientName,'','','','','','','','','','','']);                                  // r1
+            pushB([`APPENDIX B: DETAILED EMPLOYEE CALCULATIONS — ${period}`,'','','','','','','','','','','']); // r2
+            blankB();                                                                              // r3
+            pushB(['Complete AASB 119 calculation breakdown for every employee with LSL entitlement','','','','','','','','','','','']); // r4
+            pushB(['🔧 = Service date override applied','','','','','','','','','','','']);        // r5
+            blankB();                                                                              // r6
+            pushB(['LSL PROVISION BY STATE/TERRITORY','','','','','','','','','','','']);          // r7
+            blankB();                                                                              // r8
+            pushB(['State','Employees','Vesting Yrs','Total Provision','','','','','','','','']); // r9 = header
+            const bStateHdrRow = bR;
+            const bStatePlaceholderStart = bR + 1;
+            bStates.forEach(st => pushB([st,'','','','','','','','','','','']));                   // placeholders
+            const bStatePlaceholderEnd = bR;
+            blankB();                                                                              // blank
+            const bStateTotalRow = bR + 1;
+            pushB(['TOTAL','','','','','','','','','','','']);                                     // placeholder
+            blankB();
+            blankB();
+            pushB(['EMPLOYEE DETAIL','','','','','','','','','','','']);
+            blankB();
+            pushB(['Employee','State','Vesting Yrs','Years','Raw Liability','After On-Cost','Probability','Years to Vest','Inflation Factor','Discount Factor','Vested?','AASB 119 Provision']);
+            const bEmpStart = bR + 1;
+
+            lslEmps.forEach(emp => {
+                const r = bR + 1;
+                const vestingYrs = emp.vestingYears || 10;
+                const isVested = emp.yearsOfService >= vestingYrs;
+                let probVal, yToVest, dFact;
+                if (isVested) { probVal = 1.0; yToVest = 0; dFact = 1; }
+                else {
+                    const pIdx = vestingYrs === 7
+                        ? Math.min(Math.floor((emp.yearsOfService/7)*10), 10)
+                        : Math.min(Math.floor(emp.yearsOfService), 10);
+                    const sp = aSettings[`prob${pIdx}`];
+                    probVal = (sp !== undefined && sp !== null && !isNaN(sp)) ? sp : aDefaultProbs[pIdx];
+                    yToVest = Math.max(1, vestingYrs - emp.yearsOfService);
+                    const dYear = Math.min(Math.ceil(yToVest), 10);
+                    const dRate = aG100[dYear] !== undefined ? aG100[dYear] : 0.05;
+                    dFact = 1 / Math.pow(1 + dRate, yToVest);
+                }
+                pushB([
+                    emp.name + (emp.hasOverride ? ' 🔧' : ''),                                  // A
+                    emp.state || 'QLD',                                                         // B
+                    n(vestingYrs, INT),                                                         // C
+                    n(parseFloat(emp.yearsOfService.toFixed(4))),                               // D
+                    n(emp.rawLiability),                                                        // E  Raw
+                    f(`E${r}*(1+'${APP_A}'!$B$12)`),                                            // F  After on-cost
+                    n(probVal, PCT),                                                            // G
+                    n(parseFloat(yToVest.toFixed(4))),                                          // H
+                    isVested ? n(1) : f(`(1+'${APP_A}'!$B$14)^H${r}`),                          // I  Inflation
+                    isVested ? n(1) : n(parseFloat(dFact.toFixed(6))),                          // J  Discount
+                    f(`IF(D${r}>=C${r},"YES","NO")`, '@'),                                      // K  Vested? (text)
+                    isVested ? f(`F${r}`) : f(`F${r}*G${r}*I${r}*J${r}`),                       // L  Provision
+                ]);
+            });
+            const bEmpEnd = bR;
+            // K column is text — its format token was '@', but our f() helper sets numeric format.
+            // Patch the cells we just pushed so the IF() shows YES/NO instead of '#N/A as number'.
+            for (let i = bEmpStart - 1; i < bEmpEnd; i++) {
+                if (bRows[i] && bRows[i][10]) bRows[i][10] = {f: bRows[i][10].f, t: 's'};
+            }
+            blankB();
+            pushB([
+                'TOTALS','','','',
+                f(`SUM(E${bEmpStart}:E${bEmpEnd})`),
+                f(`SUM(F${bEmpStart}:F${bEmpEnd})`),
+                '','','','','',
+                f(`SUM(L${bEmpStart}:L${bEmpEnd})`),
+            ]);
+
+            // Fill in the state breakdown placeholders now that we know employee row range.
+            bStates.forEach((st, idx) => {
+                const rowIdx = bStatePlaceholderStart + idx - 1; // 0-indexed into bRows
+                bRows[rowIdx] = [
+                    st,
+                    f(`COUNTIFS(B${bEmpStart}:B${bEmpEnd},"${st}")`, INT),
+                    n(bStateGroups[st].vesting, INT),
+                    f(`SUMIFS(L${bEmpStart}:L${bEmpEnd},B${bEmpStart}:B${bEmpEnd},"${st}")`),
+                    '','','','','','','','',
+                ];
+            });
+            bRows[bStateTotalRow - 1] = [
+                'TOTAL',
+                f(`SUM(B${bStatePlaceholderStart}:B${bStatePlaceholderEnd})`, INT),
+                '',
+                f(`SUM(D${bStatePlaceholderStart}:D${bStatePlaceholderEnd})`),
+                '','','','','','','','',
+            ];
+
+            addSheet(APP_B, bRows, [30, 7, 11, 10, 14, 14, 11, 12, 13, 13, 9, 16]);
+
+            // ── SHEET: Appendix C — Step-by-Step Calculations ────────────
+            const APP_C = 'Appendix C';
+            const cRows = [];
+            let cR = 0;
+            const pushC = (row) => { cRows.push(row); cR++; };
+
+            pushC([clientName,'','','']);
+            pushC([`APPENDIX C: DETAILED STEP-BY-STEP CALCULATIONS — ${period}`,'','','']);
+            pushC(['','','','']);
+            pushC([`Full AASB 119 calculations for each employee — ${lslEmps.length} employees`,'','','']);
+            pushC(['','','','']);
+
+            lslEmps.forEach((emp, idx) => {
+                const vestingYrs = emp.vestingYears || 10;
+                const isVested = emp.yearsOfService >= vestingYrs;
+                const empLabel = `${idx + 1}. ${emp.name}${emp.hasOverride ? ' 🔧' : ''}`;
+                const statusLabel = isVested ? 'CURRENT LIABILITY' : 'NON-CURRENT LIABILITY';
+
+                pushC([empLabel, '', '', statusLabel]);
+                pushC([
+                    `State: ${emp.state || 'QLD'}  |  Vesting: ${vestingYrs} yrs  |  Years of Service: ${emp.yearsOfService.toFixed(2)}`,
+                    '', '', '',
+                ]);
+                pushC(['','','','']);
+
+                const step1Row = cR + 1;
+                pushC(['Step 1: Raw LSL Balance (from leave file)', '', '', n(emp.rawLiability)]);
+
+                const step2Row = cR + 1;
+                pushC([`Step 2: Apply On-Cost`, '', `=D${step1Row}*(1+'${APP_A}'!$B$12)`, f(`D${step1Row}*(1+'${APP_A}'!$B$12)`)]);
+
+                if (isVested) {
+                    pushC(['Fully vested — no probability, inflation, or discounting required','','','']);
+                    const finalRow = cR + 1;
+                    pushC(['AASB 119 Provision (Current Liability)', '', `=D${step2Row}`, f(`D${step2Row}`)]);
+                } else {
+                    const pIdx = vestingYrs === 7
+                        ? Math.min(Math.floor((emp.yearsOfService/7)*10), 10)
+                        : Math.min(Math.floor(emp.yearsOfService), 10);
+                    const sp = aSettings[`prob${pIdx}`];
+                    const probVal = (sp !== undefined && sp !== null && !isNaN(sp)) ? sp : aDefaultProbs[pIdx];
+                    const yToVest = Math.max(1, vestingYrs - emp.yearsOfService);
+                    const dYear = Math.min(Math.ceil(yToVest), 10);
+                    const dRate = aG100[dYear] !== undefined ? aG100[dYear] : 0.05;
+                    const dFact = 1 / Math.pow(1 + dRate, yToVest);
+
+                    const step3Row = cR + 1;
+                    pushC([`Step 3: Apply Probability (Prob. Index ${pIdx})`, n(probVal, PCT), `=D${step2Row}*B${step3Row}`, f(`D${step2Row}*B${step3Row}`)]);
+
+                    const step4Row = cR + 1;
+                    pushC([`Step 4: Years to Vesting (${vestingYrs} − ${emp.yearsOfService.toFixed(2)})`, '', '', n(parseFloat(yToVest.toFixed(4)))]);
+
+                    const step5Row = cR + 1;
+                    pushC([`Step 5: Apply Inflation`, '', `=D${step3Row}*((1+'${APP_A}'!$B$14)^D${step4Row})`, f(`D${step3Row}*((1+'${APP_A}'!$B$14)^D${step4Row})`)]);
+
+                    const step6Row = cR + 1;
+                    pushC([`Step 6: Apply G100 Discount (Year ${dYear} rate ${(dRate*100).toFixed(2)}%, factor)`, n(parseFloat(dFact.toFixed(6))), `=D${step5Row}*B${step6Row}`, f(`D${step5Row}*B${step6Row}`)]);
+
+                    pushC(['AASB 119 Provision (Non-Current Liability)', '', `=D${step6Row}`, f(`D${step6Row}`)]);
+                }
+                pushC(['','','','']);
+            });
+
+            addSheet(APP_C, cRows, [54, 14, 32, 18]);
+
+            // ── SHEET: Appendix D — Provision Reconciliation ─────────────
+            const APP_D = 'Appendix D';
+            const dRows = [
+                [clientName, ''],
+                [`APPENDIX D: PROVISION RECONCILIATION — ${period}`, ''],
+                ['', ''],
+                ['MOVEMENT', ''],
+                ['', ''],
+            ];
+            const dOpening = (lslData && lslData.lastProvision) || 0;
+            const dOpeningRow = dRows.length + 1;
+            dRows.push(['Opening Balance (Prior Month Provision)', n(dOpening)]);
+            const dClosingRow = dRows.length + 1;
+            // Closing = sum of all final provisions in Appendix B
+            dRows.push(['Closing Balance (This Month Provision)', f(`SUM('${APP_B}'!L${bEmpStart}:L${bEmpEnd})`)]);
+            const dMovementRow = dRows.length + 1;
+            dRows.push(['Movement (Expense for the month)', f(`B${dClosingRow}-B${dOpeningRow}`)]);
+            dRows.push(['', '']);
+            dRows.push(['CURRENT / NON-CURRENT SPLIT', '']);
+            dRows.push(['', '']);
+            const dCurrRow = dRows.length + 1;
+            dRows.push([`Current Liability (${lslCurrentAcct} — vested ≥ vesting years)`,
+                f(`SUMIFS('${APP_B}'!L${bEmpStart}:L${bEmpEnd},'${APP_B}'!K${bEmpStart}:K${bEmpEnd},"YES")`)]);
+            const dNonCurrRow = dRows.length + 1;
+            dRows.push([`Non-Current Liability (${lslNonCurrentAcct} — under vesting)`,
+                f(`SUMIFS('${APP_B}'!L${bEmpStart}:L${bEmpEnd},'${APP_B}'!K${bEmpStart}:K${bEmpEnd},"NO")`)]);
+            dRows.push(['Total AASB 119 Provision', f(`B${dCurrRow}+B${dNonCurrRow}`)]);
+            dRows.push(['', '']);
+            dRows.push(['Check: Closing − (Current + Non-Current)', f(`B${dClosingRow}-(B${dCurrRow}+B${dNonCurrRow})`)]);
+            dRows.push(['  (should equal $0.00)', '']);
+            addSheet(APP_D, dRows, [60, 18]);
 
             const safeClient = clientName.replace(/[^a-z0-9]/gi,'_');
             const safePeriod = period.replace(/[^a-z0-9]/gi,'_');
