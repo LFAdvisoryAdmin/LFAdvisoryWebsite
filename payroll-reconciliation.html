@@ -2404,6 +2404,9 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 };
 
                 currentClientData = {
+                    // Preserve fields a running rec doesn't recompute (chart of accounts,
+                    // LSL settings, etc.) so they aren't wiped each month.
+                    ...currentClientData,
                     clientName: clientName,
                     payrollFrequency: payrollFrequency,
                     workcover: workcoverAnnual,
