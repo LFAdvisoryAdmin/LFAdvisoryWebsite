@@ -3123,24 +3123,28 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             const period = document.getElementById('period').value;
             const today = new Date().toISOString().split('T')[0];
 
-            // Resolve the journal date to the last day of the period (e.g. "December 2025" → 2025-12-31).
-            // Falls back to today if the period text can't be parsed — check Xero's date column before posting.
+            // Resolve the journal date to the last day of the period (e.g. "December 2025" → 2025-12-31)
+            // and format the narration as "Payroll Reconciliation - MMM YYYY".
+            // Falls back to today / raw period text if it can't be parsed.
             let journalDate = today;
+            let narration = period ? `Payroll Reconciliation - ${period}` : 'Payroll Reconciliation';
             const months = {jan:0,january:0,feb:1,february:1,mar:2,march:2,apr:3,april:3,may:4,jun:5,june:5,jul:6,july:6,aug:7,august:7,sep:8,sept:8,september:8,oct:9,october:9,nov:10,november:10,dec:11,december:11};
+            const shortMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
             const m = (period || '').toLowerCase().match(/([a-z]+)\s*,?\s*(\d{4})/);
             if (m && months[m[1]] !== undefined) {
                 const year = parseInt(m[2]);
                 const monthIdx = months[m[1]];
                 const lastDay = new Date(year, monthIdx + 1, 0).getDate();
                 journalDate = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+                narration = `Payroll Reconciliation - ${shortMonths[monthIdx]} ${year}`;
             } else if (period) {
                 console.warn('[Journal CSV] Could not parse period "' + period + '" — defaulting Date column to today (' + today + ')');
             }
 
             let csv = '*Narration,*Date,Description,*AccountCode,*TaxRate,*Amount,TrackingName1,TrackingOption1,TrackingName2,TrackingOption2\n';
             journalEntries.forEach(e => {
-                if (e.debit > 0) csv += `"PR ${period}",${journalDate},"${e.name}",${e.account},BAS Excluded,${e.debit.toFixed(2)},,,,\n`;
-                if (e.credit > 0) csv += `"PR ${period}",${journalDate},"${e.name}",${e.account},BAS Excluded,-${e.credit.toFixed(2)},,,,\n`;
+                if (e.debit > 0) csv += `"${narration}",${journalDate},"${e.name}",${e.account},BAS Excluded,${e.debit.toFixed(2)},,,,\n`;
+                if (e.credit > 0) csv += `"${narration}",${journalDate},"${e.name}",${e.account},BAS Excluded,-${e.credit.toFixed(2)},,,,\n`;
             });
             const blob = new Blob([csv], { type: 'text/csv' });
             const a = document.createElement('a');
