@@ -447,6 +447,57 @@ function connectOneDrive() {
     window.location.href = url;
 }
 
+// Folder resolver — tries personal OneDrive, then sharedWithMe.
+const FOLDER_NAME = 'LF Advisory Workpapers';
+let _folderRef = null;
+
+async function resolveFolder(token) {
+    if (_folderRef) return _folderRef;
+    try {
+        const r = await fetch(GRAPH_ENDPOINT + '/me/drive/root:/' + encodeURIComponent(FOLDER_NAME), {
+            headers: { Authorization: 'Bearer ' + token }
+        });
+        if (r.ok) {
+            const item = await r.json();
+            if (item.folder) {
+                _folderRef = { owned: true, driveId: item.parentReference && item.parentReference.driveId, itemId: item.id };
+                return _folderRef;
+            }
+        }
+    } catch (e) { console.warn('[Folder] Owner lookup failed:', e); }
+    try {
+        const r = await fetch(GRAPH_ENDPOINT + '/me/drive/sharedWithMe', {
+            headers: { Authorization: 'Bearer ' + token }
+        });
+        if (r.ok) {
+            const data = await r.json();
+            const item = (data.value || []).find(i => i.name === FOLDER_NAME && i.folder && i.remoteItem);
+            if (item) {
+                _folderRef = {
+                    owned: false,
+                    driveId: item.remoteItem.parentReference.driveId,
+                    itemId: item.remoteItem.id
+                };
+                return _folderRef;
+            }
+        }
+    } catch (e) { console.warn('[Folder] Shared lookup failed:', e); }
+    return null;
+}
+
+function folderChildrenUrl(ref) {
+    return ref.owned
+        ? GRAPH_ENDPOINT + '/me/drive/items/' + ref.itemId + '/children'
+        : GRAPH_ENDPOINT + '/drives/' + ref.driveId + '/items/' + ref.itemId + '/children';
+}
+
+function folderFileUrl(ref, filename) {
+    const enc = encodeURIComponent(filename);
+    return ref.owned
+        ? GRAPH_ENDPOINT + '/me/drive/items/' + ref.itemId + ':/' + enc + ':/content'
+        : GRAPH_ENDPOINT + '/drives/' + ref.driveId + '/items/' + ref.itemId + ':/' + enc + ':/content';
+}
+
 async function loadHistory() {
     const token = _odToken || getStoredToken();
     if (!token) {
@@ -457,7 +508,13 @@ async function loadHistory() {
     _odToken = token;
     updateODStatus('loading');
     try {
-        const resp = await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers:/children', {
+        const ref = await resolveFolder(token);
+        if (!ref) {
+            updateODStatus('connected');
+            document.getElementById('historyContent').innerHTML = '<div class="empty-state">No reconciliation history found yet. Run your first reconciliation to get started.</div>';
+            return;
+        }
+        const resp = await fetch(folderChildrenUrl(ref), {
             headers: { Authorization: 'Bearer ' + token }
         });
         const items = await resp.json();
@@ -606,23 +663,28 @@ function saveEdits() {
 }
 
 
-        async function ensureWorkpapersFolder(token) {
-            try {
-                await fetch(GRAPH_ENDPOINT + '/me/drive/root/children', {
-                    method: 'POST',
-                    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: 'LF Advisory Workpapers', folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
-                });
-            } catch(e) { /* already exists */ }
-        }
+async function ensureFolder(token) {
+    const ref = await resolveFolder(token);
+    if (ref) return ref;
+    try {
+        await fetch(GRAPH_ENDPOINT + '/me/drive/root/children', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: FOLDER_NAME, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
+        });
+    } catch (e) { /* may already exist, ignore */ }
+    _folderRef = null;
+    return await resolveFolder(token);
+}
 
 async function saveHistoryToOneDrive() {
     const token = _odToken || getStoredToken();
     if (!token) return;
     try {
-        await ensureWorkpapersFolder(token);
+        const ref = await ensureFolder(token);
+        if (!ref) throw new Error('Could not resolve workpapers folder');
         updateODStatus('saving');
-        await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers/' + HISTORY_FILE + ':/content', {
+        await fetch(folderFileUrl(ref, HISTORY_FILE), {
             method: 'PUT',
             headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
             body: JSON.stringify(_history, null, 2)

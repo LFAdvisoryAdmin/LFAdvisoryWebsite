@@ -1038,6 +1038,75 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             window.location.href = url;
         }
 
+        // Resolve the workpapers folder for the signed-in user. Tries personal
+        // OneDrive first (folder owner case), then sharedWithMe (shared folder
+        // case — covers staff who've been given access but don't own the data).
+        const FOLDER_NAME = 'LF Advisory Workpapers';
+        let _folderRef = null; // { owned: bool, driveId, itemId } once resolved
+
+        async function resolveFolder(token) {
+            if (_folderRef) return _folderRef;
+            try {
+                const r = await fetch(GRAPH_ENDPOINT + '/me/drive/root:/' + encodeURIComponent(FOLDER_NAME), {
+                    headers: { Authorization: 'Bearer ' + token }
+                });
+                if (r.ok) {
+                    const item = await r.json();
+                    if (item.folder) {
+                        _folderRef = { owned: true, driveId: item.parentReference && item.parentReference.driveId, itemId: item.id };
+                        return _folderRef;
+                    }
+                }
+            } catch (e) { console.warn('[Folder] Owner lookup failed:', e); }
+            try {
+                const r = await fetch(GRAPH_ENDPOINT + '/me/drive/sharedWithMe', {
+                    headers: { Authorization: 'Bearer ' + token }
+                });
+                if (r.ok) {
+                    const data = await r.json();
+                    const item = (data.value || []).find(i => i.name === FOLDER_NAME && i.folder && i.remoteItem);
+                    if (item) {
+                        _folderRef = {
+                            owned: false,
+                            driveId: item.remoteItem.parentReference.driveId,
+                            itemId: item.remoteItem.id
+                        };
+                        return _folderRef;
+                    }
+                }
+            } catch (e) { console.warn('[Folder] Shared lookup failed:', e); }
+            return null;
+        }
+
+        function folderChildrenUrl(ref) {
+            return ref.owned
+                ? GRAPH_ENDPOINT + '/me/drive/items/' + ref.itemId + '/children'
+                : GRAPH_ENDPOINT + '/drives/' + ref.driveId + '/items/' + ref.itemId + '/children';
+        }
+
+        function folderFileUrl(ref, filename) {
+            const enc = encodeURIComponent(filename);
+            return ref.owned
+                ? GRAPH_ENDPOINT + '/me/drive/items/' + ref.itemId + ':/' + enc + ':/content'
+                : GRAPH_ENDPOINT + '/drives/' + ref.driveId + '/items/' + ref.itemId + ':/' + enc + ':/content';
+        }
+
+        // Resolve or create the folder. Only attempts creation in the user's own
+        // drive root — staff with shared access never need to create anything.
+        async function ensureFolder(token) {
+            const ref = await resolveFolder(token);
+            if (ref) return ref;
+            try {
+                await fetch(GRAPH_ENDPOINT + '/me/drive/root/children', {
+                    method: 'POST',
+                    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: FOLDER_NAME, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
+                });
+            } catch (e) { /* may already exist, ignore */ }
+            _folderRef = null;
+            return await resolveFolder(token);
+        }
+
         async function odLoad() {
             const token = _odToken || getStoredToken();
             if (!token) {
@@ -1049,7 +1118,9 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             _odToken = token;
             try {
                 updateODStatus('loading');
-                const resp = await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers:/children', {
+                const ref = await resolveFolder(token);
+                if (!ref) { updateODStatus('connected'); return {}; }
+                const resp = await fetch(folderChildrenUrl(ref), {
                     headers: { Authorization: 'Bearer ' + token }
                 });
                 if (resp.status === 404) { updateODStatus('connected'); return {}; }
@@ -1069,25 +1140,15 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             }
         }
 
-
-        async function ensureWorkpapersFolder(token) {
-            // Create "LF Advisory Workpapers" folder if it doesn't exist
-            try {
-                await fetch(GRAPH_ENDPOINT + '/me/drive/root/children', {
-                    method: 'POST',
-                    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: 'LF Advisory Workpapers', folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
-                });
-            } catch(e) { /* folder already exists, ignore */ }
-        }
         async function odSave(clients) {
             localStorage.setItem('payrollClients', JSON.stringify(clients));
             const token = _odToken || getStoredToken();
             if (!token) return;
             try {
-                await ensureWorkpapersFolder(token);
+                const ref = await ensureFolder(token);
+                if (!ref) throw new Error('Could not resolve workpapers folder');
                 updateODStatus('saving');
-                await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers/' + DATA_FILE + ':/content', {
+                await fetch(folderFileUrl(ref, DATA_FILE), {
                     method: 'PUT',
                     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
                     body: JSON.stringify(clients, null, 2)
@@ -1110,24 +1171,24 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             const token = _odToken || getStoredToken();
             if (!token) { console.warn('[History] No token, skipping history save'); return; }
             try {
-                // Load existing history
                 const HISTORY_FILE = 'lf-advisory-payroll-history.json';
+                const ref = await ensureFolder(token);
+                if (!ref) throw new Error('Could not resolve workpapers folder');
                 let history = {};
-                const resp = await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers:/children', {
+                const resp = await fetch(folderChildrenUrl(ref), {
                     headers: { Authorization: 'Bearer ' + token }
                 });
-                if (resp.status === 404) { updateODStatus('connected'); return {}; }
-                const items = await resp.json();
-                const file = (items.value || []).find(f => f.name === HISTORY_FILE);
-                if (file) {
-                    const fileResp = await fetch(file['@microsoft.graph.downloadUrl']);
-                    history = await fileResp.json();
+                if (resp.ok) {
+                    const items = await resp.json();
+                    const file = (items.value || []).find(f => f.name === HISTORY_FILE);
+                    if (file) {
+                        const fileResp = await fetch(file['@microsoft.graph.downloadUrl']);
+                        history = await fileResp.json();
+                    }
                 }
-                // Add snapshot under client > period
                 if (!history[clientName]) history[clientName] = {};
                 history[clientName][period] = snapshot;
-                // Save back
-                await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers/' + HISTORY_FILE + ':/content', {
+                await fetch(folderFileUrl(ref, HISTORY_FILE), {
                     method: 'PUT',
                     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
                     body: JSON.stringify(history, null, 2)
@@ -1219,7 +1280,9 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             if (!token) return {};
             try {
                 const HISTORY_FILE = 'lf-advisory-payroll-history.json';
-                const resp = await fetch(GRAPH_ENDPOINT + '/me/drive/root:/LF Advisory Workpapers:/children', {
+                const ref = await resolveFolder(token);
+                if (!ref) return {};
+                const resp = await fetch(folderChildrenUrl(ref), {
                     headers: { Authorization: 'Bearer ' + token }
                 });
                 if (!resp.ok) return {};
