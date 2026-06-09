@@ -5034,45 +5034,45 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 console.log('Movement By Dept:', lslData.movementByDept);
 
                 // ── EXPENSE SIDE (P&L debits per department) ──────────────────
+                // Resolve each leave-file department name to a configured department,
+                // falling back to the catch-all (then the first dept) so movement is
+                // never silently dropped when the names don't match. This mirrors the
+                // annual-leave allocation and keeps the expense side in step with the
+                // liability side, which posts from totals below.
+                const resolveLslDept = (deptName) =>
+                    depts.find(d => d.xeroGroup === deptName)
+                    || depts.find(d => d.name === deptName)
+                    || depts.find(d => deptName && d.name && deptName.includes(d.name))
+                    || depts.find(d => d.catchAll)
+                    || depts[0];
+
+                const lslExpenseByDept = {};
+                depts.forEach(dept => { lslExpenseByDept[dept.id] = 0; });
+
                 if (lslData.movementByDept && Object.keys(lslData.movementByDept).length > 0) {
-                    depts.forEach(dept => {
-                        let deptMovement = 0;
-                        for (let deptName in lslData.movementByDept) {
-                            if (deptName === dept.xeroGroup || deptName === dept.name || deptName.includes(dept.name)) {
-                                deptMovement += lslData.movementByDept[deptName];
-                            }
-                        }
-                        if (Math.abs(deptMovement) > 0.005) {
-                            entries.push({ 
-                                account: (dept.glCodes && dept.glCodes.lsl) ? dept.glCodes.lsl : (dept.accountPrefix || '') + '35', 
-                                name: `Long Service Leave Expense - ${dept.name}`, 
-                                debit: deptMovement > 0 ? deptMovement : 0, 
-                                credit: deptMovement < 0 ? Math.abs(deptMovement) : 0
-                            });
-                        }
-                    });
-                } else {
-                    // Fallback: allocate proportionally via employee provisions
-                    const lslByDept = {};
-                    depts.forEach(dept => { lslByDept[dept.id] = 0; });
-                    if (lslData.employeeProvisions) {
-                        lslData.employeeProvisions.forEach(emp => {
-                            const dept = depts.find(d => d.xeroGroup === emp.department || d.name === emp.department || emp.department.includes(d.name));
-                            if (dept && emp.movement) lslByDept[dept.id] += emp.movement;
-                        });
+                    for (let deptName in lslData.movementByDept) {
+                        const dept = resolveLslDept(deptName);
+                        if (dept) lslExpenseByDept[dept.id] += lslData.movementByDept[deptName];
                     }
-                    depts.forEach(dept => {
-                        const deptMovement = lslByDept[dept.id];
-                        if (Math.abs(deptMovement) > 0.005) {
-                            entries.push({ 
-                                account: (dept.glCodes && dept.glCodes.lsl) ? dept.glCodes.lsl : (dept.accountPrefix || '') + '35', 
-                                name: `Long Service Leave Expense - ${dept.name}`, 
-                                debit: deptMovement > 0 ? deptMovement : 0, 
-                                credit: deptMovement < 0 ? Math.abs(deptMovement) : 0
-                            });
-                        }
+                } else if (lslData.employeeProvisions) {
+                    // Fallback: allocate via per-employee provision movements
+                    lslData.employeeProvisions.forEach(emp => {
+                        const dept = resolveLslDept(emp.department);
+                        if (dept && emp.movement) lslExpenseByDept[dept.id] += emp.movement;
                     });
                 }
+
+                depts.forEach(dept => {
+                    const deptMovement = lslExpenseByDept[dept.id];
+                    if (Math.abs(deptMovement) > 0.005) {
+                        entries.push({
+                            account: (dept.glCodes && dept.glCodes.lsl) ? dept.glCodes.lsl : (dept.accountPrefix || '') + '35',
+                            name: `Long Service Leave Expense - ${dept.name}`,
+                            debit: deptMovement > 0 ? deptMovement : 0,
+                            credit: deptMovement < 0 ? Math.abs(deptMovement) : 0
+                        });
+                    }
+                });
 
                 // ── BALANCE SHEET SIDE (liability accounts) ───────────────────
                 if (lslData.currentMovement !== 0) {
