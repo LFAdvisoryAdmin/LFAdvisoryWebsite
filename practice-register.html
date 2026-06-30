@@ -283,6 +283,9 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 
   <div class="filters" id="filterBar">
     <span class="flt-label">Filter</span>
+    <select id="fltDate" class="flt-sel" onchange="setFilter('date',this.value)"></select>
+    <input type="date" id="fltFrom" class="flt-sel" style="display:none" onchange="setRange()" title="From"/>
+    <input type="date" id="fltTo" class="flt-sel" style="display:none" onchange="setRange()" title="To"/>
     <select id="fltClient" class="flt-sel" onchange="setFilter('client',this.value)"></select>
     <select id="fltGroup" class="flt-sel" onchange="setFilter('group',this.value)"></select>
     <select id="fltPerson" class="flt-sel" onchange="setFilter('person',this.value)"></select>
@@ -874,18 +877,28 @@ function removeTask(id){
 /* ───────────────────────── views ───────────────────────── */
 function setView(v){view=v;document.querySelectorAll('.view').forEach(function(b){b.setAttribute('aria-selected',b.dataset.view===v?'true':'false');});render();}
 
-/* filters (combine with AND across client / group / person / status) */
-var flt={client:'',group:'',person:'',status:''};
-function fltActive(){return flt.client||flt.group||flt.person||flt.status;}
+/* filters (combine with AND across date / client / group / person / status) */
+var flt={date:'',from:'',to:'',client:'',group:'',person:'',status:''};
+function fltActive(){return flt.date||flt.client||flt.group||flt.person||flt.status;}
 function setFilter(field,val){flt[field]=val;if(view==='clients'){setView('due');return;}render();}
-function clearFilters(){flt={client:'',group:'',person:'',status:''};render();}
+function setRange(){flt.from=document.getElementById('fltFrom').value;flt.to=document.getElementById('fltTo').value;render();}
+function clearFilters(){flt={date:'',from:'',to:'',client:'',group:'',person:'',status:''};render();}
 function matchClientGroupPerson(t){
   if(flt.client&&t.client!==flt.client)return false;
   if(flt.group){var c=clientByName(t.client);if(!c||(c.group||'')!==flt.group)return false;}
   if(flt.person){var p=(t.preparer||'').trim(),r=(t.reviewer||'').trim();if(p!==flt.person&&r!==flt.person)return false;}
   return true;
 }
-function matchFilters(t){return matchClientGroupPerson(t)&&!(flt.status&&t.stage!==flt.status);}
+function matchDate(t){
+  var d=t.dueDate;
+  if(flt.date==='overdue')return d<todayISO();
+  if(flt.date==='today')return d===todayISO();
+  if(flt.date==='week'){var ws=addDays(todayISO(),-((parseISO(todayISO()).getDay()+6)%7));return d>=ws&&d<=addDays(ws,6);}
+  if(flt.date==='month'){var n=parseISO(todayISO());return d>=ymd(n.getFullYear(),n.getMonth()+1,1)&&d<=monthEnd(todayISO());}
+  if(flt.date==='range')return (!flt.from||d>=flt.from)&&(!flt.to||d<=flt.to);
+  return true;
+}
+function matchFilters(t){return matchClientGroupPerson(t)&&!(flt.status&&t.stage!==flt.status)&&matchDate(t);}
 function populateFilters(){
   function fill(id,allLabel,vals,cur){var el=document.getElementById(id);el.innerHTML='<option value="">'+allLabel+'</option>'+vals.map(function(v){return '<option value="'+escAttr(v)+'"'+(v===cur?' selected':'')+'>'+esc(v)+'</option>';}).join('');el.value=cur||'';el.className='flt-sel'+(cur?' active':'');}
   var cnames=clients.map(function(c){return c.name;}).sort(function(a,b){return a.localeCompare(b);});
@@ -897,6 +910,14 @@ function populateFilters(){
   var st=document.getElementById('fltStatus');
   st.innerHTML='<option value="">All statuses</option>'+STAGES.map(function(s){return '<option value="'+s.key+'"'+(s.key===flt.status?' selected':'')+'>'+s.label+'</option>';}).join('');
   st.value=flt.status||'';st.className='flt-sel'+(flt.status?' active':'');
+  var DATE_OPTS=[['','All dates'],['overdue','Overdue'],['today','Due today'],['week','This week'],['month','This month'],['range','Date range…']];
+  var dt=document.getElementById('fltDate');
+  dt.innerHTML=DATE_OPTS.map(function(o){return '<option value="'+o[0]+'"'+(o[0]===flt.date?' selected':'')+'>'+o[1]+'</option>';}).join('');
+  dt.value=flt.date||'';dt.className='flt-sel'+(flt.date?' active':'');
+  var showRange=flt.date==='range',ff=document.getElementById('fltFrom'),ft=document.getElementById('fltTo');
+  ff.style.display=showRange?'inline-block':'none';ft.style.display=showRange?'inline-block':'none';
+  ff.value=flt.from||'';ft.value=flt.to||'';
+  ff.className='flt-sel'+(showRange&&flt.from?' active':'');ft.className='flt-sel'+(showRange&&flt.to?' active':'');
   document.getElementById('fltClear').style.display=fltActive()?'inline-block':'none';
 }
 
