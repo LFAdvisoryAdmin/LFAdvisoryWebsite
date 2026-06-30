@@ -651,8 +651,17 @@ function saveClient(){
 function toggleLodg(name,key){var c=clientByName(name);if(!c)return;c.lodgements=c.lodgements||{};c.lodgements[key]=!c.lodgements[key];if(c.lodgements[key])regenClient(name);persist();}
 function deleteClient(name){var n=tasks.filter(function(t){return t.client===name;}).length;if(!confirm('Delete client "'+name+'"?'+(n?(' Its '+n+' job(s) stay in the register.'):'')))return;clients=clients.filter(function(c){return c.name!==name;});persist();}
 function renameGroup(old){var nn=prompt('Rename group "'+old+'" to:',old);if(nn===null)return;nn=nn.trim();if(nn===old)return;clients=clients.map(function(c){return c.group===old?Object.assign({},c,{group:nn}):c;});persist();}
+function isLodgementJob(t){var n=t.task||'';return n.indexOf('BAS — ')===0||n.indexOf('IAS — ')===0||n.indexOf('Annual GST')===0;}
+function clearLodgements(){
+  var gen=tasks.filter(isLodgementJob);
+  if(!gen.length){alert('There are no generated BAS/IAS/Annual GST jobs to clear.');return;}
+  if(!confirm('Delete all '+gen.length+' generated BAS/IAS/Annual GST job(s) and untick every client\'s lodgements?\n\nClients (names, groups, owners) and any manually-added jobs are kept. Re-tick a client\'s lodgements to rebuild.'))return;
+  tasks=tasks.filter(function(t){return !isLodgementJob(t);});
+  clients=clients.map(function(c){return Object.assign({},c,{lodgements:{gstM:false,gstQ:false,paygwM:false,paygwQ:false,gstA:false}});});
+  persist();
+}
 function renderClients(){
-  var html='<div style="margin:0 0 1rem"><button class="btn btn-primary" onclick="openClientAdd()"><svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8"><path d="M12 5v14M5 12h14"/></svg> Add client</button></div>';
+  var html='<div style="margin:0 0 1rem;display:flex;gap:.5rem;flex-wrap:wrap"><button class="btn btn-primary" onclick="openClientAdd()"><svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8"><path d="M12 5v14M5 12h14"/></svg> Add client</button><button class="btn" onclick="clearLodgements()"><svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg> Clear lodgement jobs</button></div>';
   if(!clients.length)return html+'<div class="empty"><h3>No clients yet</h3><p>Add your clients, then tick which lodgements apply — the tool builds the due-date schedule automatically.</p><button class="btn btn-primary" style="margin:0 auto" onclick="openClientAdd()">+ Add client</button></div>';
   var groups={};clients.forEach(function(c){var g=c.group||'';(groups[g]=groups[g]||[]).push(c);});
   Object.keys(groups).sort(function(a,b){if(a==='')return 1;if(b==='')return -1;return a.localeCompare(b);}).forEach(function(g){
