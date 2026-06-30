@@ -103,6 +103,7 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 .chip-who{background:var(--bg);border:1px solid var(--border);color:var(--mid)}
 .chip-who.unassigned{background:var(--warn-soft);border-color:#e4d5ad;color:var(--warn)}
 .chip-rec{background:var(--teal-soft);color:var(--teal)}
+.chip-rev{background:#eef0e0;color:var(--olive)}
 .chip-rec svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:2}
 .stage-sel{font-family:var(--display);font-size:.58rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:.26rem .5rem;border-radius:2px;border:1px solid var(--border);background:var(--bg);color:var(--mid);cursor:pointer;outline:none}
 .stage-sel.stage-started{background:var(--teal-soft);color:var(--teal);border-color:#bcd2d2}
@@ -212,9 +213,13 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
         <select id="fClient" class="lf-select" onchange="onClientPick()"></select>
       </div>
       <div class="field">
-        <label>Responsible</label>
-        <input id="fResp" list="people" placeholder="e.g. Hazel"/>
+        <label>Preparer</label>
+        <input id="fPrep" list="people" placeholder="e.g. Hazel"/>
         <datalist id="people"></datalist>
+      </div>
+      <div class="field">
+        <label>Reviewer (optional)</label>
+        <input id="fRev" list="people" placeholder="e.g. Liam"/>
       </div>
       <div class="field field-full">
         <label>Task</label>
@@ -296,7 +301,7 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
         <datalist id="groups"></datalist>
       </div>
       <div class="field">
-        <label>Owner</label>
+        <label>Owner (default preparer)</label>
         <input id="cOwner" list="people" placeholder="e.g. Hazel"/>
       </div>
       <div class="field">
@@ -455,7 +460,7 @@ function parseCycle(v){
 /* Generate the next `months` period-months of jobs for one client + cycle. */
 function genCycle(client,cycle,resp,months){
   var out=[],t0=parseISO(todayISO()),sy=t0.getFullYear(),sm=t0.getMonth();
-  function push(name,due){out.push({id:uid(),client:client,task:name,dueDate:due,responsible:resp||'',recurrence:'none',bizDays:null,anchorME:null,stage:'ready',done:0});}
+  function push(name,due){out.push({id:uid(),client:client,task:name,dueDate:due,preparer:resp||'',reviewer:'',recurrence:'none',bizDays:null,anchorME:null,stage:'ready',done:0});}
   if(cycle==='gstAnnual'){var ty=parseISO(todayISO()).getFullYear(),lim=addMonths(todayISO(),13);for(var yy=ty-1;yy<=ty+1;yy++){var ad=rollFwdBiz(ymd(yy+1,5,15));if(ad>=todayISO()&&ad<=lim)push('Annual GST return — FY'+yy,ad);}return out;}
   for(var i=0;i<months;i++){
     var dt=new Date(sy,sm+i,1),py=dt.getFullYear(),pm=dt.getMonth()+1,qe=isQEndMonth(pm),per=MONTH_ABBR[pm-1]+' '+py;
@@ -484,7 +489,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return
 function normalize(arr){return (arr||[]).map(function(t){
   var stage=t.stage;
   if(!STAGE_LABEL[stage])stage=(t.status==='done')?'completed':'ready';
-  return Object.assign({},t,{stage:stage});
+  return Object.assign({},t,{stage:stage,preparer:(t.preparer!=null?t.preparer:(t.responsible||'')),reviewer:(t.reviewer||'')});
 });}
 
 /* ───────────────────────── state ───────────────────────── */
@@ -605,7 +610,7 @@ function clientByName(n){for(var i=0;i<clients.length;i++)if(clients[i].name===n
 function ensureClients(){
   clients.forEach(function(c){var l=c.lodgements||{};if(('basQ'in l||'basM'in l||'iasM'in l||'iasQ'in l)&&!('gstQ'in l)){c.lodgements={gstM:!!l.basM,gstQ:!!l.basQ,paygwM:!!l.iasM,paygwQ:!!l.iasQ,gstA:!!l.gstA,iasMonthly:!!l.iasMonthly};}});
   var have={};clients.forEach(function(c){have[c.name]=1;});
-  tasks.forEach(function(t){if(t.client&&!have[t.client]){have[t.client]=1;clients.push({name:t.client,group:'',owner:t.responsible||'',lodgements:{gstM:false,gstQ:false,paygwM:false,paygwQ:false,gstA:false,iasMonthly:false}});}});
+  tasks.forEach(function(t){if(t.client&&!have[t.client]){have[t.client]=1;clients.push({name:t.client,group:'',owner:(t.preparer||t.responsible||''),lodgements:{gstM:false,gstQ:false,paygwM:false,paygwQ:false,gstA:false,iasMonthly:false}});}});
 }
 /* Map a client's ticked lodgements to schedule cycles (BAS-qtly + IAS-monthly = interleaved). */
 /* GST + PAYGW obligations combine into the actual activity statements:
@@ -627,10 +632,10 @@ function regenClient(name){
   cyclesFor(c.lodgements).forEach(function(cy){genCycle(c.name,cy,c.owner||'',12).forEach(function(j){var k=j.client+'|'+j.task;if(seen[k])return;seen[k]=1;tasks.push(j);added++;});});
   return added;
 }
-function fillPeople(){var p=Array.from(new Set(clients.map(function(c){return c.owner;}).concat(tasks.map(function(t){return t.responsible;})).filter(Boolean))).sort();document.getElementById('people').innerHTML=p.map(function(x){return '<option value="'+escAttr(x)+'">';}).join('');}
+function fillPeople(){var p=Array.from(new Set(clients.map(function(c){return c.owner;}).concat(tasks.map(function(t){return t.preparer;})).concat(tasks.map(function(t){return t.reviewer;})).filter(Boolean))).sort();document.getElementById('people').innerHTML=p.map(function(x){return '<option value="'+escAttr(x)+'">';}).join('');}
 function fillGroups(){var gs={};clients.forEach(function(c){if(c.group)gs[c.group]=1;});document.getElementById('groups').innerHTML=Object.keys(gs).sort().map(function(g){return '<option value="'+escAttr(g)+'">';}).join('');}
 function fillClientSelect(val){var sel=document.getElementById('fClient');var list=clients.slice().sort(function(a,b){return a.name.localeCompare(b.name);});sel.innerHTML='<option value="">— Select client —</option>'+list.map(function(c){return '<option value="'+escAttr(c.name)+'">'+esc(c.name)+(c.group?(' · '+esc(c.group)):'')+'</option>';}).join('');sel.value=val||'';}
-function onClientPick(){var c=clientByName(document.getElementById('fClient').value);var r=document.getElementById('fResp');if(c&&c.owner&&!r.value.trim())r.value=c.owner;}
+function onClientPick(){var c=clientByName(document.getElementById('fClient').value);var r=document.getElementById('fPrep');if(c&&c.owner&&!r.value.trim())r.value=c.owner;}
 
 var _editClient=null;
 function openClientAdd(){_editClient=null;document.getElementById('clientModalTitle').textContent='Add client';document.getElementById('cName').value='';document.getElementById('cGroup').value='';document.getElementById('cOwner').value='';['cGstM','cGstQ','cPwM','cPwQ','cGstA','cIasOnly'].forEach(function(id){document.getElementById(id).checked=false;});fillGroups();fillPeople();document.getElementById('clientModal').classList.add('open');document.getElementById('cName').focus();}
@@ -701,7 +706,8 @@ function updateBizPreview(){
 function openAdd(){
   editing=null;_editAnchorME=null;
   fillClientSelect('');fillPeople();
-  document.getElementById('fResp').value='';
+  document.getElementById('fPrep').value='';
+  document.getElementById('fRev').value='';
   document.getElementById('fTask').value='';
   document.getElementById('fDue').value=todayISO();
   document.getElementById('fRec').value='none';
@@ -715,7 +721,8 @@ function openEdit(id){
   var t=tasks.find(function(x){return x.id===id;});if(!t)return;
   editing=id;_editAnchorME=t.anchorME||null;
   fillClientSelect(t.client);fillPeople();
-  document.getElementById('fResp').value=t.responsible;
+  document.getElementById('fPrep').value=t.preparer||t.responsible||'';
+  document.getElementById('fRev').value=t.reviewer||'';
   document.getElementById('fTask').value=t.task;
   document.getElementById('fDue').value=t.dueDate;
   document.getElementById('fRec').value=t.recurrence;
@@ -729,7 +736,8 @@ function closeForm(){document.getElementById('form').classList.remove('open');ed
 function saveTask(){
   var client=document.getElementById('fClient').value.trim();
   var task=document.getElementById('fTask').value.trim();
-  var resp=document.getElementById('fResp').value.trim();
+  var prep=document.getElementById('fPrep').value.trim();
+  var rev=document.getElementById('fRev').value.trim();
   var rec=document.getElementById('fRec').value;
   if(!client||!task)return;
   var due,bizDays=null,anchorME=null;
@@ -742,9 +750,9 @@ function saveTask(){
     if(!due)return;
   }
   if(editing){
-    tasks=tasks.map(function(t){return t.id===editing?Object.assign({},t,{client:client,task:task,dueDate:due,responsible:resp,recurrence:rec,bizDays:bizDays,anchorME:anchorME}):t;});
+    tasks=tasks.map(function(t){return t.id===editing?Object.assign({},t,{client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:rec,bizDays:bizDays,anchorME:anchorME}):t;});
   }else{
-    tasks.push({id:uid(),client:client,task:task,dueDate:due,responsible:resp,recurrence:rec,bizDays:bizDays,anchorME:anchorME,stage:'ready',done:0});
+    tasks.push({id:uid(),client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:rec,bizDays:bizDays,anchorME:anchorME,stage:'ready',done:0});
   }
   closeForm();persist();
 }
@@ -779,7 +787,7 @@ function activeTasks(){return tasks.filter(function(t){return t.stage!=='complet
 
 function rowHTML(t,done){
   var c=done?'is-done':classify(t.dueDate);
-  var who=t.responsible.trim();
+  var prep=(t.preparer||'').trim(),rev=(t.reviewer||'').trim();
   var recChip=t.recurrence!=='none'?'<span class="chip chip-rec"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> '+recLabel(t)+'</span>':'';
   var stageSel='<select class="stage-sel stage-'+t.stage+'" title="Change status" onchange="setStage(\''+t.id+'\',this.value)">'+STAGES.map(function(s){return '<option value="'+s.key+'"'+(s.key===t.stage?' selected':'')+'>'+s.label+'</option>';}).join('')+'</select>';
   var actions=done
@@ -790,7 +798,7 @@ function rowHTML(t,done){
   return '<div class="row '+c+'">'
     +'<div class="rail"><span class="rail-date">'+prettyDate(t.dueDate)+'</span><span class="rail-rel">'+(done?'done':relLabel(t.dueDate))+'</span></div>'
     +'<div class="row-body"><span class="row-client">'+esc(t.client)+'</span><span class="row-task">'+esc(t.task)+'</span>'
-    +'<div class="row-meta">'+stageSel+'<span class="chip chip-who'+(who?'':' unassigned')+'">'+esc(who||'Unassigned')+'</span>'+recChip+'</div></div>'
+    +'<div class="row-meta">'+stageSel+'<span class="chip chip-who'+(prep?'':' unassigned')+'">'+esc(prep||'Unassigned')+'</span>'+(rev?'<span class="chip chip-rev">Rev · '+esc(rev)+'</span>':'')+recChip+'</div></div>'
     +'<div class="row-actions">'+actions+'</div></div>';
 }
 
@@ -801,7 +809,7 @@ function render(){
 
   /* counts */
   var overdue=0,today=0,week=0,unassigned=0;
-  act.forEach(function(t){var c=classify(t.dueDate);if(c==='overdue')overdue++;else if(c==='today')today++;else if(c==='week')week++;if(!t.responsible.trim())unassigned++;});
+  act.forEach(function(t){var c=classify(t.dueDate);if(c==='overdue')overdue++;else if(c==='today')today++;else if(c==='week')week++;if(!(t.preparer||'').trim())unassigned++;});
   document.querySelector('#statOverdue .stat-n').textContent=overdue;
   document.getElementById('nToday').textContent=today;
   document.getElementById('nWeek').textContent=week;
@@ -842,7 +850,7 @@ function render(){
     });
   }else{
     var map={};
-    act.forEach(function(t){var k=t.responsible||'Unassigned';(map[k]=map[k]||[]).push(t);});
+    act.forEach(function(t){var pr=(t.preparer||'').trim()||'Unassigned';(map[pr]=map[pr]||[]).push(t);var rv=(t.reviewer||'').trim();if(rv&&rv!==pr){(map[rv]=map[rv]||[]).push(t);}});
     Object.keys(map).sort(function(a,b){return a.localeCompare(b);}).forEach(function(name){
       html+='<div class="group"><div class="group-head"><span class="group-name">'+esc(name)+'</span><span class="group-count">'+map[name].length+'</span></div>'+map[name].map(function(t){return rowHTML(t,false);}).join('')+'</div>';
     });
@@ -860,19 +868,19 @@ function toggleDone(){showDone=!showDone;render();}
 
 /* ───────────────────────── export + digest ───────────────────────── */
 function exportExcel(){
-  var rows=tasks.map(function(t){return {Client:t.client,Task:t.task,DueDate:t.dueDate,Responsible:t.responsible,Recurrence:recLabel(t),Status:STAGE_LABEL[t.stage]};});
-  if(!rows.length)rows=[{Client:'',Task:'',DueDate:'',Responsible:'',Recurrence:'',Status:''}];
+  var rows=tasks.map(function(t){return {Client:t.client,Task:t.task,DueDate:t.dueDate,Preparer:(t.preparer||''),Reviewer:(t.reviewer||''),Recurrence:recLabel(t),Status:STAGE_LABEL[t.stage]};});
+  if(!rows.length)rows=[{Client:'',Task:'',DueDate:'',Preparer:'',Reviewer:'',Recurrence:'',Status:''}];
   var ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Register');
   XLSX.writeFile(wb,'LF-Practice-Register.xlsx');
 }
 function buildDigest(){
   var act=activeTasks();
-  function line(t){return '  '+prettyDate(t.dueDate)+'  '+t.client+' — '+t.task+'  ['+(t.responsible||'UNASSIGNED')+']  · '+STAGE_LABEL[t.stage];}
+  function line(t){var pr=(t.preparer||'').trim()||'UNASSIGNED';var rv=(t.reviewer||'').trim();return '  '+prettyDate(t.dueDate)+'  '+t.client+' — '+t.task+'  ['+pr+(rv?(' / rev '+rv):'')+']  · '+STAGE_LABEL[t.stage];}
   var od=act.filter(function(t){return classify(t.dueDate)==='overdue';});
   var td=act.filter(function(t){return classify(t.dueDate)==='today';});
   var wk=act.filter(function(t){return classify(t.dueDate)==='week';});
-  var un=act.filter(function(t){return !t.responsible.trim();});
+  var un=act.filter(function(t){return !(t.preparer||'').trim();});
   function sec(name,arr){return arr.length?'\n'+name+'\n'+arr.map(line).join('\n')+'\n':'';}
   var out='LF ADVISORY — DAILY REGISTER  ('+prettyDate(todayISO())+')\n';
   out+=sec('OVERDUE',od)+sec('DUE TODAY',td)+sec('DUE THIS WEEK',wk)+sec('UNASSIGNED — NEEDS AN OWNER',un);
@@ -968,7 +976,7 @@ function processImport(rows){
       errors.push('Row '+(i+2)+': missing '+miss.join(', '));
       return;
     }
-    valid.push({id:uid(),client:client,task:task,dueDate:due,responsible:resp,recurrence:recurrence,bizDays:bizDays,anchorME:anchorME,stage:stage,done:0});
+    valid.push({id:uid(),client:client,task:task,dueDate:due,preparer:resp,reviewer:'',recurrence:recurrence,bizDays:bizDays,anchorME:anchorME,stage:stage,done:0});
   });
   _importRows=valid;
   var sum=document.getElementById('importSummary');
@@ -1023,7 +1031,7 @@ function handleCycleFile(e){
 function processAto(rows){
   var jobs=[],skipped=0,held=0,errors=[];
   var seen={};tasks.forEach(function(t){if(t.din)seen['din:'+t.din]=1;seen['ct:'+t.client+'|'+t.task]=1;});
-  var ownerByClient={};tasks.forEach(function(t){if(t.responsible&&t.responsible.trim())ownerByClient[t.client]=t.responsible;});
+  var ownerByClient={};tasks.forEach(function(t){var pr=(t.preparer||t.responsible||'').trim();if(pr)ownerByClient[t.client]=pr;});
   rows.forEach(function(r,i){
     var o={};Object.keys(r).forEach(function(k){o[normHeader(k)]=r[k];});
     var client=cleanClient(o.clientname||o.client);
@@ -1044,7 +1052,7 @@ function processAto(rows){
     if(seen[key]||seen['ct:'+client+'|'+task]){skipped++;return;}
     seen[key]=1;seen['ct:'+client+'|'+task]=1;
     if(status==='HELD')held++;
-    jobs.push({id:uid(),client:client,task:task,dueDate:due,responsible:ownerByClient[client]||'',recurrence:'none',bizDays:null,anchorME:null,stage:'ready',done:0,din:din});
+    jobs.push({id:uid(),client:client,task:task,dueDate:due,preparer:ownerByClient[client]||'',reviewer:'',recurrence:'none',bizDays:null,anchorME:null,stage:'ready',done:0,din:din});
   });
   _cycleJobs=jobs;
   var sum=document.getElementById('cycleSummary');
