@@ -161,6 +161,18 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 .cli-actions{display:flex;align-items:center;gap:.25rem}
 .cli-jobs{font-family:var(--display);font-size:.68rem;font-weight:600;color:var(--mid);margin-right:.4rem;white-space:nowrap}
 
+/* filter bar */
+.filters{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:1.2rem}
+.flt-label{font-family:var(--display);font-size:.6rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mid)}
+.flt-sel{font-family:var(--sans);font-size:.8rem;padding:.4rem .65rem;border:1px solid var(--border);border-radius:3px;background:var(--bg-light);color:var(--ink);cursor:pointer;outline:none}
+.flt-sel:focus{border-color:var(--teal)}
+.flt-sel.active{border-color:var(--teal);background:var(--teal-soft);color:var(--teal);font-weight:600}
+.flt-clear{font-family:var(--display);font-size:.58rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;border:none;background:var(--alert-soft);color:var(--alert);padding:.42rem .7rem;border-radius:3px;cursor:pointer}
+.flt-clear:hover{background:#f0d8cf}
+.flt-count{font-size:.74rem;color:var(--mid);font-family:var(--display);font-weight:600}
+.row-client[onclick]{cursor:pointer}
+.row-client[onclick]:hover{color:var(--teal)}
+
 /* connect modal */
 .connect-box{max-width:420px;text-align:center}
 .connect-box h2{font-family:var(--display);font-size:1.3rem;font-weight:700;margin-bottom:.6rem}
@@ -260,6 +272,16 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
     <button class="view" role="tab" aria-selected="false" data-view="person" onclick="setView('person')"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg> By person</button>
     <button class="view" role="tab" aria-selected="false" data-view="client" onclick="setView('client')"><svg viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/></svg> By client</button>
     <button class="view" role="tab" aria-selected="false" data-view="clients" onclick="setView('clients')"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Manage clients</button>
+  </div>
+
+  <div class="filters" id="filterBar">
+    <span class="flt-label">Filter</span>
+    <select id="fltClient" class="flt-sel" onchange="setFilter('client',this.value)"></select>
+    <select id="fltGroup" class="flt-sel" onchange="setFilter('group',this.value)"></select>
+    <select id="fltPerson" class="flt-sel" onchange="setFilter('person',this.value)"></select>
+    <select id="fltStatus" class="flt-sel" onchange="setFilter('status',this.value)"></select>
+    <button class="flt-clear" id="fltClear" onclick="clearFilters()" style="display:none">Clear</button>
+    <span class="flt-count" id="fltCount"></span>
   </div>
 
   <div id="list"></div>
@@ -783,6 +805,32 @@ function removeTask(id){
 /* ───────────────────────── views ───────────────────────── */
 function setView(v){view=v;document.querySelectorAll('.view').forEach(function(b){b.setAttribute('aria-selected',b.dataset.view===v?'true':'false');});render();}
 
+/* filters (combine with AND across client / group / person / status) */
+var flt={client:'',group:'',person:'',status:''};
+function fltActive(){return flt.client||flt.group||flt.person||flt.status;}
+function setFilter(field,val){flt[field]=val;if(view==='clients'){setView('due');return;}render();}
+function clearFilters(){flt={client:'',group:'',person:'',status:''};render();}
+function matchClientGroupPerson(t){
+  if(flt.client&&t.client!==flt.client)return false;
+  if(flt.group){var c=clientByName(t.client);if(!c||(c.group||'')!==flt.group)return false;}
+  if(flt.person){var p=(t.preparer||'').trim(),r=(t.reviewer||'').trim();if(p!==flt.person&&r!==flt.person)return false;}
+  return true;
+}
+function matchFilters(t){return matchClientGroupPerson(t)&&!(flt.status&&t.stage!==flt.status);}
+function populateFilters(){
+  function fill(id,allLabel,vals,cur){var el=document.getElementById(id);el.innerHTML='<option value="">'+allLabel+'</option>'+vals.map(function(v){return '<option value="'+escAttr(v)+'"'+(v===cur?' selected':'')+'>'+esc(v)+'</option>';}).join('');el.value=cur||'';el.className='flt-sel'+(cur?' active':'');}
+  var cnames=clients.map(function(c){return c.name;}).sort(function(a,b){return a.localeCompare(b);});
+  var gnames=Array.from(new Set(clients.map(function(c){return c.group;}).filter(Boolean))).sort();
+  var people=Array.from(new Set(clients.map(function(c){return c.owner;}).concat(tasks.map(function(t){return t.preparer;})).concat(tasks.map(function(t){return t.reviewer;})).filter(Boolean))).sort();
+  fill('fltClient','All clients',cnames,flt.client);
+  fill('fltGroup','All groups',gnames,flt.group);
+  fill('fltPerson','All people',people,flt.person);
+  var st=document.getElementById('fltStatus');
+  st.innerHTML='<option value="">All statuses</option>'+STAGES.map(function(s){return '<option value="'+s.key+'"'+(s.key===flt.status?' selected':'')+'>'+s.label+'</option>';}).join('');
+  st.value=flt.status||'';st.className='flt-sel'+(flt.status?' active':'');
+  document.getElementById('fltClear').style.display=fltActive()?'inline-block':'none';
+}
+
 function activeTasks(){return tasks.filter(function(t){return t.stage!=='completed';}).sort(function(a,b){return a.dueDate.localeCompare(b.dueDate);});}
 
 function rowHTML(t,done){
@@ -797,7 +845,7 @@ function rowHTML(t,done){
   actions+='<button class="ico del" title="Delete" onclick="removeTask(\''+t.id+'\')"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>';
   return '<div class="row '+c+'">'
     +'<div class="rail"><span class="rail-date">'+prettyDate(t.dueDate)+'</span><span class="rail-rel">'+(done?'done':relLabel(t.dueDate))+'</span></div>'
-    +'<div class="row-body"><span class="row-client">'+esc(t.client)+'</span><span class="row-task">'+esc(t.task)+'</span>'
+    +'<div class="row-body"><span class="row-client" title="Filter to this client" onclick="setFilter(\'client\',\''+escAttr(t.client)+'\')">'+esc(t.client)+'</span><span class="row-task">'+esc(t.task)+'</span>'
     +'<div class="row-meta">'+stageSel+'<span class="chip chip-who'+(prep?'':' unassigned')+'">'+esc(prep||'Unassigned')+'</span>'+(rev?'<span class="chip chip-rev">Rev · '+esc(rev)+'</span>':'')+recChip+'</div></div>'
     +'<div class="row-actions">'+actions+'</div></div>';
 }
@@ -805,7 +853,7 @@ function rowHTML(t,done){
 var GROUP_NAMES={overdue:'Overdue',today:'Due today',week:'This week',later:'Later'};
 
 function render(){
-  var act=activeTasks();
+  var act=activeTasks().filter(matchFilters);
 
   /* counts */
   var overdue=0,today=0,week=0,unassigned=0;
@@ -820,11 +868,18 @@ function render(){
   /* datalists */
   fillPeople();
 
+  /* filters */
+  document.getElementById('filterBar').style.display=(view==='clients')?'none':'flex';
+  populateFilters();
+  document.getElementById('fltCount').textContent=fltActive()?(act.length+' shown'):'';
+
   /* list */
   var list=document.getElementById('list'),html='';
   if(view==='clients'){list.innerHTML=renderClients();document.getElementById('doneWrap').innerHTML='';return;}
   if(act.length===0){
-    html='<div class="empty"><h3>The register is empty</h3><p>Add your first job to start tracking what\'s due and who owns it.</p><button class="btn btn-primary" style="margin:0 auto" onclick="openAdd()">+ Add job</button></div>';
+    html=fltActive()
+      ?'<div class="empty"><h3>No jobs match the filters</h3><p>Try removing a filter to see more.</p><button class="btn btn-primary" style="margin:0 auto" onclick="clearFilters()">Clear filters</button></div>'
+      :'<div class="empty"><h3>The register is empty</h3><p>Add your first job to start tracking what\'s due and who owns it.</p><button class="btn btn-primary" style="margin:0 auto" onclick="openAdd()">+ Add job</button></div>';
   }else if(view==='due'){
     var g={overdue:[],today:[],week:[],later:[]};
     act.forEach(function(t){g[classify(t.dueDate)].push(t);});
@@ -843,9 +898,9 @@ function render(){
     var byClient={};act.forEach(function(t){(byClient[t.client]=byClient[t.client]||[]).push(t);});
     var grp={};Object.keys(byClient).forEach(function(cn){var c=clientByName(cn);var g=c?(c.group||''):'';(grp[g]=grp[g]||[]).push(cn);});
     Object.keys(grp).sort(function(a,b){if(a==='')return 1;if(b==='')return -1;return a.localeCompare(b);}).forEach(function(g){
-      if(g)html+='<div class="cli-group-head">'+esc(g)+'</div>';
+      if(g)html+='<div class="cli-group-head" style="cursor:pointer" title="Filter to this group" onclick="setFilter(\'group\',\''+escAttr(g)+'\')">'+esc(g)+'</div>';
       grp[g].sort(function(a,b){return a.localeCompare(b);}).forEach(function(cn){
-        html+='<div class="group"><div class="group-head"><span class="group-name">'+esc(cn)+'</span><span class="group-count">'+byClient[cn].length+'</span></div>'+byClient[cn].map(function(t){return rowHTML(t,false);}).join('')+'</div>';
+        html+='<div class="group"><div class="group-head"><span class="group-name" style="cursor:pointer" title="Filter to this client" onclick="setFilter(\'client\',\''+escAttr(cn)+'\')">'+esc(cn)+'</span><span class="group-count">'+byClient[cn].length+'</span></div>'+byClient[cn].map(function(t){return rowHTML(t,false);}).join('')+'</div>';
       });
     });
   }else{
@@ -858,7 +913,7 @@ function render(){
   list.innerHTML=html;
 
   /* done section */
-  var done=tasks.filter(function(t){return t.stage==='completed';});
+  var done=tasks.filter(function(t){return t.stage==='completed';}).filter(matchClientGroupPerson);
   var dw=document.getElementById('doneWrap');
   if(done.length){
     dw.innerHTML='<button class="done-toggle" onclick="toggleDone()">'+(showDone?'▾':'▸')+' Completed ('+done.length+')</button>'+(showDone?'<div style="margin-top:.6rem">'+done.map(function(t){return rowHTML(t,true);}).join('')+'</div>':'');
