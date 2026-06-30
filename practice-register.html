@@ -135,6 +135,15 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 .modal-close{background:none;border:none;font-size:1.4rem;cursor:pointer;color:#888;line-height:1}
 .digest{font-family:var(--serif);font-size:.85rem;line-height:1.7;white-space:pre-wrap;background:var(--bg-light);border:1px solid var(--border);border-radius:4px;padding:1.1rem;color:var(--ink);max-height:50vh;overflow:auto}
 .modal-note{font-size:.75rem;color:var(--mid);margin-top:.9rem;line-height:1.6}
+.import-intro{font-size:.85rem;color:var(--mid);line-height:1.6;margin-bottom:.8rem}
+.import-cols{font-size:.8rem;color:var(--mid);line-height:1.8;background:var(--bg-light);border:1px solid var(--border);border-radius:4px;padding:.8rem 1rem;margin-bottom:1rem}
+.import-cols b{color:var(--ink);font-weight:700}
+.import-cols .req{color:var(--alert);font-weight:700;font-size:.7rem}
+.import-actions{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
+.import-result{margin-top:1.1rem;font-size:.85rem}
+.import-result .ok{color:var(--teal);font-weight:700}
+.import-result .skip{color:var(--alert);font-weight:700}
+.import-err{font-size:.78rem;color:var(--alert);background:var(--alert-soft);border:1px solid var(--alert-line);border-radius:4px;padding:.6rem .8rem;margin:.6rem 0;line-height:1.7}
 
 /* connect modal */
 .connect-box{max-width:420px;text-align:center}
@@ -161,6 +170,7 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
     <div class="reg-actions">
       <button class="btn btn-ghost" onclick="openDigest()"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="m4 6 8 6 8-6"/></svg> Email preview</button>
       <button class="btn btn-ghost" onclick="exportExcel()"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 12 5 4 5-4"/><path d="M5 21h14"/></svg> Export to Excel</button>
+      <button class="btn btn-ghost" onclick="openImport()"><svg viewBox="0 0 24 24"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg> Import</button>
       <button class="btn btn-primary" onclick="openAdd()"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Add job</button>
     </div>
   </div>
@@ -208,6 +218,8 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
           <option value="daily">Daily</option>
           <option value="weekly">Weekly</option>
           <option value="monthly">Monthly</option>
+          <option value="quarterly">Quarterly</option>
+          <option value="annually">Annually</option>
         </select>
       </div>
     </div>
@@ -245,6 +257,30 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
   </div>
 </div>
 
+<!-- Import modal -->
+<div class="overlay" id="importModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">Bulk import jobs</div>
+      <button class="modal-close" onclick="closeImport()">&times;</button>
+    </div>
+    <p class="import-intro">Download the template, fill in one row per job, then upload it back here. CSV or Excel both work.</p>
+    <div class="import-cols">
+      <b>Client name</b> <span class="req">required</span><br>
+      <b>Task</b> <span class="req">required</span> — what needs doing<br>
+      <b>Due Date</b> <span class="req">required</span> — DD/MM/YYYY or YYYY-MM-DD<br>
+      <b>Frequency</b> — One-off, Daily, Weekly, Monthly, Quarterly, Annually<br>
+      <b>Responsible</b> — owner's name (optional)<br>
+      <b>Status</b> — Ready to start, Started, Awaiting info, In review, Completed
+    </div>
+    <div class="import-actions">
+      <button class="btn" onclick="downloadTemplate()"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 12 5 4 5-4"/><path d="M5 21h14"/></svg> Download CSV template</button>
+      <label class="btn btn-primary" style="cursor:pointer"><svg viewBox="0 0 24 24"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg> Choose file<input type="file" id="importFile" accept=".csv,.xlsx,.xls" onchange="handleImportFile(event)" style="display:none"></label>
+    </div>
+    <div id="importSummary"></div>
+  </div>
+</div>
+
 <!-- Connect modal -->
 <div class="overlay" id="connectModal">
   <div class="modal connect-box">
@@ -262,12 +298,12 @@ function parseISO(iso){return new Date(iso+'T00:00:00');}
 function todayISO(){return toISO(new Date());}
 function addDays(iso,n){var d=parseISO(iso);d.setDate(d.getDate()+n);return toISO(d);}
 function addMonths(iso,n){var d=parseISO(iso),day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+n);var last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();d.setDate(Math.min(day,last));return toISO(d);}
-function advance(iso,rec){return rec==='daily'?addDays(iso,1):rec==='weekly'?addDays(iso,7):rec==='monthly'?addMonths(iso,1):iso;}
+function advance(iso,rec){return rec==='daily'?addDays(iso,1):rec==='weekly'?addDays(iso,7):rec==='monthly'?addMonths(iso,1):rec==='quarterly'?addMonths(iso,3):rec==='annually'?addMonths(iso,12):iso;}
 function dayDiff(iso){return Math.round((parseISO(iso)-parseISO(todayISO()))/86400000);}
 function classify(iso){var d=dayDiff(iso);if(d<0)return'overdue';if(d===0)return'today';if(d<=7)return'week';return'later';}
 function prettyDate(iso){return parseISO(iso).toLocaleDateString('en-AU',{day:'2-digit',month:'short'});}
 function relLabel(iso){var d=dayDiff(iso);if(d<0)return Math.abs(d)+'d overdue';if(d===0)return'today';if(d===1)return'tomorrow';return'in '+d+'d';}
-var REC_LABEL={none:'One-off',daily:'Daily',weekly:'Weekly',monthly:'Monthly'};
+var REC_LABEL={none:'One-off',daily:'Daily',weekly:'Weekly',monthly:'Monthly',quarterly:'Quarterly',annually:'Annually'};
 var STAGES=[
   {key:'ready',label:'Ready to start'},
   {key:'started',label:'Started'},
@@ -560,6 +596,111 @@ function copyDigest(){
   });
 }
 document.getElementById('digestModal').addEventListener('click',function(e){if(e.target===this)closeDigest();});
+
+/* ───────────────────────── bulk import ───────────────────────── */
+var _importRows=null;
+function openImport(){document.getElementById('importSummary').innerHTML='';document.getElementById('importFile').value='';_importRows=null;document.getElementById('importModal').classList.add('open');}
+function closeImport(){document.getElementById('importModal').classList.remove('open');}
+document.getElementById('importModal').addEventListener('click',function(e){if(e.target===this)closeImport();});
+
+function pad2(n){return String(n).padStart(2,'0');}
+function normHeader(h){return String(h||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+function parseImportDate(v){
+  if(v==null||v==='')return null;
+  if(v instanceof Date&&!isNaN(v))return toISO(v);
+  if(typeof v==='number'&&window.XLSX&&XLSX.SSF){var o=XLSX.SSF.parse_date_code(v);if(o&&o.y)return o.y+'-'+pad2(o.m)+'-'+pad2(o.d);}
+  var s=String(v).trim();
+  var m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(m)return m[1]+'-'+pad2(+m[2])+'-'+pad2(+m[3]);
+  m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);            // day-first (AU)
+  if(m){var y=+m[3];if(y<100)y+=2000;var mo=+m[2],d=+m[1];if(mo>=1&&mo<=12&&d>=1&&d<=31)return y+'-'+pad2(mo)+'-'+pad2(d);}
+  var dt=new Date(s);if(!isNaN(dt))return toISO(dt);
+  return null;
+}
+function mapFrequency(v){
+  var s=String(v||'').toLowerCase().replace(/[^a-z]/g,'');
+  if(!s||s==='oneoff'||s==='once'||s==='adhoc'||s==='none')return 'none';
+  if(s.indexOf('dai')===0||s==='day')return 'daily';
+  if(s.indexOf('week')===0)return 'weekly';
+  if(s.indexOf('month')===0)return 'monthly';
+  if(s.indexOf('quart')===0||s==='qtr'||s==='q')return 'quarterly';
+  if(s.indexOf('ann')===0||s.indexOf('year')===0)return 'annually';
+  return 'none';
+}
+function mapStageImport(v){
+  var s=String(v||'').toLowerCase().replace(/[^a-z]/g,'');
+  if(!s)return 'ready';
+  if(s.indexOf('ready')===0||s==='notstarted'||s==='todo'||s==='new')return 'ready';
+  if(s.indexOf('start')===0||s==='inprogress'||s==='progress'||s==='wip')return 'started';
+  if(s.indexOf('await')===0||s.indexOf('wait')===0||s.indexOf('info')>-1||s.indexOf('block')===0)return 'awaiting';
+  if(s.indexOf('review')>-1)return 'review';
+  if(s.indexOf('comp')===0||s==='done'||s==='closed')return 'completed';
+  return 'ready';
+}
+function handleImportFile(e){
+  var file=e.target.files&&e.target.files[0];if(!file)return;
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      var wb=XLSX.read(ev.target.result,{type:'binary',cellDates:true});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      processImport(rows);
+    }catch(err){document.getElementById('importSummary').innerHTML='<div class="import-err">Could not read that file: '+esc(err.message||String(err))+'</div>';}
+  };
+  reader.readAsBinaryString(file);
+}
+function processImport(rows){
+  var valid=[],errors=[];
+  rows.forEach(function(r,i){
+    var o={};Object.keys(r).forEach(function(k){o[normHeader(k)]=r[k];});
+    var client=String(o.clientname||o.client||'').trim();
+    var task=String(o.task||o.job||o.description||'').trim();
+    var due=parseImportDate(o.duedate||o.due||o.date);
+    var freq=mapFrequency(o.frequency||o.freq||o.recurrence||o.repeats);
+    var resp=String(o.responsible||o.owner||o.assignedto||o.who||'').trim();
+    var stage=mapStageImport(o.status||o.stage);
+    var rawDue=String(o.duedate||o.due||o.date||'').trim();
+    var rawFreq=String(o.frequency||o.freq||o.recurrence||o.repeats||'').trim();
+    if(!client&&!task&&!rawDue&&!resp&&!rawFreq&&!String(o.status||o.stage||'').trim())return; // blank row
+    if(!client||!task||!due){
+      var miss=[];if(!client)miss.push('Client');if(!task)miss.push('Task');if(!due)miss.push('valid Due Date');
+      errors.push('Row '+(i+2)+': missing '+miss.join(', '));
+      return;
+    }
+    valid.push({id:uid(),client:client,task:task,dueDate:due,responsible:resp,recurrence:freq,stage:stage,done:0});
+  });
+  _importRows=valid;
+  var sum=document.getElementById('importSummary');
+  if(!valid.length&&!errors.length){sum.innerHTML='<div class="import-err">No rows found in that file.</div>';return;}
+  var h='<div class="import-result"><p><span class="ok">'+valid.length+'</span> job'+(valid.length===1?'':'s')+' ready to import.';
+  if(errors.length)h+=' <span class="skip">'+errors.length+'</span> row'+(errors.length===1?'':'s')+' skipped.';
+  h+='</p>';
+  if(errors.length)h+='<div class="import-err">'+errors.slice(0,15).map(esc).join('<br>')+(errors.length>15?'<br>… and '+(errors.length-15)+' more':'')+'</div>';
+  if(valid.length)h+='<button class="btn btn-primary" onclick="doImport()">Import '+valid.length+' job'+(valid.length===1?'':'s')+'</button>';
+  h+='</div>';
+  sum.innerHTML=h;
+}
+function doImport(){
+  if(!_importRows||!_importRows.length)return;
+  tasks=tasks.concat(_importRows);
+  _importRows=null;
+  persist();
+  closeImport();
+}
+function downloadTemplate(){
+  var rows=[
+    ['Client name','Task','Due Date','Frequency','Responsible','Status'],
+    ['Kleencut Solutions','March quarter BAS','30/04/2026','Quarterly','Hazel','Ready to start'],
+    ['Flux Property Group','Monthly bookkeeping','15/07/2026','Monthly','','Started'],
+    ['Manton Unit Trust','2026 income tax return','15/05/2027','Annually','Liam','Awaiting info']
+  ];
+  var csv=rows.map(function(r){return r.map(function(c){return /[",\n]/.test(c)?'"'+String(c).replace(/"/g,'""')+'"':c;}).join(',');}).join('\r\n');
+  var blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');a.href=url;a.download='LF-Practice-Register-Import-Template.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+}
 
 /* ───────────────────────── boot ───────────────────────── */
 (function(){
