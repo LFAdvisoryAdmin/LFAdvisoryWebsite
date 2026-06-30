@@ -293,18 +293,15 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 <div class="overlay" id="cycleModal">
   <div class="modal">
     <div class="modal-head">
-      <div class="modal-title">Set up activity statements</div>
+      <div class="modal-title">Import ATO activity statements</div>
       <button class="modal-close" onclick="closeCycle()">&times;</button>
     </div>
-    <p class="import-intro">Upload your client list with each client's lodgment cycle — the tool generates the next 12 months of correctly-dated IAS/BAS jobs. Monthly statements fall on the 21st (next business day); quarterly are targeted 3 days before the agent concession date. Weekends &amp; QLD public holidays are excluded.</p>
+    <p class="import-intro">Upload your ATO <b>activity statement listing</b> export (CSV or Excel). Each statement is read by its DIN, named from the form type and period, and <b>only statements not already in the register are added</b> — so you can re-upload each cycle and it brings in just what's new. Monthly statements keep the ATO due date (21st); quarterly are set 3 business days before the agent concession date.</p>
     <div class="import-cols">
-      <b>Client name</b> <span class="req">required</span><br>
-      <b>Cycle</b> <span class="req">required</span> — Quarterly BAS · Monthly BAS · Monthly IAS · Quarterly IAS · GST + monthly IAS<br>
-      <b>Responsible</b> — owner's name (optional)
+      Reads these columns from the export: <b>Client Name</b>, <b>Type</b> (BAS/IAS), <b>Activity Statement Frequency</b>, <b>Name</b> (form type), <b>Period End Date</b>, <b>Due Date</b>, <b>DIN</b>. Owners carry over from existing jobs for the same client.
     </div>
     <div class="import-actions">
-      <button class="btn" onclick="downloadCycleTemplate()"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 12 5 4 5-4"/><path d="M5 21h14"/></svg> Download cycle template</button>
-      <label class="btn btn-primary" style="cursor:pointer"><svg viewBox="0 0 24 24"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg> Choose file<input type="file" id="cycleFile" accept=".csv,.xlsx,.xls" onchange="handleCycleFile(event)" style="display:none"></label>
+      <label class="btn btn-primary" style="cursor:pointer"><svg viewBox="0 0 24 24"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg> Choose ATO file<input type="file" id="cycleFile" accept=".csv,.xlsx,.xls" onchange="handleCycleFile(event)" style="display:none"></label>
     </div>
     <div id="cycleSummary"></div>
   </div>
@@ -354,6 +351,24 @@ function ymd(y,m,d){return y+'-'+pad2(m)+'-'+pad2(d);}
 function rollBackBiz(iso){var d=iso;while(!isBusinessDay(d))d=addDays(d,-1);return d;}
 function rollFwdBiz(iso){var d=iso;while(!isBusinessDay(d))d=addDays(d,1);return d;}
 var MONTH_ABBR=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+/* Tidy an ATO ALL-CAPS client name: drop the trustee prefix, Title Case, keep
+   acronyms (WA, NSW, DIY, CK…) and tokens with digits/slashes upper. */
+var CLIENT_KEEP=new Set(['WA','NSW','VIC','SA','TAS','QLD','ACT','NT','HQ','IB','CK','DIY','PPSB','LF','RB','BAS','IAS']);
+var CLIENT_LOWER=new Set(['the','for','and','of']);
+function cleanClient(name){
+  var s=String(name||'').trim().replace(/^THE TRUSTEE FOR\s+/i,'');
+  if(!s)return '';
+  s=s.split(/\s+/).map(function(w){
+    if(/\d/.test(w))return w;
+    var core=w.toUpperCase().replace(/[^A-Z0-9\/]/g,'');
+    if(core.indexOf('/')>-1)return w.toUpperCase();
+    if(CLIENT_KEEP.has(core))return w.toUpperCase();
+    if(CLIENT_LOWER.has(w.toLowerCase()))return w.toLowerCase();
+    return w.charAt(0).toUpperCase()+w.slice(1).toLowerCase();
+  }).join(' ');
+  return s.charAt(0).toUpperCase()+s.slice(1);
+}
+function periodLabel(pendISO,isMonthly){var d=parseISO(pendISO),m=MONTH_ABBR[d.getMonth()]+' '+d.getFullYear();return isMonthly?m:m+' qtr';}
 var AS_BUFFER_DAYS=3; // LF internal target = N days before the registered-agent concession date
 /* Registered tax/BAS agent electronic-lodgment concession date for a quarter ending (qEndY,qEndM). */
 function concessionDue(qEndY,qEndM){
@@ -848,59 +863,57 @@ function handleCycleFile(e){
     try{
       var wb=XLSX.read(ev.target.result,{type:'binary',cellDates:true});
       var rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
-      processCycle(rows);
+      processAto(rows);
     }catch(err){document.getElementById('cycleSummary').innerHTML='<div class="import-err">Could not read that file: '+esc(err.message||String(err))+'</div>';}
   };
   reader.readAsBinaryString(file);
 }
-function processCycle(rows){
-  var jobs=[],unmatched=[],perClient=[];
-  var existing={};tasks.forEach(function(t){existing[t.client+'|'+t.task]=1;});
+function processAto(rows){
+  var jobs=[],skipped=0,held=0,errors=[];
+  var seen={};tasks.forEach(function(t){if(t.din)seen['din:'+t.din]=1;seen['ct:'+t.client+'|'+t.task]=1;});
+  var ownerByClient={};tasks.forEach(function(t){if(t.responsible&&t.responsible.trim())ownerByClient[t.client]=t.responsible;});
   rows.forEach(function(r,i){
     var o={};Object.keys(r).forEach(function(k){o[normHeader(k)]=r[k];});
-    var client=String(o.clientname||o.client||'').trim();
-    var cycleRaw=String(o.cycle||o.cycletype||o.type||o.statement||o.frequency||o.task||'').trim();
-    var resp=String(o.responsible||o.owner||o.assignedto||o.who||'').trim();
-    if(!client&&!cycleRaw)return;
-    if(!client){unmatched.push('Row '+(i+2)+': missing Client');return;}
-    var cyc=parseCycle(cycleRaw);
-    if(!cyc){unmatched.push('Row '+(i+2)+' ('+esc(client)+'): unrecognised cycle "'+esc(cycleRaw)+'"');return;}
-    var gen=genCycle(client,cyc,resp,12).filter(function(j){var k=j.client+'|'+j.task;if(existing[k])return false;existing[k]=1;return true;});
-    jobs=jobs.concat(gen);
-    perClient.push({client:client,cycle:CYCLE_LABEL[cyc],n:gen.length});
+    var client=cleanClient(o.clientname||o.client);
+    if(!client)return;
+    var type=String(o.type||'').toLowerCase();
+    var isIas=type.indexOf('instal')>-1;
+    var freq=String(o.activitystatementfrequency||o.frequency||'').toLowerCase();
+    var isMonthly=freq.indexOf('month')>-1;
+    var form=String(o.name||'').replace(/form\s*/i,'').trim().toUpperCase();
+    var pend=parseImportDate(o.periodenddate);
+    var atoDue=parseImportDate(o.duedate);
+    var din=String(o.din||'').trim();
+    var status=String(o.status||'').toUpperCase();
+    if(!atoDue||!pend){errors.push('Row '+(i+2)+' ('+esc(client)+'): missing period/due date');return;}
+    var due=isMonthly?atoDue:rollBackBiz(addDays(atoDue,-AS_BUFFER_DAYS));
+    var task=(isIas?'IAS':'BAS')+' — '+periodLabel(pend,isMonthly)+(form?' (Form '+form+')':'');
+    var key=din?('din:'+din):('ct:'+client+'|'+task);
+    if(seen[key]||seen['ct:'+client+'|'+task]){skipped++;return;}
+    seen[key]=1;seen['ct:'+client+'|'+task]=1;
+    if(status==='HELD')held++;
+    jobs.push({id:uid(),client:client,task:task,dueDate:due,responsible:ownerByClient[client]||'',recurrence:'none',bizDays:null,anchorME:null,stage:'ready',done:0,din:din});
   });
   _cycleJobs=jobs;
   var sum=document.getElementById('cycleSummary');
-  if(!jobs.length&&!unmatched.length){sum.innerHTML='<div class="import-err">No clients found in that file.</div>';return;}
-  var h='<div class="import-result"><p><span class="ok">'+jobs.length+'</span> job'+(jobs.length===1?'':'s')+' across <span class="ok">'+perClient.length+'</span> client'+(perClient.length===1?'':'s')+' ready to generate.';
-  if(unmatched.length)h+=' <span class="skip">'+unmatched.length+'</span> row'+(unmatched.length===1?'':'s')+' skipped.';
+  if(!jobs.length&&!skipped&&!errors.length){sum.innerHTML='<div class="import-err">No statements found. Make sure this is the ATO activity statement listing export.</div>';return;}
+  var h='<div class="import-result"><p><span class="ok">'+jobs.length+'</span> new statement'+(jobs.length===1?'':'s')+' to import.';
+  if(skipped)h+=' '+skipped+' already in the register (skipped).';
+  if(errors.length)h+=' <span class="skip">'+errors.length+'</span> row'+(errors.length===1?'':'s')+' skipped.';
   h+='</p>';
-  if(perClient.length)h+='<div class="cycle-list">'+perClient.map(function(p){return esc(p.client)+' — '+p.cycle+' <b>('+p.n+')</b>';}).join('<br>')+'</div>';
-  if(unmatched.length)h+='<div class="import-err">'+unmatched.slice(0,15).map(esc).join('<br>')+(unmatched.length>15?'<br>… and '+(unmatched.length-15)+' more':'')+'</div>';
-  if(jobs.length)h+='<button class="btn btn-primary" onclick="doGenerateCycles()">Generate '+jobs.length+' job'+(jobs.length===1?'':'s')+'</button>';
+  if(held)h+='<p style="font-size:.78rem;color:var(--warn)">'+held+' '+(held===1?'is':'are')+' on ATO hold/deferral (Status = HELD) — imported as normal jobs.</p>';
+  if(jobs.length)h+='<div class="cycle-list">'+jobs.slice(0,60).map(function(j){return esc(j.client)+' — '+esc(j.task)+' <b>'+prettyDate(j.dueDate)+'</b>';}).join('<br>')+(jobs.length>60?'<br>… and '+(jobs.length-60)+' more':'')+'</div>';
+  if(errors.length)h+='<div class="import-err">'+errors.slice(0,10).map(esc).join('<br>')+'</div>';
+  if(jobs.length)h+='<button class="btn btn-primary" onclick="doImportAS()">Import '+jobs.length+' statement'+(jobs.length===1?'':'s')+'</button>';
   h+='</div>';
   sum.innerHTML=h;
 }
-function doGenerateCycles(){
+function doImportAS(){
   if(!_cycleJobs||!_cycleJobs.length)return;
   tasks=tasks.concat(_cycleJobs);
   _cycleJobs=null;
   persist();
   closeCycle();
-}
-function downloadCycleTemplate(){
-  var rows=[
-    ['Client name','Cycle','Responsible'],
-    ['Kleencut Solutions Pty Ltd','Quarterly BAS','Jennifer'],
-    ['Inspired Built Pty Ltd','Monthly BAS','Jennifer'],
-    ['Tactic Administration Services Pty Ltd','Monthly IAS','Jennifer'],
-    ['Example Trading Co','GST + monthly IAS','Hazel']
-  ];
-  var csv=rows.map(function(r){return r.map(function(c){return /[",\n]/.test(c)?'"'+String(c).replace(/"/g,'""')+'"':c;}).join(',');}).join('\r\n');
-  var blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');a.href=url;a.download='LF-Activity-Statement-Cycles-Template.csv';
-  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
 }
 
 /* ───────────────────────── boot ───────────────────────── */
