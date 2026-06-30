@@ -689,8 +689,9 @@ function ensureClients(){
 /* GST + PAYGW obligations combine into the actual activity statements:
    a period with GST is a BAS, PAYGW-only is an IAS; monthly vs quarterly per the ticks. */
 function cyclesFor(l){l=l||{};var out=[];
-  if(l.gstM)out.push('mBas');                 // monthly GST -> monthly BAS (PAYGW folds in)
-  else if(l.gstQ)out.push('qBas');            // quarterly GST -> quarterly BAS (PAYGW folds in)
+  if(l.gstM)out.push('mBas');                 // monthly GST -> monthly BAS every month
+  else if(l.gstQ&&l.paygwM)out.push('gstIas');// qtly GST + monthly PAYGW -> BAS at qtr-end, IAS the other months
+  else if(l.gstQ)out.push('qBas');            // quarterly GST only -> quarterly BAS
   else if(l.paygwM)out.push('mIas');          // PAYGW only, monthly -> monthly IAS
   else if(l.paygwQ)out.push('qIas');          // PAYGW only, quarterly -> quarterly IAS
   if(l.iasMonthly)out.push('mIasPlain');
