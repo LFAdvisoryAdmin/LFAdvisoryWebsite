@@ -846,6 +846,10 @@ function saveTask(){
   }
   if(editing){
     tasks=tasks.map(function(t){return t.id===editing?Object.assign({},t,{client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:rec,bizDays:bizDays,anchorME:anchorME}):t;});
+  }else if(SERIES_RECS[rec]){
+    var sid=uid();
+    tasks.push({id:uid(),client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:'none',seriesId:sid,seriesRec:rec,bizDays:null,anchorME:null,stage:'ready',done:0});
+    expandRecurring();
   }else{
     tasks.push({id:uid(),client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:rec,bizDays:bizDays,anchorME:anchorME,stage:'ready',done:0});
   }
@@ -869,6 +873,23 @@ function complete(id){
   persist();
 }
 function reopen(id){tasks=tasks.map(function(t){return t.id===id?Object.assign({},t,{stage:'ready'}):t;});persist();}
+/* Recurrences that generate a rolling 12-month batch of discrete jobs (vs one-at-a-time). */
+var SERIES_RECS={fortnightly:1,monthly:1,quarterly:1,annually:1};
+/* Convert legacy single recurring tasks into a series, and top every series up to 12 months ahead. */
+function expandRecurring(){
+  var horizon=addMonths(todayISO(),12),added=false;
+  tasks.forEach(function(t){if(SERIES_RECS[t.recurrence]&&!t.seriesId){t.seriesId=uid();t.seriesRec=t.recurrence;t.recurrence='none';added=true;}});
+  var byS={};tasks.forEach(function(t){if(t.seriesId&&t.seriesRec){(byS[t.seriesId]=byS[t.seriesId]||[]).push(t);}});
+  Object.keys(byS).forEach(function(sid){
+    var arr=byS[sid],rec=arr[0].seriesRec,latest=arr[0];
+    for(var i=1;i<arr.length;i++){if(arr[i].dueDate>latest.dueDate)latest=arr[i];}
+    var d=latest.dueDate,g=0;
+    while(g<500){var nx=advance(d,rec);if(!nx||nx<=d||nx>horizon)break;
+      tasks.push({id:uid(),client:latest.client,task:latest.task,dueDate:nx,preparer:latest.preparer||'',reviewer:latest.reviewer||'',recurrence:'none',seriesId:sid,seriesRec:rec,bizDays:null,anchorME:null,stage:'ready',done:0});
+      d=nx;g++;added=true;}
+  });
+  return added;
+}
 function removeTask(id){
   var t=tasks.find(function(x){return x.id===id;});
   if(t&&!confirm('Delete "'+t.client+' — '+t.task+'"?'))return;
@@ -1234,6 +1255,7 @@ function doImportAS(){
   try{clients=JSON.parse(localStorage.getItem(LS_CLIENTS))||[];}catch(e){clients=[];}
   try{leave=JSON.parse(localStorage.getItem(LS_LEAVE))||[];}catch(e){leave=[];}
   ensureClients();
+  expandRecurring();
   render();
   window.addEventListener('load',async function(){
     var hashToken=parseTokenFromHash();
@@ -1247,8 +1269,9 @@ function doImportAS(){
     var data=await odLoad();
     if(data!==null){
       tasks=normalize(data.tasks||[]);clients=data.clients||[];leave=data.leave||[];ensureClients();
+      var grew=expandRecurring();
       localStorage.setItem(LS_KEY,JSON.stringify(tasks));localStorage.setItem(LS_CLIENTS,JSON.stringify(clients));localStorage.setItem(LS_LEAVE,JSON.stringify(leave));
-      render();
+      if(grew)persist();else render();
     }
   });
 })();
