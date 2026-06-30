@@ -217,6 +217,7 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
           <option value="none">One-off</option>
           <option value="daily">Daily</option>
           <option value="weekly">Weekly</option>
+          <option value="fortnightly">Fortnightly</option>
           <option value="monthly">Monthly</option>
           <option value="quarterly">Quarterly</option>
           <option value="annually">Annually</option>
@@ -269,7 +270,7 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
       <b>Client name</b> <span class="req">required</span><br>
       <b>Task</b> <span class="req">required</span> — what needs doing<br>
       <b>Due Date</b> <span class="req">required</span> — DD/MM/YYYY or YYYY-MM-DD<br>
-      <b>Frequency</b> — One-off, Daily, Weekly, Monthly, Quarterly, Annually<br>
+      <b>Frequency</b> — One-off, Daily, Weekly, Fortnightly, Monthly, Quarterly, Annually<br>
       <b>Responsible</b> — owner's name (optional)<br>
       <b>Status</b> — Ready to start, Started, Awaiting info, In review, Completed
     </div>
@@ -298,12 +299,12 @@ function parseISO(iso){return new Date(iso+'T00:00:00');}
 function todayISO(){return toISO(new Date());}
 function addDays(iso,n){var d=parseISO(iso);d.setDate(d.getDate()+n);return toISO(d);}
 function addMonths(iso,n){var d=parseISO(iso),day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+n);var last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();d.setDate(Math.min(day,last));return toISO(d);}
-function advance(iso,rec){return rec==='daily'?addDays(iso,1):rec==='weekly'?addDays(iso,7):rec==='monthly'?addMonths(iso,1):rec==='quarterly'?addMonths(iso,3):rec==='annually'?addMonths(iso,12):iso;}
+function advance(iso,rec){return rec==='daily'?addDays(iso,1):rec==='weekly'?addDays(iso,7):rec==='fortnightly'?addDays(iso,14):rec==='monthly'?addMonths(iso,1):rec==='quarterly'?addMonths(iso,3):rec==='annually'?addMonths(iso,12):iso;}
 function dayDiff(iso){return Math.round((parseISO(iso)-parseISO(todayISO()))/86400000);}
 function classify(iso){var d=dayDiff(iso);if(d<0)return'overdue';if(d===0)return'today';if(d<=7)return'week';return'later';}
 function prettyDate(iso){return parseISO(iso).toLocaleDateString('en-AU',{day:'2-digit',month:'short'});}
 function relLabel(iso){var d=dayDiff(iso);if(d<0)return Math.abs(d)+'d overdue';if(d===0)return'today';if(d===1)return'tomorrow';return'in '+d+'d';}
-var REC_LABEL={none:'One-off',daily:'Daily',weekly:'Weekly',monthly:'Monthly',quarterly:'Quarterly',annually:'Annually'};
+var REC_LABEL={none:'One-off',daily:'Daily',weekly:'Weekly',fortnightly:'Fortnightly',monthly:'Monthly',quarterly:'Quarterly',annually:'Annually'};
 var STAGES=[
   {key:'ready',label:'Ready to start'},
   {key:'started',label:'Started'},
@@ -621,6 +622,7 @@ function mapFrequency(v){
   var s=String(v||'').toLowerCase().replace(/[^a-z]/g,'');
   if(!s||s==='oneoff'||s==='once'||s==='adhoc'||s==='none')return 'none';
   if(s.indexOf('dai')===0||s==='day')return 'daily';
+  if(s.indexOf('fort')===0||s==='biweekly'||s==='biweek')return 'fortnightly';
   if(s.indexOf('week')===0)return 'weekly';
   if(s.indexOf('month')===0)return 'monthly';
   if(s.indexOf('quart')===0||s==='qtr'||s==='q')return 'quarterly';
