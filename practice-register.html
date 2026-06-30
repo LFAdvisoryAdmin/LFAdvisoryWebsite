@@ -302,10 +302,11 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
       <div class="field">
         <label>Lodgements due</label>
         <div class="cli-lodg" style="padding-top:.45rem">
-          <label class="cli-cb"><input type="checkbox" id="cBasQ"> BAS – Quarterly</label>
-          <label class="cli-cb"><input type="checkbox" id="cBasM"> BAS – Monthly</label>
-          <label class="cli-cb"><input type="checkbox" id="cIasM"> IAS – Monthly</label>
-          <label class="cli-cb"><input type="checkbox" id="cIasQ"> IAS – Quarterly</label>
+          <label class="cli-cb"><input type="checkbox" id="cGstM"> Monthly GST</label>
+          <label class="cli-cb"><input type="checkbox" id="cGstQ"> Quarterly GST</label>
+          <label class="cli-cb"><input type="checkbox" id="cPwM"> Monthly PAYGW</label>
+          <label class="cli-cb"><input type="checkbox" id="cPwQ"> Quarterly PAYGW</label>
+          <label class="cli-cb"><input type="checkbox" id="cGstA"> Annual GST</label>
         </div>
       </div>
     </div>
@@ -454,6 +455,7 @@ function parseCycle(v){
 function genCycle(client,cycle,resp,months){
   var out=[],t0=parseISO(todayISO()),sy=t0.getFullYear(),sm=t0.getMonth();
   function push(name,due){out.push({id:uid(),client:client,task:name,dueDate:due,responsible:resp||'',recurrence:'none',bizDays:null,anchorME:null,stage:'ready',done:0});}
+  if(cycle==='gstAnnual'){var ty=parseISO(todayISO()).getFullYear(),lim=addMonths(todayISO(),13);for(var yy=ty-1;yy<=ty+1;yy++){var ad=rollFwdBiz(ymd(yy+1,5,15));if(ad>=todayISO()&&ad<=lim)push('Annual GST return — FY'+yy,ad);}return out;}
   for(var i=0;i<months;i++){
     var dt=new Date(sy,sm+i,1),py=dt.getFullYear(),pm=dt.getMonth()+1,qe=isQEndMonth(pm),per=MONTH_ABBR[pm-1]+' '+py;
     if(cycle==='gstIas'){ qe?push('BAS — '+per+' qtr',quarterlyTarget(py,pm)):push('IAS — '+per+' (PAYGW)',monthlyTarget(py,pm)); }
@@ -599,11 +601,21 @@ function escAttr(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'
 function clientByName(n){for(var i=0;i<clients.length;i++)if(clients[i].name===n)return clients[i];return null;}
 /* Auto-create a client record for any job whose client isn't in the list yet. */
 function ensureClients(){
+  clients.forEach(function(c){var l=c.lodgements||{};if(('basQ'in l||'basM'in l||'iasM'in l||'iasQ'in l)&&!('gstQ'in l)){c.lodgements={gstM:!!l.basM,gstQ:!!l.basQ,paygwM:!!l.iasM,paygwQ:!!l.iasQ,gstA:!!l.gstA};}});
   var have={};clients.forEach(function(c){have[c.name]=1;});
-  tasks.forEach(function(t){if(t.client&&!have[t.client]){have[t.client]=1;clients.push({name:t.client,group:'',owner:t.responsible||'',lodgements:{basQ:false,basM:false,iasM:false,iasQ:false}});}});
+  tasks.forEach(function(t){if(t.client&&!have[t.client]){have[t.client]=1;clients.push({name:t.client,group:'',owner:t.responsible||'',lodgements:{gstM:false,gstQ:false,paygwM:false,paygwQ:false,gstA:false}});}});
 }
 /* Map a client's ticked lodgements to schedule cycles (BAS-qtly + IAS-monthly = interleaved). */
-function cyclesFor(l){l=l||{};var out=[];if(l.basQ&&l.iasM)out.push('gstIas');else{if(l.basQ)out.push('qBas');if(l.iasM)out.push('mIas');}if(l.basM)out.push('mBas');if(l.iasQ)out.push('qIas');return out;}
+/* GST + PAYGW obligations combine into the actual activity statements:
+   a period with GST is a BAS, PAYGW-only is an IAS; monthly vs quarterly per the ticks. */
+function cyclesFor(l){l=l||{};var out=[];
+  if(l.gstM)out.push('mBas');
+  else if(l.gstQ&&l.paygwM)out.push('gstIas');
+  else if(l.gstQ)out.push('qBas');
+  else if(l.paygwM)out.push('mIas');
+  else if(l.paygwQ)out.push('qIas');
+  if(l.gstA)out.push('gstAnnual');
+  return out;}
 /* Generate this client's scheduled jobs (next 12 months), adding only new periods. */
 function regenClient(name){
   var c=clientByName(name);if(!c)return 0;
@@ -618,13 +630,13 @@ function fillClientSelect(val){var sel=document.getElementById('fClient');var li
 function onClientPick(){var c=clientByName(document.getElementById('fClient').value);var r=document.getElementById('fResp');if(c&&c.owner&&!r.value.trim())r.value=c.owner;}
 
 var _editClient=null;
-function openClientAdd(){_editClient=null;document.getElementById('clientModalTitle').textContent='Add client';document.getElementById('cName').value='';document.getElementById('cGroup').value='';document.getElementById('cOwner').value='';['cBasQ','cBasM','cIasM','cIasQ'].forEach(function(id){document.getElementById(id).checked=false;});fillGroups();fillPeople();document.getElementById('clientModal').classList.add('open');document.getElementById('cName').focus();}
-function openClientEdit(name){var c=clientByName(name);if(!c)return;_editClient=name;document.getElementById('clientModalTitle').textContent='Edit client';document.getElementById('cName').value=c.name;document.getElementById('cGroup').value=c.group||'';document.getElementById('cOwner').value=c.owner||'';var l=c.lodgements||{};document.getElementById('cBasQ').checked=!!l.basQ;document.getElementById('cBasM').checked=!!l.basM;document.getElementById('cIasM').checked=!!l.iasM;document.getElementById('cIasQ').checked=!!l.iasQ;fillGroups();fillPeople();document.getElementById('clientModal').classList.add('open');document.getElementById('cName').focus();}
+function openClientAdd(){_editClient=null;document.getElementById('clientModalTitle').textContent='Add client';document.getElementById('cName').value='';document.getElementById('cGroup').value='';document.getElementById('cOwner').value='';['cGstM','cGstQ','cPwM','cPwQ','cGstA'].forEach(function(id){document.getElementById(id).checked=false;});fillGroups();fillPeople();document.getElementById('clientModal').classList.add('open');document.getElementById('cName').focus();}
+function openClientEdit(name){var c=clientByName(name);if(!c)return;_editClient=name;document.getElementById('clientModalTitle').textContent='Edit client';document.getElementById('cName').value=c.name;document.getElementById('cGroup').value=c.group||'';document.getElementById('cOwner').value=c.owner||'';var l=c.lodgements||{};document.getElementById('cGstM').checked=!!l.gstM;document.getElementById('cGstQ').checked=!!l.gstQ;document.getElementById('cPwM').checked=!!l.paygwM;document.getElementById('cPwQ').checked=!!l.paygwQ;document.getElementById('cGstA').checked=!!l.gstA;fillGroups();fillPeople();document.getElementById('clientModal').classList.add('open');document.getElementById('cName').focus();}
 function closeClient(){document.getElementById('clientModal').classList.remove('open');_editClient=null;}
 function saveClient(){
   var name=document.getElementById('cName').value.trim();if(!name)return;
   var group=document.getElementById('cGroup').value.trim(),owner=document.getElementById('cOwner').value.trim();
-  var lod={basQ:document.getElementById('cBasQ').checked,basM:document.getElementById('cBasM').checked,iasM:document.getElementById('cIasM').checked,iasQ:document.getElementById('cIasQ').checked};
+  var lod={gstM:document.getElementById('cGstM').checked,gstQ:document.getElementById('cGstQ').checked,paygwM:document.getElementById('cPwM').checked,paygwQ:document.getElementById('cPwQ').checked,gstA:document.getElementById('cGstA').checked};
   if(_editClient){
     var old=_editClient;
     clients=clients.map(function(c){return c.name===old?{name:name,group:group,owner:owner,lodgements:lod}:c;});
@@ -654,7 +666,7 @@ function clientRow(c){
   function cb(key,lab){return '<label class="cli-cb"><input type="checkbox" '+(l[key]?'checked':'')+' onchange="toggleLodg(\''+nm+'\',\''+key+'\')"> '+lab+'</label>';}
   var open=tasks.filter(function(t){return t.client===c.name&&t.stage!=='completed';}).length;
   return '<div class="cli-row"><div class="cli-main"><span class="cli-name">'+esc(c.name)+'</span><span class="cli-owner">'+(c.owner?esc(c.owner):'<span class="cli-unassigned">No owner</span>')+'</span></div>'
-    +'<div class="cli-lodg">'+cb('basQ','BAS Q')+cb('basM','BAS M')+cb('iasM','IAS M')+cb('iasQ','IAS Q')+'</div>'
+    +'<div class="cli-lodg">'+cb('gstM','GST M')+cb('gstQ','GST Q')+cb('paygwM','PAYGW M')+cb('paygwQ','PAYGW Q')+cb('gstA','GST A')+'</div>'
     +'<div class="cli-actions"><span class="cli-jobs">'+open+' open</span>'
     +'<button class="ico" title="Edit" onclick="openClientEdit(\''+nm+'\')"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>'
     +'<button class="ico del" title="Delete" onclick="deleteClient(\''+nm+'\')"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button></div></div>';
