@@ -947,12 +947,24 @@ function populateFilters(){
 
 function activeTasks(){return tasks.filter(function(t){return t.stage!=='completed';}).sort(function(a,b){return a.dueDate.localeCompare(b.dueDate);});}
 
+/* In a recurring series, an occurrence is "blocked" (greyed) while an earlier one is still open. */
+var _blocked={};
+function computeBlocked(){
+  var blocked={},byS={};
+  tasks.forEach(function(t){if(t.seriesId){(byS[t.seriesId]=byS[t.seriesId]||[]).push(t);}});
+  Object.keys(byS).forEach(function(sid){
+    var arr=byS[sid].slice().sort(function(a,b){return a.dueDate.localeCompare(b.dueDate);}),earlierOpen=false;
+    arr.forEach(function(t){if(t.stage==='completed')return;if(earlierOpen)blocked[t.id]=1;earlierOpen=true;});
+  });
+  return blocked;
+}
+
 function rowHTML(t,done){
   var c=done?'is-done':classify(t.dueDate);
   var prep=(t.preparer||'').trim(),rev=(t.reviewer||'').trim();
   var clash=done?[]:leaveClash(t);
   var leaveChip=clash.length?'<span class="chip chip-leave">⚠ '+esc(clash.join(', '))+' on leave</span>':'';
-  var future=!done&&t.periodEnd&&todayISO()<t.periodEnd;
+  var future=!done&&((t.periodEnd&&todayISO()<t.periodEnd)||_blocked[t.id]);
   var recChip=t.recurrence!=='none'?'<span class="chip chip-rec"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> '+recLabel(t)+'</span>':'';
   var stageSel='<select class="stage-sel stage-'+t.stage+'" title="Change status" onchange="setStage(\''+t.id+'\',this.value)">'+STAGES.map(function(s){return '<option value="'+s.key+'"'+(s.key===t.stage?' selected':'')+'>'+s.label+'</option>';}).join('')+'</select>';
   var actions=done
@@ -970,6 +982,7 @@ function rowHTML(t,done){
 var GROUP_NAMES={overdue:'Overdue',today:'Due today',week:'This week',later:'Later'};
 
 function render(){
+  _blocked=computeBlocked();
   var act=activeTasks().filter(matchFilters);
 
   /* counts */
