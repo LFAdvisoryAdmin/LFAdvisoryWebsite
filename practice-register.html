@@ -291,8 +291,8 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
         <input id="cName" placeholder="e.g. Flux Keperra Unit Trust"/>
       </div>
       <div class="field">
-        <label>Group / header client (optional)</label>
-        <input id="cGroup" list="groups" placeholder="e.g. Flux Property Group"/>
+        <label>Group (optional)</label>
+        <input id="cGroup" list="groups" placeholder="e.g. Flux"/>
         <datalist id="groups"></datalist>
       </div>
       <div class="field">
@@ -613,7 +613,7 @@ function regenClient(name){
   return added;
 }
 function fillPeople(){var p=Array.from(new Set(clients.map(function(c){return c.owner;}).concat(tasks.map(function(t){return t.responsible;})).filter(Boolean))).sort();document.getElementById('people').innerHTML=p.map(function(x){return '<option value="'+escAttr(x)+'">';}).join('');}
-function fillGroups(){var gs={};clients.forEach(function(c){if(c.group)gs[c.group]=1;});var all=Array.from(new Set(Object.keys(gs).concat(clients.map(function(c){return c.name;})))).sort();document.getElementById('groups').innerHTML=all.map(function(g){return '<option value="'+escAttr(g)+'">';}).join('');}
+function fillGroups(){var gs={};clients.forEach(function(c){if(c.group)gs[c.group]=1;});document.getElementById('groups').innerHTML=Object.keys(gs).sort().map(function(g){return '<option value="'+escAttr(g)+'">';}).join('');}
 function fillClientSelect(val){var sel=document.getElementById('fClient');var list=clients.slice().sort(function(a,b){return a.name.localeCompare(b.name);});sel.innerHTML='<option value="">— Select client —</option>'+list.map(function(c){return '<option value="'+escAttr(c.name)+'">'+esc(c.name)+(c.group?(' · '+esc(c.group)):'')+'</option>';}).join('');sel.value=val||'';}
 function onClientPick(){var c=clientByName(document.getElementById('fClient').value);var r=document.getElementById('fResp');if(c&&c.owner&&!r.value.trim())r.value=c.owner;}
 
@@ -628,7 +628,7 @@ function saveClient(){
   if(_editClient){
     var old=_editClient;
     clients=clients.map(function(c){return c.name===old?{name:name,group:group,owner:owner,lodgements:lod}:c;});
-    if(name!==old){tasks=tasks.map(function(t){return t.client===old?Object.assign({},t,{client:name}):t;});clients=clients.map(function(c){return c.group===old?Object.assign({},c,{group:name}):c;});}
+    if(name!==old){tasks=tasks.map(function(t){return t.client===old?Object.assign({},t,{client:name}):t;});}
   }else{
     if(clientByName(name)){alert('A client called "'+name+'" already exists.');return;}
     clients.push({name:name,group:group,owner:owner,lodgements:lod});
