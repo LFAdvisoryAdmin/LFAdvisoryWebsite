@@ -104,6 +104,11 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 .chip-who.unassigned{background:var(--warn-soft);border-color:#e4d5ad;color:var(--warn)}
 .chip-rec{background:var(--teal-soft);color:var(--teal)}
 .chip-rec svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:2}
+.stage-sel{font-family:var(--display);font-size:.58rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:.26rem .5rem;border-radius:2px;border:1px solid var(--border);background:var(--bg);color:var(--mid);cursor:pointer;outline:none}
+.stage-sel.stage-started{background:var(--teal-soft);color:var(--teal);border-color:#bcd2d2}
+.stage-sel.stage-awaiting{background:var(--warn-soft);color:var(--warn);border-color:#e4d5ad}
+.stage-sel.stage-review{background:#eef0e0;color:var(--olive);border-color:#d7dcc2}
+.stage-sel.stage-completed{background:#e3efe8;color:#1f6b50;border-color:#bcd9cf}
 .row-actions{flex:0 0 auto;display:flex;align-items:center;gap:.1rem;padding:.4rem .6rem}
 .ico{border:none;background:transparent;cursor:pointer;padding:.5rem;border-radius:2px;color:var(--mid);display:inline-flex;transition:background .15s,color .15s}
 .ico svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8}
@@ -214,6 +219,7 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 
   <div class="views" role="tablist">
     <button class="view" role="tab" aria-selected="true" data-view="due" onclick="setView('due')"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg> By due date</button>
+    <button class="view" role="tab" aria-selected="false" data-view="status" onclick="setView('status')"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> By status</button>
     <button class="view" role="tab" aria-selected="false" data-view="person" onclick="setView('person')"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg> By person</button>
     <button class="view" role="tab" aria-selected="false" data-view="client" onclick="setView('client')"><svg viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/></svg> By client</button>
   </div>
@@ -262,8 +268,22 @@ function classify(iso){var d=dayDiff(iso);if(d<0)return'overdue';if(d===0)return
 function prettyDate(iso){return parseISO(iso).toLocaleDateString('en-AU',{day:'2-digit',month:'short'});}
 function relLabel(iso){var d=dayDiff(iso);if(d<0)return Math.abs(d)+'d overdue';if(d===0)return'today';if(d===1)return'tomorrow';return'in '+d+'d';}
 var REC_LABEL={none:'One-off',daily:'Daily',weekly:'Weekly',monthly:'Monthly'};
+var STAGES=[
+  {key:'ready',label:'Ready to start'},
+  {key:'started',label:'Started'},
+  {key:'awaiting',label:'Awaiting info'},
+  {key:'review',label:'In review'},
+  {key:'completed',label:'Completed'}
+];
+var STAGE_LABEL={};STAGES.forEach(function(s){STAGE_LABEL[s.key]=s.label;});
 function uid(){return Math.random().toString(36).slice(2,9);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+/* Ensure every task has a valid stage (migrates older active/done records). */
+function normalize(arr){return (arr||[]).map(function(t){
+  var stage=t.stage;
+  if(!STAGE_LABEL[stage])stage=(t.status==='done')?'completed':'ready';
+  return Object.assign({},t,{stage:stage});
+});}
 
 /* ───────────────────────── state ───────────────────────── */
 var LS_KEY='lfa_registerTasks';
@@ -407,19 +427,24 @@ function saveTask(){
   if(editing){
     tasks=tasks.map(function(t){return t.id===editing?Object.assign({},t,{client:client,task:task,dueDate:due,responsible:resp,recurrence:rec}):t;});
   }else{
-    tasks.push({id:uid(),client:client,task:task,dueDate:due,responsible:resp,recurrence:rec,status:'active',done:0});
+    tasks.push({id:uid(),client:client,task:task,dueDate:due,responsible:resp,recurrence:rec,stage:'ready',done:0});
   }
   closeForm();persist();
+}
+function setStage(id,stage){
+  if(stage==='completed'){complete(id);return;}
+  tasks=tasks.map(function(t){return t.id===id?Object.assign({},t,{stage:stage}):t;});
+  persist();
 }
 function complete(id){
   tasks=tasks.map(function(t){
     if(t.id!==id)return t;
-    if(t.recurrence!=='none')return Object.assign({},t,{dueDate:advance(t.dueDate,t.recurrence),done:(t.done||0)+1});
-    return Object.assign({},t,{status:'done'});
+    if(t.recurrence!=='none')return Object.assign({},t,{dueDate:advance(t.dueDate,t.recurrence),done:(t.done||0)+1,stage:'ready'});
+    return Object.assign({},t,{stage:'completed'});
   });
   persist();
 }
-function reopen(id){tasks=tasks.map(function(t){return t.id===id?Object.assign({},t,{status:'active'}):t;});persist();}
+function reopen(id){tasks=tasks.map(function(t){return t.id===id?Object.assign({},t,{stage:'ready'}):t;});persist();}
 function removeTask(id){
   var t=tasks.find(function(x){return x.id===id;});
   if(t&&!confirm('Delete "'+t.client+' — '+t.task+'"?'))return;
@@ -429,12 +454,13 @@ function removeTask(id){
 /* ───────────────────────── views ───────────────────────── */
 function setView(v){view=v;document.querySelectorAll('.view').forEach(function(b){b.setAttribute('aria-selected',b.dataset.view===v?'true':'false');});render();}
 
-function activeTasks(){return tasks.filter(function(t){return t.status!=='done';}).sort(function(a,b){return a.dueDate.localeCompare(b.dueDate);});}
+function activeTasks(){return tasks.filter(function(t){return t.stage!=='completed';}).sort(function(a,b){return a.dueDate.localeCompare(b.dueDate);});}
 
 function rowHTML(t,done){
   var c=done?'is-done':classify(t.dueDate);
   var who=t.responsible.trim();
   var recChip=t.recurrence!=='none'?'<span class="chip chip-rec"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> '+REC_LABEL[t.recurrence]+'</span>':'';
+  var stageSel='<select class="stage-sel stage-'+t.stage+'" title="Change status" onchange="setStage(\''+t.id+'\',this.value)">'+STAGES.map(function(s){return '<option value="'+s.key+'"'+(s.key===t.stage?' selected':'')+'>'+s.label+'</option>';}).join('')+'</select>';
   var actions=done
     ? '<button class="ico" title="Reopen" onclick="reopen(\''+t.id+'\')"><svg viewBox="0 0 24 24"><path d="M3 2v6h6"/><path d="M3.5 12a9 9 0 1 0 2.6-6.4L3 8"/></svg></button>'
     : '<button class="ico done" title="Mark done" onclick="complete(\''+t.id+'\')"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></button>'
@@ -443,7 +469,7 @@ function rowHTML(t,done){
   return '<div class="row '+c+'">'
     +'<div class="rail"><span class="rail-date">'+prettyDate(t.dueDate)+'</span><span class="rail-rel">'+(done?'done':relLabel(t.dueDate))+'</span></div>'
     +'<div class="row-body"><span class="row-client">'+esc(t.client)+'</span><span class="row-task">'+esc(t.task)+'</span>'
-    +'<div class="row-meta"><span class="chip chip-who'+(who?'':' unassigned')+'">'+esc(who||'Unassigned')+'</span>'+recChip+'</div></div>'
+    +'<div class="row-meta">'+stageSel+'<span class="chip chip-who'+(who?'':' unassigned')+'">'+esc(who||'Unassigned')+'</span>'+recChip+'</div></div>'
     +'<div class="row-actions">'+actions+'</div></div>';
 }
 
@@ -479,6 +505,13 @@ function render(){
       if(!g[k].length)return;
       html+='<div class="group '+k+'"><div class="group-head"><span class="group-name">'+GROUP_NAMES[k]+'</span><span class="group-count">'+g[k].length+'</span></div>'+g[k].map(function(t){return rowHTML(t,false);}).join('')+'</div>';
     });
+  }else if(view==='status'){
+    STAGES.forEach(function(s){
+      if(s.key==='completed')return;
+      var arr=act.filter(function(t){return t.stage===s.key;});
+      if(!arr.length)return;
+      html+='<div class="group"><div class="group-head"><span class="group-name">'+s.label+'</span><span class="group-count">'+arr.length+'</span></div>'+arr.map(function(t){return rowHTML(t,false);}).join('')+'</div>';
+    });
   }else{
     var key=view==='person'?'responsible':'client';
     var map={};
@@ -490,17 +523,17 @@ function render(){
   list.innerHTML=html;
 
   /* done section */
-  var done=tasks.filter(function(t){return t.status==='done';});
+  var done=tasks.filter(function(t){return t.stage==='completed';});
   var dw=document.getElementById('doneWrap');
   if(done.length){
-    dw.innerHTML='<button class="done-toggle" onclick="toggleDone()">'+(showDone?'▾':'▸')+' Completed one-off tasks ('+done.length+')</button>'+(showDone?'<div style="margin-top:.6rem">'+done.map(function(t){return rowHTML(t,true);}).join('')+'</div>':'');
+    dw.innerHTML='<button class="done-toggle" onclick="toggleDone()">'+(showDone?'▾':'▸')+' Completed ('+done.length+')</button>'+(showDone?'<div style="margin-top:.6rem">'+done.map(function(t){return rowHTML(t,true);}).join('')+'</div>':'');
   }else dw.innerHTML='';
 }
 function toggleDone(){showDone=!showDone;render();}
 
 /* ───────────────────────── export + digest ───────────────────────── */
 function exportExcel(){
-  var rows=tasks.map(function(t){return {Client:t.client,Task:t.task,DueDate:t.dueDate,Responsible:t.responsible,Recurrence:REC_LABEL[t.recurrence],Status:t.status==='done'?'Done':'Active'};});
+  var rows=tasks.map(function(t){return {Client:t.client,Task:t.task,DueDate:t.dueDate,Responsible:t.responsible,Recurrence:REC_LABEL[t.recurrence],Status:STAGE_LABEL[t.stage]};});
   if(!rows.length)rows=[{Client:'',Task:'',DueDate:'',Responsible:'',Recurrence:'',Status:''}];
   var ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Register');
@@ -508,7 +541,7 @@ function exportExcel(){
 }
 function buildDigest(){
   var act=activeTasks();
-  function line(t){return '  '+prettyDate(t.dueDate)+'  '+t.client+' — '+t.task+'  ['+(t.responsible||'UNASSIGNED')+']';}
+  function line(t){return '  '+prettyDate(t.dueDate)+'  '+t.client+' — '+t.task+'  ['+(t.responsible||'UNASSIGNED')+']  · '+STAGE_LABEL[t.stage];}
   var od=act.filter(function(t){return classify(t.dueDate)==='overdue';});
   var td=act.filter(function(t){return classify(t.dueDate)==='today';});
   var wk=act.filter(function(t){return classify(t.dueDate)==='week';});
@@ -530,7 +563,7 @@ document.getElementById('digestModal').addEventListener('click',function(e){if(e
 
 /* ───────────────────────── boot ───────────────────────── */
 (function(){
-  try{tasks=JSON.parse(localStorage.getItem(LS_KEY))||[];}catch(e){tasks=[];}
+  try{tasks=normalize(JSON.parse(localStorage.getItem(LS_KEY))||[]);}catch(e){tasks=[];}
   render();
   window.addEventListener('load',async function(){
     var hashToken=parseTokenFromHash();
@@ -542,7 +575,7 @@ document.getElementById('digestModal').addEventListener('click',function(e){if(e
       return;
     }
     var data=await odLoad();
-    if(data!==null){tasks=data;localStorage.setItem(LS_KEY,JSON.stringify(tasks));render();}
+    if(data!==null){tasks=normalize(data);localStorage.setItem(LS_KEY,JSON.stringify(tasks));render();}
   });
 })();
 </script>
