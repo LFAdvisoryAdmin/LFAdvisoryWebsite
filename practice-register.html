@@ -894,7 +894,9 @@ function matchDate(t){
   if(flt.date==='overdue')return d<todayISO();
   if(flt.date==='today')return d===todayISO();
   if(flt.date==='week'){var ws=addDays(todayISO(),-((parseISO(todayISO()).getDay()+6)%7));return d>=ws&&d<=addDays(ws,6);}
+  if(flt.date==='next7')return d>=todayISO()&&d<=addDays(todayISO(),7);
   if(flt.date==='month'){var n=parseISO(todayISO());return d>=ymd(n.getFullYear(),n.getMonth()+1,1)&&d<=monthEnd(todayISO());}
+  if(flt.date==='next30')return d>=todayISO()&&d<=addDays(todayISO(),30);
   if(flt.date==='range')return (!flt.from||d>=flt.from)&&(!flt.to||d<=flt.to);
   return true;
 }
@@ -910,7 +912,7 @@ function populateFilters(){
   var st=document.getElementById('fltStatus');
   st.innerHTML='<option value="">All statuses</option>'+STAGES.map(function(s){return '<option value="'+s.key+'"'+(s.key===flt.status?' selected':'')+'>'+s.label+'</option>';}).join('');
   st.value=flt.status||'';st.className='flt-sel'+(flt.status?' active':'');
-  var DATE_OPTS=[['','All dates'],['overdue','Overdue'],['today','Due today'],['week','This week'],['month','This month'],['range','Date range…']];
+  var DATE_OPTS=[['','All dates'],['overdue','Overdue'],['today','Due today'],['week','This week'],['next7','Next 7 days'],['month','This month'],['next30','Next 30 days'],['range','Date range…']];
   var dt=document.getElementById('fltDate');
   dt.innerHTML=DATE_OPTS.map(function(o){return '<option value="'+o[0]+'"'+(o[0]===flt.date?' selected':'')+'>'+o[1]+'</option>';}).join('');
   dt.value=flt.date||'';dt.className='flt-sel'+(flt.date?' active':'');
