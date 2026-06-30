@@ -104,12 +104,18 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 .chip-who.unassigned{background:var(--warn-soft);border-color:#e4d5ad;color:var(--warn)}
 .chip-rec{background:var(--teal-soft);color:var(--teal)}
 .chip-rev{background:#eef0e0;color:var(--olive)}
+.chip-leave{background:var(--alert-soft);color:var(--alert);font-weight:700}
+.row.leave-clash{border-color:var(--alert-line);box-shadow:inset 4px 0 0 var(--alert)}
+.lv-row{display:flex;align-items:center;gap:.8rem;padding:.55rem .2rem;border-bottom:1px solid var(--border)}
+.lv-person{font-family:var(--display);font-weight:700;font-size:.85rem;min-width:100px}
+.lv-dates{flex:1;font-size:.82rem;color:var(--mid)}
 .chip-rec svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:2}
 .stage-sel{font-family:var(--display);font-size:.58rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:.26rem .5rem;border-radius:2px;border:1px solid var(--border);background:var(--bg);color:var(--mid);cursor:pointer;outline:none}
 .stage-sel.stage-started{background:var(--teal-soft);color:var(--teal);border-color:#bcd2d2}
 .stage-sel.stage-awaiting{background:var(--warn-soft);color:var(--warn);border-color:#e4d5ad}
 .stage-sel.stage-review{background:#eef0e0;color:var(--olive);border-color:#d7dcc2}
 .stage-sel.stage-completed{background:#e3efe8;color:#1f6b50;border-color:#bcd9cf}
+.stage-sel.stage-notready{background:#ececec;color:#8b938b;border-color:#dcdfdc}
 .row-actions{flex:0 0 auto;display:flex;align-items:center;gap:.1rem;padding:.4rem .6rem}
 .ico{border:none;background:transparent;cursor:pointer;padding:.5rem;border-radius:2px;color:var(--mid);display:inline-flex;transition:background .15s,color .15s}
 .ico svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8}
@@ -197,6 +203,7 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
       <button class="btn btn-ghost" onclick="openDigest()"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="m4 6 8 6 8-6"/></svg> Email preview</button>
       <button class="btn btn-ghost" onclick="exportExcel()"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 12 5 4 5-4"/><path d="M5 21h14"/></svg> Export to Excel</button>
       <button class="btn btn-ghost" onclick="openImport()"><svg viewBox="0 0 24 24"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg> Import</button>
+      <button class="btn btn-ghost" onclick="openLeave()"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/><path d="m9 16 1.5 1.5L14 14"/></svg> Leave</button>
       <button class="btn btn-ghost" onclick="setView('clients')"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Clients</button>
       <button class="btn btn-primary" onclick="openAdd()"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Add job</button>
     </div>
@@ -302,6 +309,35 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
       <button class="btn btn-primary" id="copyBtn" onclick="copyDigest()"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg> Copy text</button>
     </div>
     <p class="modal-note">This is the morning summary, grouped by what's overdue, due today, due this week, and what still needs an owner. Copy it into an email to the team. (A later step can automate the send via Power Automate reading the register file.)</p>
+  </div>
+</div>
+
+<!-- Leave modal -->
+<div class="overlay" id="leaveModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">Employee leave</div>
+      <button class="modal-close" onclick="closeLeave()">&times;</button>
+    </div>
+    <p class="import-intro">Record when staff are away. Any job whose due date falls within a person's leave is flagged <span style="color:var(--alert);font-weight:700">red</span> on the list, so you can reassign it or shift the due date.</p>
+    <div class="form-grid">
+      <div class="field">
+        <label>Employee</label>
+        <input id="lvPerson" list="people" placeholder="e.g. Hazel"/>
+      </div>
+      <div class="field">
+        <label>From</label>
+        <input type="date" id="lvStart"/>
+      </div>
+      <div class="field">
+        <label>To</label>
+        <input type="date" id="lvEnd"/>
+      </div>
+      <div class="field" style="justify-content:flex-end">
+        <button class="btn btn-primary" onclick="addLeave()">Add leave</button>
+      </div>
+    </div>
+    <div id="leaveList" style="margin-top:1rem"></div>
   </div>
 </div>
 
@@ -482,22 +518,24 @@ function parseCycle(v){
 /* Generate the next `months` period-months of jobs for one client + cycle. */
 function genCycle(client,cycle,resp,months){
   var out=[],t0=parseISO(todayISO()),sy=t0.getFullYear(),sm=t0.getMonth();
-  function push(name,due){out.push({id:uid(),client:client,task:name,dueDate:due,preparer:resp||'',reviewer:'',recurrence:'none',bizDays:null,anchorME:null,stage:'ready',done:0});}
-  if(cycle==='gstAnnual'){var ty=parseISO(todayISO()).getFullYear(),lim=addMonths(todayISO(),13);for(var yy=ty-1;yy<=ty+1;yy++){var ad=rollFwdBiz(ymd(yy+1,5,15));if(ad>=todayISO()&&ad<=lim)push('Annual GST return — FY'+yy,ad);}return out;}
+  /* stage = "not ready yet" until the reporting period (pend) has finished. */
+  function push(name,due,pend){var st=(!pend||todayISO()>=pend)?'ready':'notready';out.push({id:uid(),client:client,task:name,dueDate:due,periodEnd:pend||'',preparer:resp||'',reviewer:'',recurrence:'none',bizDays:null,anchorME:null,stage:st,done:0});}
+  if(cycle==='gstAnnual'){var ty=parseISO(todayISO()).getFullYear(),lim=addMonths(todayISO(),13);for(var yy=ty-1;yy<=ty+1;yy++){var ad=rollFwdBiz(ymd(yy+1,5,15));if(ad>=todayISO()&&ad<=lim)push('Annual GST return — FY'+yy,ad,ymd(yy,6,30));}return out;}
   for(var i=0;i<months;i++){
-    var dt=new Date(sy,sm+i,1),py=dt.getFullYear(),pm=dt.getMonth()+1,qe=isQEndMonth(pm),per=MONTH_ABBR[pm-1]+' '+py;
-    if(cycle==='gstIas'){ qe?push('BAS — '+per+' qtr',quarterlyTarget(py,pm)):push('IAS — '+per+' (PAYGW)',monthlyTarget(py,pm)); }
-    else if(cycle==='qBas'){ if(qe)push('BAS — '+per+' qtr',quarterlyTarget(py,pm)); }
-    else if(cycle==='mBas'){ push('BAS — '+per,monthlyTarget(py,pm)); }
-    else if(cycle==='qIas'){ if(qe)push('IAS — '+per+' qtr (PAYGI)',quarterlyTarget(py,pm)); }
-    else if(cycle==='mIas'){ push('IAS — '+per+' (PAYGW)',monthlyTarget(py,pm)); }
-    else if(cycle==='mIasPlain'){ push('IAS — '+per,monthlyTarget(py,pm)); }
+    var dt=new Date(sy,sm+i,1),py=dt.getFullYear(),pm=dt.getMonth()+1,qe=isQEndMonth(pm),per=MONTH_ABBR[pm-1]+' '+py,pend=monthEnd(ymd(py,pm,1));
+    if(cycle==='gstIas'){ qe?push('BAS — '+per+' qtr',quarterlyTarget(py,pm),pend):push('IAS — '+per+' (PAYGW)',monthlyTarget(py,pm),pend); }
+    else if(cycle==='qBas'){ if(qe)push('BAS — '+per+' qtr',quarterlyTarget(py,pm),pend); }
+    else if(cycle==='mBas'){ push('BAS — '+per,monthlyTarget(py,pm),pend); }
+    else if(cycle==='qIas'){ if(qe)push('IAS — '+per+' qtr (PAYGI)',quarterlyTarget(py,pm),pend); }
+    else if(cycle==='mIas'){ push('IAS — '+per+' (PAYGW)',monthlyTarget(py,pm),pend); }
+    else if(cycle==='mIasPlain'){ push('IAS — '+per,monthlyTarget(py,pm),pend); }
   }
   return out;
 }
 var REC_LABEL={none:'One-off',daily:'Daily',weekly:'Weekly',fortnightly:'Fortnightly',monthly:'Monthly',quarterly:'Quarterly',annually:'Annually',monthlyBizME:'After month-end'};
 function recLabel(t){return t.recurrence==='monthlyBizME'?((t.bizDays||0)+' biz days after ME'):REC_LABEL[t.recurrence];}
 var STAGES=[
+  {key:'notready',label:'Not ready yet'},
   {key:'ready',label:'Ready to start'},
   {key:'started',label:'Started'},
   {key:'awaiting',label:'Awaiting info'},
@@ -507,18 +545,25 @@ var STAGES=[
 var STAGE_LABEL={};STAGES.forEach(function(s){STAGE_LABEL[s.key]=s.label;});
 function uid(){return Math.random().toString(36).slice(2,9);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
-/* Ensure every task has a valid stage (migrates older active/done records). */
+/* Work out a lodgement job's reporting period-end from its name (for older records). */
+function inferPeriodEnd(name){var fy=String(name).match(/FY(\d{4})/);if(fy)return ymd(+fy[1],6,30);var mm=String(name).match(/—\s*([A-Za-z]{3})\s+(\d{4})/);if(mm){var mi=MONTH_ABBR.indexOf(mm[1]);if(mi>=0)return monthEnd(ymd(+mm[2],mi+1,1));}return '';}
+/* Ensure every task has a valid stage; "not ready yet" until its period finishes. */
 function normalize(arr){return (arr||[]).map(function(t){
   var stage=t.stage;
   if(!STAGE_LABEL[stage])stage=(t.status==='done')?'completed':'ready';
-  return Object.assign({},t,{stage:stage,preparer:(t.preparer!=null?t.preparer:(t.responsible||'')),reviewer:(t.reviewer||'')});
+  var pe=t.periodEnd||(isLodgementJob(t)?inferPeriodEnd(t.task):'');
+  if(stage==='ready'&&pe&&todayISO()<pe)stage='notready';
+  else if(stage==='notready'&&pe&&todayISO()>=pe)stage='ready';
+  return Object.assign({},t,{stage:stage,periodEnd:pe,preparer:(t.preparer!=null?t.preparer:(t.responsible||'')),reviewer:(t.reviewer||'')});
 });}
 
 /* ───────────────────────── state ───────────────────────── */
 var LS_KEY='lfa_registerTasks';
 var LS_CLIENTS='lfa_registerClients';
+var LS_LEAVE='lfa_registerLeave';
 var tasks=[];
 var clients=[];
+var leave=[];
 var view='due';
 var editing=null;
 var _editAnchorME=null;
@@ -593,32 +638,34 @@ async function odLoad(){
     setSync('loading');
     var siteId=await getSiteId(token);
     var resp=await fetch(folderChildrenUrl(siteId),{headers:{Authorization:'Bearer '+token}});
-    if(resp.status===404){setSync('connected');return {tasks:[],clients:[]};}
+    if(resp.status===404){setSync('connected');return {tasks:[],clients:[],leave:[]};}
     if(!resp.ok)throw new Error('Graph error '+resp.status);
     var items=await resp.json();
     var file=(items.value||[]).find(function(f){return f.name===DATA_FILE;});
-    if(!file){setSync('connected');return {tasks:[],clients:[]};}
+    if(!file){setSync('connected');return {tasks:[],clients:[],leave:[]};}
     var fileResp=await fetch(file['@microsoft.graph.downloadUrl']);
     var data=await fileResp.json();
     setSync('connected');
-    return Array.isArray(data)?{tasks:data,clients:[]}:{tasks:(data.tasks||[]),clients:(data.clients||[])};
+    return Array.isArray(data)?{tasks:data,clients:[],leave:[]}:{tasks:(data.tasks||[]),clients:(data.clients||[]),leave:(data.leave||[])};
   }catch(e){console.error('[Sync] Load error:',e);setSync('error');return null;}
 }
 async function odSave(){
   localStorage.setItem(LS_KEY,JSON.stringify(tasks));
   localStorage.setItem(LS_CLIENTS,JSON.stringify(clients));
+  localStorage.setItem(LS_LEAVE,JSON.stringify(leave));
   var token=_odToken||getStoredToken();
   if(!token)return;
   try{
     var siteId=await getSiteId(token);
     setSync('saving');
-    await fetch(folderFileUrl(siteId,DATA_FILE),{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({tasks:tasks,clients:clients},null,2)});
+    await fetch(folderFileUrl(siteId,DATA_FILE),{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({tasks:tasks,clients:clients,leave:leave},null,2)});
     setSync('saved');
   }catch(e){console.error('[Sync] Save error:',e);setSync('error');}
 }
 function persist(){
   localStorage.setItem(LS_KEY,JSON.stringify(tasks));
   localStorage.setItem(LS_CLIENTS,JSON.stringify(clients));
+  localStorage.setItem(LS_LEAVE,JSON.stringify(leave));
   clearTimeout(_saveTimer);
   _saveTimer=setTimeout(odSave,1200);
   render();
@@ -709,6 +756,28 @@ function clientRow(c){
     +'<div class="cli-actions"><span class="cli-jobs">'+open+' open</span>'
     +'<button class="ico" title="Edit" onclick="openClientEdit(\''+nm+'\')"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>'
     +'<button class="ico del" title="Delete" onclick="deleteClient(\''+nm+'\')"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button></div></div>';
+}
+
+/* ───────────────────────── employee leave ───────────────────────── */
+function onLeave(person,iso){if(!person||!iso)return false;for(var i=0;i<leave.length;i++){var L=leave[i];if(L.person===person&&iso>=L.start&&iso<=L.end)return true;}return false;}
+function leaveClash(t){var out=[],prep=(t.preparer||'').trim(),rev=(t.reviewer||'').trim();if(prep&&onLeave(prep,t.dueDate))out.push(prep);if(rev&&rev!==prep&&onLeave(rev,t.dueDate))out.push(rev);return out;}
+function openLeave(){fillPeople();document.getElementById('lvPerson').value='';document.getElementById('lvStart').value='';document.getElementById('lvEnd').value='';renderLeaveList();document.getElementById('leaveModal').classList.add('open');document.getElementById('lvPerson').focus();}
+function closeLeave(){document.getElementById('leaveModal').classList.remove('open');}
+function addLeave(){
+  var person=document.getElementById('lvPerson').value.trim();
+  var start=document.getElementById('lvStart').value,end=document.getElementById('lvEnd').value;
+  if(!person||!start||!end)return;
+  if(end<start){alert('The "To" date is before the "From" date.');return;}
+  leave.push({id:uid(),person:person,start:start,end:end});
+  document.getElementById('lvPerson').value='';document.getElementById('lvStart').value='';document.getElementById('lvEnd').value='';
+  renderLeaveList();persist();
+}
+function deleteLeave(id){leave=leave.filter(function(L){return L.id!==id;});renderLeaveList();persist();}
+function renderLeaveList(){
+  var el=document.getElementById('leaveList');
+  if(!leave.length){el.innerHTML='<p style="font-size:.82rem;color:var(--mid)">No leave recorded yet.</p>';return;}
+  var sorted=leave.slice().sort(function(a,b){return a.start.localeCompare(b.start)||a.person.localeCompare(b.person);});
+  el.innerHTML=sorted.map(function(L){return '<div class="lv-row"><span class="lv-person">'+esc(L.person)+'</span><span class="lv-dates">'+fullDate(L.start)+' → '+fullDate(L.end)+'</span><button class="ico del" title="Remove" onclick="deleteLeave(\''+L.id+'\')"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button></div>';}).join('');
 }
 
 /* ───────────────────────── CRUD ───────────────────────── */
@@ -836,6 +905,8 @@ function activeTasks(){return tasks.filter(function(t){return t.stage!=='complet
 function rowHTML(t,done){
   var c=done?'is-done':classify(t.dueDate);
   var prep=(t.preparer||'').trim(),rev=(t.reviewer||'').trim();
+  var clash=done?[]:leaveClash(t);
+  var leaveChip=clash.length?'<span class="chip chip-leave">⚠ '+esc(clash.join(', '))+' on leave</span>':'';
   var recChip=t.recurrence!=='none'?'<span class="chip chip-rec"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> '+recLabel(t)+'</span>':'';
   var stageSel='<select class="stage-sel stage-'+t.stage+'" title="Change status" onchange="setStage(\''+t.id+'\',this.value)">'+STAGES.map(function(s){return '<option value="'+s.key+'"'+(s.key===t.stage?' selected':'')+'>'+s.label+'</option>';}).join('')+'</select>';
   var actions=done
@@ -843,10 +914,10 @@ function rowHTML(t,done){
     : '<button class="ico done" title="Mark done" onclick="complete(\''+t.id+'\')"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></button>'
       +'<button class="ico" title="Edit" onclick="openEdit(\''+t.id+'\')"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>';
   actions+='<button class="ico del" title="Delete" onclick="removeTask(\''+t.id+'\')"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>';
-  return '<div class="row '+c+'">'
+  return '<div class="row '+c+(clash.length?' leave-clash':'')+'">'
     +'<div class="rail"><span class="rail-date">'+prettyDate(t.dueDate)+'</span><span class="rail-rel">'+(done?'done':relLabel(t.dueDate))+'</span></div>'
     +'<div class="row-body"><span class="row-client" title="Filter to this client" onclick="setFilter(\'client\',\''+escAttr(t.client)+'\')">'+esc(t.client)+'</span><span class="row-task">'+esc(t.task)+'</span>'
-    +'<div class="row-meta">'+stageSel+'<span class="chip chip-who'+(prep?'':' unassigned')+'">'+esc(prep||'Unassigned')+'</span>'+(rev?'<span class="chip chip-rev">Rev · '+esc(rev)+'</span>':'')+recChip+'</div></div>'
+    +'<div class="row-meta">'+stageSel+'<span class="chip chip-who'+(prep?'':' unassigned')+'">'+esc(prep||'Unassigned')+'</span>'+(rev?'<span class="chip chip-rev">Rev · '+esc(rev)+'</span>':'')+leaveChip+recChip+'</div></div>'
     +'<div class="row-actions">'+actions+'</div></div>';
 }
 
@@ -857,7 +928,7 @@ function render(){
 
   /* counts */
   var overdue=0,today=0,week=0,unassigned=0;
-  act.forEach(function(t){var c=classify(t.dueDate);if(c==='overdue')overdue++;else if(c==='today')today++;else if(c==='week')week++;if(!(t.preparer||'').trim())unassigned++;});
+  act.forEach(function(t){var c=classify(t.dueDate);if(c==='overdue')overdue++;else if(c==='today')today++;else if(c==='week')week++;if(t.stage!=='notready'&&!(t.preparer||'').trim())unassigned++;});
   document.querySelector('#statOverdue .stat-n').textContent=overdue;
   document.getElementById('nToday').textContent=today;
   document.getElementById('nWeek').textContent=week;
@@ -930,7 +1001,7 @@ function exportExcel(){
   XLSX.writeFile(wb,'LF-Practice-Register.xlsx');
 }
 function buildDigest(){
-  var act=activeTasks();
+  var act=activeTasks().filter(function(t){return t.stage!=='notready';});
   function line(t){var pr=(t.preparer||'').trim()||'UNASSIGNED';var rv=(t.reviewer||'').trim();return '  '+prettyDate(t.dueDate)+'  '+t.client+' — '+t.task+'  ['+pr+(rv?(' / rev '+rv):'')+']  · '+STAGE_LABEL[t.stage];}
   var od=act.filter(function(t){return classify(t.dueDate)==='overdue';});
   var td=act.filter(function(t){return classify(t.dueDate)==='today';});
@@ -951,6 +1022,7 @@ function copyDigest(){
 }
 document.getElementById('digestModal').addEventListener('click',function(e){if(e.target===this)closeDigest();});
 document.getElementById('clientModal').addEventListener('click',function(e){if(e.target===this)closeClient();});
+document.getElementById('leaveModal').addEventListener('click',function(e){if(e.target===this)closeLeave();});
 
 /* ───────────────────────── bulk import ───────────────────────── */
 var _importRows=null;
@@ -1135,6 +1207,7 @@ function doImportAS(){
 (function(){
   try{tasks=normalize(JSON.parse(localStorage.getItem(LS_KEY))||[]);}catch(e){tasks=[];}
   try{clients=JSON.parse(localStorage.getItem(LS_CLIENTS))||[];}catch(e){clients=[];}
+  try{leave=JSON.parse(localStorage.getItem(LS_LEAVE))||[];}catch(e){leave=[];}
   ensureClients();
   render();
   window.addEventListener('load',async function(){
@@ -1148,8 +1221,8 @@ function doImportAS(){
     }
     var data=await odLoad();
     if(data!==null){
-      tasks=normalize(data.tasks||[]);clients=data.clients||[];ensureClients();
-      localStorage.setItem(LS_KEY,JSON.stringify(tasks));localStorage.setItem(LS_CLIENTS,JSON.stringify(clients));
+      tasks=normalize(data.tasks||[]);clients=data.clients||[];leave=data.leave||[];ensureClients();
+      localStorage.setItem(LS_KEY,JSON.stringify(tasks));localStorage.setItem(LS_CLIENTS,JSON.stringify(clients));localStorage.setItem(LS_LEAVE,JSON.stringify(leave));
       render();
     }
   });
