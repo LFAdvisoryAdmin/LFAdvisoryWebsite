@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Practice Register — LF Advisory</title>
+<title>Workflow Management Tool — LF Advisory</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;600;700&family=Source+Serif+4:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -163,9 +163,7 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
   <div class="reg-hero-inner">
     <div>
       <a href="portal.html" class="reg-back">&larr; Staff Portal</a>
-      <div class="reg-label">Practice Register</div>
-      <h1>Recurring jobs, owners &amp; <strong>due dates</strong>.</h1>
-      <p>One shared source of truth for the team.</p>
+      <h1><strong>Workflow Management Tool</strong></h1>
     </div>
     <div class="reg-actions">
       <button class="btn btn-ghost" onclick="openDigest()"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="m4 6 8 6 8-6"/></svg> Email preview</button>
@@ -207,13 +205,13 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
         <label>Task</label>
         <input id="fTask" placeholder="e.g. March quarter BAS"/>
       </div>
-      <div class="field">
+      <div class="field" id="dueField">
         <label>Due date</label>
         <input type="date" id="fDue"/>
       </div>
       <div class="field">
         <label>Repeats</label>
-        <select id="fRec">
+        <select id="fRec" onchange="onRecChange()">
           <option value="none">One-off</option>
           <option value="daily">Daily</option>
           <option value="weekly">Weekly</option>
@@ -221,7 +219,13 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
           <option value="monthly">Monthly</option>
           <option value="quarterly">Quarterly</option>
           <option value="annually">Annually</option>
+          <option value="monthlyBizME">Business days after month-end</option>
         </select>
+      </div>
+      <div class="field field-full" id="bizField" style="display:none">
+        <label>Business days after month-end</label>
+        <input type="number" id="fBiz" min="0" max="31" value="4" oninput="updateBizPreview()"/>
+        <span id="bizPreview" style="font-size:.72rem;color:var(--teal);font-weight:600;margin-top:.25rem"></span>
       </div>
     </div>
     <div class="form-foot">
@@ -270,7 +274,7 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
       <b>Client name</b> <span class="req">required</span><br>
       <b>Task</b> <span class="req">required</span> — what needs doing<br>
       <b>Due Date</b> <span class="req">required</span> — DD/MM/YYYY or YYYY-MM-DD<br>
-      <b>Frequency</b> — One-off, Daily, Weekly, Fortnightly, Monthly, Quarterly, Annually<br>
+      <b>Frequency</b> — One-off, Daily, Weekly, Fortnightly, Monthly, Quarterly, Annually, or "Month end + 4" for N business days after month-end (leave Due Date blank for that one)<br>
       <b>Responsible</b> — owner's name (optional)<br>
       <b>Status</b> — Ready to start, Started, Awaiting info, In review, Completed
     </div>
@@ -304,7 +308,24 @@ function dayDiff(iso){return Math.round((parseISO(iso)-parseISO(todayISO()))/864
 function classify(iso){var d=dayDiff(iso);if(d<0)return'overdue';if(d===0)return'today';if(d<=7)return'week';return'later';}
 function prettyDate(iso){return parseISO(iso).toLocaleDateString('en-AU',{day:'2-digit',month:'short'});}
 function relLabel(iso){var d=dayDiff(iso);if(d<0)return Math.abs(d)+'d overdue';if(d===0)return'today';if(d===1)return'tomorrow';return'in '+d+'d';}
-var REC_LABEL={none:'One-off',daily:'Daily',weekly:'Weekly',fortnightly:'Fortnightly',monthly:'Monthly',quarterly:'Quarterly',annually:'Annually'};
+function fullDate(iso){return parseISO(iso).toLocaleDateString('en-AU',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});}
+
+/* Queensland statewide public holidays (excludes regional show days). Weekend-dated
+   holidays are listed too but only affect the count via their gazetted substitute day. */
+var QLD_HOLIDAYS=new Set([
+  '2026-01-01','2026-01-26','2026-04-03','2026-04-04','2026-04-05','2026-04-06','2026-04-25','2026-05-04','2026-10-05','2026-12-25','2026-12-26','2026-12-28',
+  '2027-01-01','2027-01-26','2027-03-26','2027-03-27','2027-03-28','2027-03-29','2027-04-25','2027-05-03','2027-10-04','2027-12-25','2027-12-26','2027-12-27','2027-12-28',
+  '2028-01-03','2028-01-26','2028-04-14','2028-04-15','2028-04-16','2028-04-17','2028-04-25','2028-05-01','2028-10-02','2028-12-25','2028-12-26'
+]);
+function isBusinessDay(iso){var wd=parseISO(iso).getDay();return wd!==0&&wd!==6&&!QLD_HOLIDAYS.has(iso);}
+function addBusinessDays(iso,n){var d=iso,c=0;while(c<n){d=addDays(d,1);if(isBusinessDay(d))c++;}return d;}
+function monthEnd(iso){var d=parseISO(iso);return toISO(new Date(d.getFullYear(),d.getMonth()+1,0));}
+function computeBizDue(anchorME,bizDays){return addBusinessDays(anchorME,bizDays||0);}
+/* First month-end to anchor a new recurring "N business days after month-end" job:
+   this month's end, rolling to next month if that due date has already passed. */
+function firstAnchorME(bizDays){var me=monthEnd(todayISO());if(computeBizDue(me,bizDays)<todayISO())me=monthEnd(addMonths(me,1));return me;}
+var REC_LABEL={none:'One-off',daily:'Daily',weekly:'Weekly',fortnightly:'Fortnightly',monthly:'Monthly',quarterly:'Quarterly',annually:'Annually',monthlyBizME:'After month-end'};
+function recLabel(t){return t.recurrence==='monthlyBizME'?((t.bizDays||0)+' biz days after ME'):REC_LABEL[t.recurrence];}
 var STAGES=[
   {key:'ready',label:'Ready to start'},
   {key:'started',label:'Started'},
@@ -327,6 +348,7 @@ var LS_KEY='lfa_registerTasks';
 var tasks=[];
 var view='due';
 var editing=null;
+var _editAnchorME=null;
 var showDone=false;
 
 /* ───────────────────────── Microsoft Graph / SharePoint sync ───────────────────────── */
@@ -430,26 +452,43 @@ function persist(){
 function dismissConnect(){document.getElementById('connectModal').classList.remove('open');}
 
 /* ───────────────────────── CRUD ───────────────────────── */
+function onRecChange(){
+  var biz=document.getElementById('fRec').value==='monthlyBizME';
+  document.getElementById('bizField').style.display=biz?'flex':'none';
+  document.getElementById('dueField').style.display=biz?'none':'flex';
+  if(biz)updateBizPreview();
+}
+function updateBizPreview(){
+  var n=parseInt(document.getElementById('fBiz').value,10);if(isNaN(n)||n<0)n=0;
+  var anchor=_editAnchorME||firstAnchorME(n);
+  var due=computeBizDue(anchor,n);
+  document.getElementById('fDue').value=due;
+  document.getElementById('bizPreview').textContent='Due '+fullDate(due)+' — '+n+' business day'+(n===1?'':'s')+' after '+fullDate(anchor)+'. QLD public holidays excluded.';
+}
 function openAdd(){
-  editing=null;
+  editing=null;_editAnchorME=null;
   document.getElementById('fClient').value='';
   document.getElementById('fResp').value='';
   document.getElementById('fTask').value='';
   document.getElementById('fDue').value=todayISO();
   document.getElementById('fRec').value='none';
+  document.getElementById('fBiz').value=4;
   document.getElementById('saveBtn').textContent='Add job';
+  onRecChange();
   document.getElementById('form').classList.add('open');
   document.getElementById('fClient').focus();
 }
 function openEdit(id){
   var t=tasks.find(function(x){return x.id===id;});if(!t)return;
-  editing=id;
+  editing=id;_editAnchorME=t.anchorME||null;
   document.getElementById('fClient').value=t.client;
   document.getElementById('fResp').value=t.responsible;
   document.getElementById('fTask').value=t.task;
   document.getElementById('fDue').value=t.dueDate;
   document.getElementById('fRec').value=t.recurrence;
+  document.getElementById('fBiz').value=t.bizDays||4;
   document.getElementById('saveBtn').textContent='Save changes';
+  onRecChange();
   document.getElementById('form').classList.add('open');
   document.getElementById('fClient').focus();
 }
@@ -457,14 +496,22 @@ function closeForm(){document.getElementById('form').classList.remove('open');ed
 function saveTask(){
   var client=document.getElementById('fClient').value.trim();
   var task=document.getElementById('fTask').value.trim();
-  var due=document.getElementById('fDue').value;
   var resp=document.getElementById('fResp').value.trim();
   var rec=document.getElementById('fRec').value;
-  if(!client||!task||!due)return;
-  if(editing){
-    tasks=tasks.map(function(t){return t.id===editing?Object.assign({},t,{client:client,task:task,dueDate:due,responsible:resp,recurrence:rec}):t;});
+  if(!client||!task)return;
+  var due,bizDays=null,anchorME=null;
+  if(rec==='monthlyBizME'){
+    bizDays=parseInt(document.getElementById('fBiz').value,10);if(isNaN(bizDays)||bizDays<0)bizDays=0;
+    anchorME=_editAnchorME||firstAnchorME(bizDays);
+    due=computeBizDue(anchorME,bizDays);
   }else{
-    tasks.push({id:uid(),client:client,task:task,dueDate:due,responsible:resp,recurrence:rec,stage:'ready',done:0});
+    due=document.getElementById('fDue').value;
+    if(!due)return;
+  }
+  if(editing){
+    tasks=tasks.map(function(t){return t.id===editing?Object.assign({},t,{client:client,task:task,dueDate:due,responsible:resp,recurrence:rec,bizDays:bizDays,anchorME:anchorME}):t;});
+  }else{
+    tasks.push({id:uid(),client:client,task:task,dueDate:due,responsible:resp,recurrence:rec,bizDays:bizDays,anchorME:anchorME,stage:'ready',done:0});
   }
   closeForm();persist();
 }
@@ -476,6 +523,10 @@ function setStage(id,stage){
 function complete(id){
   tasks=tasks.map(function(t){
     if(t.id!==id)return t;
+    if(t.recurrence==='monthlyBizME'){
+      var na=monthEnd(addMonths(t.anchorME||monthEnd(t.dueDate),1));
+      return Object.assign({},t,{anchorME:na,dueDate:computeBizDue(na,t.bizDays||0),done:(t.done||0)+1,stage:'ready'});
+    }
     if(t.recurrence!=='none')return Object.assign({},t,{dueDate:advance(t.dueDate,t.recurrence),done:(t.done||0)+1,stage:'ready'});
     return Object.assign({},t,{stage:'completed'});
   });
@@ -496,7 +547,7 @@ function activeTasks(){return tasks.filter(function(t){return t.stage!=='complet
 function rowHTML(t,done){
   var c=done?'is-done':classify(t.dueDate);
   var who=t.responsible.trim();
-  var recChip=t.recurrence!=='none'?'<span class="chip chip-rec"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> '+REC_LABEL[t.recurrence]+'</span>':'';
+  var recChip=t.recurrence!=='none'?'<span class="chip chip-rec"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> '+recLabel(t)+'</span>':'';
   var stageSel='<select class="stage-sel stage-'+t.stage+'" title="Change status" onchange="setStage(\''+t.id+'\',this.value)">'+STAGES.map(function(s){return '<option value="'+s.key+'"'+(s.key===t.stage?' selected':'')+'>'+s.label+'</option>';}).join('')+'</select>';
   var actions=done
     ? '<button class="ico" title="Reopen" onclick="reopen(\''+t.id+'\')"><svg viewBox="0 0 24 24"><path d="M3 2v6h6"/><path d="M3.5 12a9 9 0 1 0 2.6-6.4L3 8"/></svg></button>'
@@ -570,7 +621,7 @@ function toggleDone(){showDone=!showDone;render();}
 
 /* ───────────────────────── export + digest ───────────────────────── */
 function exportExcel(){
-  var rows=tasks.map(function(t){return {Client:t.client,Task:t.task,DueDate:t.dueDate,Responsible:t.responsible,Recurrence:REC_LABEL[t.recurrence],Status:STAGE_LABEL[t.stage]};});
+  var rows=tasks.map(function(t){return {Client:t.client,Task:t.task,DueDate:t.dueDate,Responsible:t.responsible,Recurrence:recLabel(t),Status:STAGE_LABEL[t.stage]};});
   if(!rows.length)rows=[{Client:'',Task:'',DueDate:'',Responsible:'',Recurrence:'',Status:''}];
   var ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Register');
@@ -658,19 +709,26 @@ function processImport(rows){
     var o={};Object.keys(r).forEach(function(k){o[normHeader(k)]=r[k];});
     var client=String(o.clientname||o.client||'').trim();
     var task=String(o.task||o.job||o.description||'').trim();
-    var due=parseImportDate(o.duedate||o.due||o.date);
-    var freq=mapFrequency(o.frequency||o.freq||o.recurrence||o.repeats);
     var resp=String(o.responsible||o.owner||o.assignedto||o.who||'').trim();
     var stage=mapStageImport(o.status||o.stage);
     var rawDue=String(o.duedate||o.due||o.date||'').trim();
     var rawFreq=String(o.frequency||o.freq||o.recurrence||o.repeats||'').trim();
     if(!client&&!task&&!rawDue&&!resp&&!rawFreq&&!String(o.status||o.stage||'').trim())return; // blank row
+    var recurrence,bizDays=null,anchorME=null,due;
+    var fl=rawFreq.toLowerCase();
+    var hasME=/month\s*-?\s*end/.test(fl)||fl.indexOf('monthend')>-1||/(^|\s)me(\s|\+|$)/.test(fl)||fl.indexOf('after me')>-1;
+    var digit=fl.match(/\d+/);
+    if(hasME&&digit){
+      recurrence='monthlyBizME';bizDays=parseInt(digit[0],10);anchorME=firstAnchorME(bizDays);due=computeBizDue(anchorME,bizDays);
+    }else{
+      recurrence=mapFrequency(rawFreq);due=parseImportDate(rawDue);
+    }
     if(!client||!task||!due){
       var miss=[];if(!client)miss.push('Client');if(!task)miss.push('Task');if(!due)miss.push('valid Due Date');
       errors.push('Row '+(i+2)+': missing '+miss.join(', '));
       return;
     }
-    valid.push({id:uid(),client:client,task:task,dueDate:due,responsible:resp,recurrence:freq,stage:stage,done:0});
+    valid.push({id:uid(),client:client,task:task,dueDate:due,responsible:resp,recurrence:recurrence,bizDays:bizDays,anchorME:anchorME,stage:stage,done:0});
   });
   _importRows=valid;
   var sum=document.getElementById('importSummary');
@@ -695,6 +753,7 @@ function downloadTemplate(){
     ['Client name','Task','Due Date','Frequency','Responsible','Status'],
     ['Kleencut Solutions','March quarter BAS','30/04/2026','Quarterly','Hazel','Ready to start'],
     ['Flux Property Group','Monthly bookkeeping','15/07/2026','Monthly','','Started'],
+    ['Hive Strata','Monthly management report','','Month end + 4','Hazel','Ready to start'],
     ['Manton Unit Trust','2026 income tax return','15/05/2027','Annually','Liam','Awaiting info']
   ];
   var csv=rows.map(function(r){return r.map(function(c){return /[",\n]/.test(c)?'"'+String(c).replace(/"/g,'""')+'"':c;}).join(',');}).join('\r\n');
