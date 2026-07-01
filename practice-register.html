@@ -299,6 +299,7 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
     <select id="fltGroup" class="flt-sel" onchange="setFilter('group',this.value)"></select>
     <select id="fltPerson" class="flt-sel" onchange="setFilter('person',this.value)"></select>
     <select id="fltStatus" class="flt-sel" onchange="setFilter('status',this.value)"></select>
+    <input type="text" id="fltTask" class="flt-sel" placeholder="Task…" oninput="setTaskFilter(this.value)" style="min-width:120px"/>
     <button class="flt-clear" id="fltClear" onclick="clearFilters()" style="display:none">Clear</button>
     <span class="flt-count" id="fltCount"></span>
   </div>
@@ -919,15 +920,17 @@ function removeTask(id){
 function setView(v){view=v;document.querySelectorAll('.view').forEach(function(b){b.setAttribute('aria-selected',b.dataset.view===v?'true':'false');});render();}
 
 /* filters (combine with AND across date / client / group / person / status) */
-var flt={date:'',from:'',to:'',client:'',group:'',person:'',status:''};
-function fltActive(){return flt.date||flt.client||flt.group||flt.person||flt.status;}
+var flt={date:'',from:'',to:'',client:'',group:'',person:'',status:'',task:''};
+function fltActive(){return flt.date||flt.client||flt.group||flt.person||flt.status||flt.task;}
 function setFilter(field,val){flt[field]=val;if(view==='clients'){setView('due');return;}render();}
 function setRange(){flt.from=document.getElementById('fltFrom').value;flt.to=document.getElementById('fltTo').value;render();}
-function clearFilters(){flt={date:'',from:'',to:'',client:'',group:'',person:'',status:''};render();}
+function setTaskFilter(v){flt.task=v;render();}
+function clearFilters(){flt={date:'',from:'',to:'',client:'',group:'',person:'',status:'',task:''};render();}
 function matchClientGroupPerson(t){
   if(flt.client&&t.client!==flt.client)return false;
   if(flt.group){var c=clientByName(t.client);if(!c||(c.group||'')!==flt.group)return false;}
   if(flt.person){var p=(t.preparer||'').trim(),r=(t.reviewer||'').trim();if(p!==flt.person&&r!==flt.person)return false;}
+  if(flt.task&&(t.task||'').toLowerCase().indexOf(flt.task.toLowerCase())<0)return false;
   return true;
 }
 function matchDate(t){
@@ -961,6 +964,7 @@ function populateFilters(){
   ff.style.display=showRange?'inline-block':'none';ft.style.display=showRange?'inline-block':'none';
   ff.value=flt.from||'';ft.value=flt.to||'';
   ff.className='flt-sel'+(showRange&&flt.from?' active':'');ft.className='flt-sel'+(showRange&&flt.to?' active':'');
+  var ti=document.getElementById('fltTask');if(ti.value!==flt.task)ti.value=flt.task;ti.className='flt-sel'+(flt.task?' active':'');
   document.getElementById('fltClear').style.display=fltActive()?'inline-block':'none';
 }
 
