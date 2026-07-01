@@ -107,6 +107,11 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 .chip-leave{background:var(--alert-soft);color:var(--alert);font-weight:700}
 .row.leave-clash{border-color:var(--alert-line);box-shadow:inset 4px 0 0 var(--alert)}
 .row.future-period{opacity:.55;background:var(--bg)}
+.row-comment{flex:0 0 172px;display:flex;align-items:stretch;padding:.4rem .5rem;border-left:1px solid var(--border)}
+.cmt{width:100%;min-height:40px;resize:vertical;font-family:var(--sans);font-size:.78rem;line-height:1.4;color:var(--ink);border:1px solid transparent;background:transparent;border-radius:3px;padding:.3rem .4rem;outline:none}
+.cmt:hover{border-color:var(--border);background:#fff}
+.cmt:focus{border-color:var(--teal);background:#fff}
+@media(max-width:640px){.row{flex-wrap:wrap}.row-comment{flex-basis:100%;border-left:none;border-top:1px solid var(--border)}}
 .lv-row{display:flex;align-items:center;gap:.8rem;padding:.55rem .2rem;border-bottom:1px solid var(--border)}
 .lv-person{font-family:var(--display);font-weight:700;font-size:.85rem;min-width:100px}
 .lv-dates{flex:1;font-size:.82rem;color:var(--mid)}
@@ -548,7 +553,7 @@ function genCycle(client,cycle,resp,months){
   return out;
 }
 var REC_LABEL={none:'One-off',daily:'Daily',weekly:'Weekly',fortnightly:'Fortnightly',monthly:'Monthly',quarterly:'Quarterly',annually:'Annually',monthlyBizME:'After month-end'};
-function recLabel(t){return t.recurrence==='monthlyBizME'?((t.bizDays||0)+' biz days after ME'):REC_LABEL[t.recurrence];}
+function recLabel(t){if(t.seriesRec)return t.seriesRec==='monthlyBizME'?'Monthly':REC_LABEL[t.seriesRec];return t.recurrence==='monthlyBizME'?((t.bizDays||0)+' biz days after ME'):REC_LABEL[t.recurrence];}
 var STAGES=[
   {key:'notready',label:'Not ready yet'},
   {key:'ready',label:'Ready to start'},
@@ -896,6 +901,7 @@ function complete(id){
   persist();
 }
 function reopen(id){tasks=tasks.map(function(t){return t.id===id?Object.assign({},t,{stage:'ready'}):t;});persist();}
+function setComment(id,val){var t=tasks.find(function(x){return x.id===id;});if(!t||(t.comment||'')===val)return;t.comment=val;persist();}
 /* Recurrences that generate a rolling 12-month batch of discrete jobs (vs one-at-a-time). */
 var SERIES_RECS={fortnightly:1,monthly:1,quarterly:1,annually:1};
 /* Convert legacy single recurring tasks into a series, and top every series up to 12 months ahead. */
@@ -1004,7 +1010,7 @@ function rowHTML(t,done){
   var clash=done?[]:leaveClash(t);
   var leaveChip=clash.length?'<span class="chip chip-leave">⚠ '+esc(clash.join(', '))+' on leave</span>':'';
   var future=!done&&((t.periodEnd&&todayISO()<t.periodEnd)||_blocked[t.id]);
-  var recChip=t.recurrence!=='none'?'<span class="chip chip-rec"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> '+recLabel(t)+'</span>':'';
+  var recChip=(t.recurrence!=='none'||t.seriesRec)?'<span class="chip chip-rec"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> '+recLabel(t)+'</span>':'';
   var stageSel='<select class="stage-sel stage-'+t.stage+'" title="Change status" onchange="setStage(\''+t.id+'\',this.value)">'+STAGES.map(function(s){return '<option value="'+s.key+'"'+(s.key===t.stage?' selected':'')+'>'+s.label+'</option>';}).join('')+'</select>';
   var actions=done
     ? '<button class="ico" title="Reopen" onclick="reopen(\''+t.id+'\')"><svg viewBox="0 0 24 24"><path d="M3 2v6h6"/><path d="M3.5 12a9 9 0 1 0 2.6-6.4L3 8"/></svg></button>'
@@ -1015,6 +1021,7 @@ function rowHTML(t,done){
     +'<div class="rail"><span class="rail-date">'+prettyDate(t.dueDate)+'</span><span class="rail-rel">'+(done?'done':relLabel(t.dueDate))+'</span></div>'
     +'<div class="row-body"><span class="row-client" title="Filter to this client" onclick="setFilter(\'client\',\''+escAttr(t.client)+'\')">'+esc(t.client)+'</span><span class="row-task">'+esc(t.task)+'</span>'
     +'<div class="row-meta">'+stageSel+'<span class="chip chip-who'+(prep?'':' unassigned')+'">'+esc(prep||'Unassigned')+'</span>'+(rev?'<span class="chip chip-rev">Rev · '+esc(rev)+'</span>':'')+leaveChip+recChip+'</div></div>'
+    +'<div class="row-comment"><textarea class="cmt" placeholder="Comment…" onchange="setComment(\''+t.id+'\',this.value)">'+esc(t.comment||'')+'</textarea></div>'
     +'<div class="row-actions">'+actions+'</div></div>';
 }
 
