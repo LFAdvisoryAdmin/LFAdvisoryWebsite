@@ -864,10 +864,14 @@ function saveTask(){
   var st=seasonal?(parseInt(document.getElementById('fSeasonTo').value,10)||0):0;
   if(sf&&rec!=='none'&&rec!=='monthlyBizME'){var gs=0;while(!inSeason(due,sf,st)&&gs<800){due=advance(due,rec);gs++;}}
   if(editing){
-    tasks=tasks.map(function(t){return t.id===editing?Object.assign({},t,{client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:rec,bizDays:bizDays,anchorME:anchorME,seasonFrom:sf,seasonTo:st}):t;});
+    tasks=tasks.map(function(t){return t.id===editing?Object.assign({},t,{client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:rec,bizDays:(rec==='monthlyBizME'?bizDays:t.bizDays),anchorME:(rec==='monthlyBizME'?anchorME:t.anchorME),seasonFrom:sf,seasonTo:st}):t;});
   }else if(SERIES_RECS[rec]){
     var sid=uid();
     tasks.push({id:uid(),client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:'none',seriesId:sid,seriesRec:rec,seasonFrom:sf,seasonTo:st,bizDays:null,anchorME:null,stage:'ready',done:0});
+    expandRecurring();
+  }else if(rec==='monthlyBizME'){
+    var sidb=uid();
+    tasks.push({id:uid(),client:client,task:task,dueDate:due,periodEnd:anchorME,preparer:prep,reviewer:rev,recurrence:'none',seriesId:sidb,seriesRec:'monthlyBizME',anchorME:anchorME,bizDays:bizDays,seasonFrom:sf,seasonTo:st,stage:(todayISO()>=anchorME?'ready':'notready'),done:0});
     expandRecurring();
   }else{
     tasks.push({id:uid(),client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:rec,seasonFrom:sf,seasonTo:st,bizDays:bizDays,anchorME:anchorME,stage:'ready',done:0});
@@ -897,12 +901,24 @@ var SERIES_RECS={fortnightly:1,monthly:1,quarterly:1,annually:1};
 /* Convert legacy single recurring tasks into a series, and top every series up to 12 months ahead. */
 function expandRecurring(){
   var horizon=addMonths(todayISO(),12),added=false;
-  tasks.forEach(function(t){if(SERIES_RECS[t.recurrence]&&!t.seriesId){t.seriesId=uid();t.seriesRec=t.recurrence;t.recurrence='none';added=true;}});
+  tasks.forEach(function(t){
+    if(SERIES_RECS[t.recurrence]&&!t.seriesId){t.seriesId=uid();t.seriesRec=t.recurrence;t.recurrence='none';added=true;}
+    else if(t.recurrence==='monthlyBizME'&&!t.seriesId){t.seriesId=uid();t.seriesRec='monthlyBizME';t.recurrence='none';if(!t.periodEnd&&t.anchorME)t.periodEnd=t.anchorME;added=true;}
+  });
   var byS={};tasks.forEach(function(t){if(t.seriesId&&t.seriesRec){(byS[t.seriesId]=byS[t.seriesId]||[]).push(t);}});
   Object.keys(byS).forEach(function(sid){
     var arr=byS[sid],rec=arr[0].seriesRec,latest=arr[0];
     for(var i=1;i<arr.length;i++){if(arr[i].dueDate>latest.dueDate)latest=arr[i];}
-    var sf=latest.seasonFrom||0,st=latest.seasonTo||0,d=latest.dueDate,g=0;
+    var sf=latest.seasonFrom||0,st=latest.seasonTo||0;
+    if(rec==='monthlyBizME'){
+      var bd=latest.bizDays||0,anchor=latest.anchorME||monthEnd(latest.dueDate),gb=0;
+      while(gb<800){anchor=monthEnd(addMonths(anchor,1));var du=computeBizDue(anchor,bd);if(du>horizon)break;gb++;
+        if(sf&&!inSeason(anchor,sf,st))continue;
+        tasks.push({id:uid(),client:latest.client,task:latest.task,dueDate:du,periodEnd:anchor,preparer:latest.preparer||'',reviewer:latest.reviewer||'',recurrence:'none',seriesId:sid,seriesRec:'monthlyBizME',anchorME:anchor,bizDays:bd,seasonFrom:sf,seasonTo:st,stage:(todayISO()>=anchor?'ready':'notready'),done:0});
+        added=true;}
+      return;
+    }
+    var d=latest.dueDate,g=0;
     while(g<800){var nx=advance(d,rec);if(!nx||nx<=d||nx>horizon)break;d=nx;g++;
       if(sf&&!inSeason(nx,sf,st))continue;
       tasks.push({id:uid(),client:latest.client,task:latest.task,dueDate:nx,preparer:latest.preparer||'',reviewer:latest.reviewer||'',recurrence:'none',seriesId:sid,seriesRec:rec,seasonFrom:sf,seasonTo:st,bizDays:null,anchorME:null,stage:'ready',done:0});
