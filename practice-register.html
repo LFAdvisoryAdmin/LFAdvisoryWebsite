@@ -267,6 +267,14 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
         <input type="number" id="fBiz" min="0" max="31" value="4" oninput="updateBizPreview()"/>
         <span id="bizPreview" style="font-size:.72rem;color:var(--teal);font-weight:600;margin-top:.25rem"></span>
       </div>
+      <div class="field field-full" id="seasonField">
+        <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer"><input type="checkbox" id="fSeasonal" onchange="onSeasonChange()" style="width:15px;height:15px;accent-color:var(--teal)"> Seasonal — only recurs during part of the year</label>
+        <div id="seasonRange" style="display:none;align-items:center;gap:.5rem;margin-top:.55rem;font-size:.85rem;flex-wrap:wrap">
+          <span>From</span><select id="fSeasonFrom" style="width:auto;padding:.5rem .7rem;border:1px solid var(--border);border-radius:2px;background:#fff"></select>
+          <span>to</span><select id="fSeasonTo" style="width:auto;padding:.5rem .7rem;border:1px solid var(--border);border-radius:2px;background:#fff"></select>
+          <span style="color:var(--mid);font-size:.78rem">(repeats every year)</span>
+        </div>
+      </div>
     </div>
     <div class="form-foot">
       <button class="btn" onclick="closeForm()">Cancel</button>
@@ -446,6 +454,8 @@ function todayISO(){return toISO(new Date());}
 function addDays(iso,n){var d=parseISO(iso);d.setDate(d.getDate()+n);return toISO(d);}
 function addMonths(iso,n){var d=parseISO(iso),day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+n);var last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();d.setDate(Math.min(day,last));return toISO(d);}
 function advance(iso,rec){return rec==='daily'?addDays(iso,1):rec==='weekly'?addDays(iso,7):rec==='fortnightly'?addDays(iso,14):rec==='monthly'?addMonths(iso,1):rec==='quarterly'?addMonths(iso,3):rec==='annually'?addMonths(iso,12):iso;}
+/* Seasonal window by month (from..to inclusive); handles wrap-around (e.g. Nov..Feb). */
+function inSeason(iso,from,to){if(!from)return true;var m=parseISO(iso).getMonth()+1;return from<=to?(m>=from&&m<=to):(m>=from||m<=to);}
 function dayDiff(iso){return Math.round((parseISO(iso)-parseISO(todayISO()))/86400000);}
 function classify(iso){var d=dayDiff(iso);if(d<0)return'overdue';if(d===0)return'today';if(d<=7)return'week';return'later';}
 function prettyDate(iso){return parseISO(iso).toLocaleDateString('en-AU',{day:'2-digit',month:'short'});}
@@ -785,6 +795,8 @@ function renderLeaveList(){
 }
 
 /* ───────────────────────── CRUD ───────────────────────── */
+function fillMonths(){var opts=MONTH_ABBR.map(function(m,i){return '<option value="'+(i+1)+'">'+m+'</option>';}).join('');document.getElementById('fSeasonFrom').innerHTML=opts;document.getElementById('fSeasonTo').innerHTML=opts;}
+function onSeasonChange(){document.getElementById('seasonRange').style.display=document.getElementById('fSeasonal').checked?'flex':'none';}
 function onRecChange(){
   var biz=document.getElementById('fRec').value==='monthlyBizME';
   document.getElementById('bizField').style.display=biz?'flex':'none';
@@ -807,6 +819,7 @@ function openAdd(){
   document.getElementById('fDue').value=todayISO();
   document.getElementById('fRec').value='none';
   document.getElementById('fBiz').value=4;
+  fillMonths();document.getElementById('fSeasonal').checked=false;document.getElementById('fSeasonFrom').value=4;document.getElementById('fSeasonTo').value=10;onSeasonChange();
   document.getElementById('saveBtn').textContent='Add job';
   onRecChange();
   document.getElementById('form').classList.add('open');
@@ -822,6 +835,7 @@ function openEdit(id){
   document.getElementById('fDue').value=t.dueDate;
   document.getElementById('fRec').value=t.recurrence;
   document.getElementById('fBiz').value=t.bizDays||4;
+  fillMonths();document.getElementById('fSeasonal').checked=!!t.seasonFrom;document.getElementById('fSeasonFrom').value=t.seasonFrom||4;document.getElementById('fSeasonTo').value=t.seasonTo||10;onSeasonChange();
   document.getElementById('saveBtn').textContent='Save changes';
   onRecChange();
   document.getElementById('form').classList.add('open');
@@ -844,14 +858,18 @@ function saveTask(){
     due=document.getElementById('fDue').value;
     if(!due)return;
   }
+  var seasonal=document.getElementById('fSeasonal').checked;
+  var sf=seasonal?(parseInt(document.getElementById('fSeasonFrom').value,10)||0):0;
+  var st=seasonal?(parseInt(document.getElementById('fSeasonTo').value,10)||0):0;
+  if(sf&&rec!=='none'&&rec!=='monthlyBizME'){var gs=0;while(!inSeason(due,sf,st)&&gs<800){due=advance(due,rec);gs++;}}
   if(editing){
-    tasks=tasks.map(function(t){return t.id===editing?Object.assign({},t,{client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:rec,bizDays:bizDays,anchorME:anchorME}):t;});
+    tasks=tasks.map(function(t){return t.id===editing?Object.assign({},t,{client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:rec,bizDays:bizDays,anchorME:anchorME,seasonFrom:sf,seasonTo:st}):t;});
   }else if(SERIES_RECS[rec]){
     var sid=uid();
-    tasks.push({id:uid(),client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:'none',seriesId:sid,seriesRec:rec,bizDays:null,anchorME:null,stage:'ready',done:0});
+    tasks.push({id:uid(),client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:'none',seriesId:sid,seriesRec:rec,seasonFrom:sf,seasonTo:st,bizDays:null,anchorME:null,stage:'ready',done:0});
     expandRecurring();
   }else{
-    tasks.push({id:uid(),client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:rec,bizDays:bizDays,anchorME:anchorME,stage:'ready',done:0});
+    tasks.push({id:uid(),client:client,task:task,dueDate:due,preparer:prep,reviewer:rev,recurrence:rec,seasonFrom:sf,seasonTo:st,bizDays:bizDays,anchorME:anchorME,stage:'ready',done:0});
   }
   closeForm();persist();
 }
@@ -867,7 +885,7 @@ function complete(id){
       var na=monthEnd(addMonths(t.anchorME||monthEnd(t.dueDate),1));
       return Object.assign({},t,{anchorME:na,dueDate:computeBizDue(na,t.bizDays||0),done:(t.done||0)+1,stage:'ready'});
     }
-    if(t.recurrence!=='none')return Object.assign({},t,{dueDate:advance(t.dueDate,t.recurrence),done:(t.done||0)+1,stage:'ready'});
+    if(t.recurrence!=='none'){var nd=advance(t.dueDate,t.recurrence);if(t.seasonFrom){var gs=0;while(!inSeason(nd,t.seasonFrom,t.seasonTo)&&gs<800){nd=advance(nd,t.recurrence);gs++;}}return Object.assign({},t,{dueDate:nd,done:(t.done||0)+1,stage:'ready'});}
     return Object.assign({},t,{stage:'completed'});
   });
   persist();
@@ -883,10 +901,11 @@ function expandRecurring(){
   Object.keys(byS).forEach(function(sid){
     var arr=byS[sid],rec=arr[0].seriesRec,latest=arr[0];
     for(var i=1;i<arr.length;i++){if(arr[i].dueDate>latest.dueDate)latest=arr[i];}
-    var d=latest.dueDate,g=0;
-    while(g<500){var nx=advance(d,rec);if(!nx||nx<=d||nx>horizon)break;
-      tasks.push({id:uid(),client:latest.client,task:latest.task,dueDate:nx,preparer:latest.preparer||'',reviewer:latest.reviewer||'',recurrence:'none',seriesId:sid,seriesRec:rec,bizDays:null,anchorME:null,stage:'ready',done:0});
-      d=nx;g++;added=true;}
+    var sf=latest.seasonFrom||0,st=latest.seasonTo||0,d=latest.dueDate,g=0;
+    while(g<800){var nx=advance(d,rec);if(!nx||nx<=d||nx>horizon)break;d=nx;g++;
+      if(sf&&!inSeason(nx,sf,st))continue;
+      tasks.push({id:uid(),client:latest.client,task:latest.task,dueDate:nx,preparer:latest.preparer||'',reviewer:latest.reviewer||'',recurrence:'none',seriesId:sid,seriesRec:rec,seasonFrom:sf,seasonTo:st,bizDays:null,anchorME:null,stage:'ready',done:0});
+      added=true;}
   });
   return added;
 }
