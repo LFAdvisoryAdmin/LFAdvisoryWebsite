@@ -1,6 +1,6 @@
 # LF Advisory — daily task email (Cloudflare Worker)
 
-Sends each **preparer** their tasks every **weekday (Mon–Fri) at 3am Brisbane** (cron `0 17 * * 0-4` = 17:00 UTC Sun–Thu), with **Liam CC'd**. Reads the register straight from SharePoint and sends via Outlook — all inside your Microsoft 365 tenant, no external email service. If any send fails or the run crashes, Liam gets an alert email (and bounces/NDRs from undeliverable addresses arrive in Liam's inbox automatically, since it sends from his account).
+Sends each **preparer** their tasks every **weekday (Mon–Fri) at 3am Brisbane** (cron `0 17 * * 1,2,3,4,7` = 17:00 UTC Sun–Thu; Cloudflare uses 7 for Sunday), with **Liam CC'd**. Reads the register straight from SharePoint and sends via Outlook — all inside your Microsoft 365 tenant, no external email service. If any send fails or the run crashes, Liam gets an alert email (and bounces/NDRs from undeliverable addresses arrive in Liam's inbox automatically, since it sends from his account).
 
 Email layout: **Overdue** + **Due today** at the top (the priority), then **Due this week** below. Skips completed and not-ready jobs; skips people with nothing due.
 
