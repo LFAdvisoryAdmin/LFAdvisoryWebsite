@@ -7,7 +7,7 @@ The LF Advisory (accounting/advisory firm, Brisbane QLD) **website + staff porta
 
 ### Files
 - `index.html`, `about.html`, `blog.html`, `case-studies.html` — public marketing site.
-- `portal.html` — **staff portal** (soft client-side login, hardcoded users, password `Password1` on first login → sets own). Grid of tool cards. Real security is the Microsoft sign-in on each tool, not this gate.
+- `portal.html` — **staff portal**. The **real gate**: a single-tenant **"Sign in with Microsoft"** (Entra ID) that mints a Graph token and publishes it to shared `localStorage` (see below), so every tool opens already-connected. Silent background renewal (hidden-iframe `prompt=none`) + a Sign-in button that always recovers (no dead-ends). Grid of tool cards. (The old hardcoded-password gate was removed 2026-07-06.)
 - `payroll-reconciliation.html`, `payroll-history.html`, `prepayments.html` — existing staff tools. **These established the SharePoint/Graph sync pattern** the workflow tool reuses.
 - `practice-register.html` — **the Workflow Management Tool** (the main thing being built). Single self-contained file, vanilla JS, ~1200 lines. Linked from portal.html as "Workflow Management Tool" → opens at `/practice-register`.
 - `register-mailer/` — Cloudflare **Worker** that sends the daily task email (separate from the Pages site).
@@ -20,11 +20,14 @@ node -e 'const fs=require("fs");const h=fs.readFileSync("C:/Users/f869f/LFAdviso
 Match the existing style; keep it a single file with no dependencies except the CDN `xlsx` script already loaded. Design language: teal `#2d6670` / olive, Raleway/Source Serif fonts, matches `portal.html`.
 
 ## Data & auth (important)
-**Storage:** Microsoft SharePoint via Graph. The app reads/writes one JSON file `lf-advisory-register-data.json` in the **"LF Advisory Workpapers"** folder of the tenant root site (`lfadvisoryptyltd.sharepoint.com`, Documents drive). Shape: `{ tasks:[], clients:[], leave:[] }`. `localStorage` mirrors it as offline fallback. Sync is debounced-on-change; a "connect to OneDrive" flow signs the user in.
+**Storage:** Microsoft SharePoint via Graph. The app reads/writes one JSON file `lf-advisory-register-data.json` in the **"LF Advisory Workpapers"** folder of the tenant root site (`lfadvisoryptyltd.sharepoint.com`, Documents drive). Shape: `{ tasks:[], clients:[], leave:[] }`. `localStorage` mirrors it as offline fallback. Sync is debounced-on-change.
+
+**Shared sign-in (added 2026-07-06):** sign-in now happens **once at `portal.html`**; the token is stored in shared `localStorage` keys `lfa_ms_token` / `lfa_ms_token_exp` (+ `lfa_ms_user` = `{name,email}`). Every tool's `getStoredToken()` reads that shared token first (falls back to its own per-page `sessionStorage.od_token`), and `parseTokenFromHash()` writes any token it mints back to the shared keys — so signing in on any page connects all of them. Each tool has `_authFail()` which clears both stores on a Graph **401/403** so a revoked token can't wedge the tool (Connect button reappears). `prepayments.html` (no OneDrive) gates on `localStorage.lfa_ms_user`. Tools still keep their own `connectOneDrive()` as a fallback, so opening a tool URL directly still works.
 
 **Azure app:** "LF Advisory Payroll Tool"
 - client id `981d2ee1-a2a9-4787-8972-b349938ba7ab`, tenant `f869ffc9-81fa-4bbf-94ec-a9bd5ca6b3a3`.
 - **Delegated** (SPA, implicit `response_type=token` flow) for the web tools: `Files.ReadWrite`, `Sites.ReadWrite.All`, `User.Read`. Redirect URIs are registered under the **Single-page application** platform and must include each tool's clean URL (no `.html`) for `www` and apex, e.g. `https://www.lfadvisory.com.au/practice-register`. **Adding a new tool page = add its redirect URI or sign-in fails with AADSTS50011.**
+- **`portal.html` is now itself a sign-in page** → its redirect URIs **must** be registered too: `https://www.lfadvisory.com.au/portal` and `https://lfadvisory.com.au/portal` (SPA platform). Without them the portal sign-in fails with AADSTS50011.
 - **Application** permissions (for the mailer Worker): `Sites.Read.All`, `Mail.Send` (admin consented). A client secret exists for the Worker.
 
 ## The Workflow Management Tool — how it works

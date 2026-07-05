@@ -671,17 +671,31 @@ function parseTokenFromHash(){
   var params={};hash.split('&').forEach(function(p){var kv=p.split('=');params[decodeURIComponent(kv[0])]=decodeURIComponent(kv[1]||'');});
   if(params.access_token){
     history.replaceState(null,'',window.location.pathname);
+    var exp=Date.now()+(parseInt(params.expires_in||'3600')*1000);
     sessionStorage.setItem('od_token',params.access_token);
-    sessionStorage.setItem('od_token_exp',Date.now()+(parseInt(params.expires_in||'3600')*1000));
+    sessionStorage.setItem('od_token_exp',exp);
+    // Also publish to the portal's shared sign-in so every tool stays connected.
+    localStorage.setItem('lfa_ms_token',params.access_token);
+    localStorage.setItem('lfa_ms_token_exp',String(exp));
     return params.access_token;
   }
   return null;
 }
 function getStoredToken(){
+  // Prefer the portal's shared sign-in (localStorage, shared across every tool tab).
+  var st=localStorage.getItem('lfa_ms_token'),sexp=parseInt(localStorage.getItem('lfa_ms_token_exp')||'0');
+  if(st&&Date.now()<sexp-60000)return st;
   var token=sessionStorage.getItem('od_token'),exp=parseInt(sessionStorage.getItem('od_token_exp')||'0');
   if(token&&Date.now()<exp-60000)return token;
   sessionStorage.removeItem('od_token');sessionStorage.removeItem('od_token_exp');
   return null;
+}
+/* A token Microsoft rejects (revoked/expired session) is cleared so it can't wedge
+   the tool — getStoredToken then returns null and the Connect button reappears. */
+function _authFail(){
+  _odToken=null;
+  sessionStorage.removeItem('od_token');sessionStorage.removeItem('od_token_exp');
+  localStorage.removeItem('lfa_ms_token');localStorage.removeItem('lfa_ms_token_exp');
 }
 function connectOneDrive(){
   window.location.href=OD_AUTH_URL+'?client_id='+OD_CLIENT_ID+'&response_type=token&redirect_uri='+encodeURIComponent(OD_REDIRECT)+'&scope='+encodeURIComponent(OD_SCOPES)+'&response_mode=fragment';
@@ -689,6 +703,7 @@ function connectOneDrive(){
 async function getSiteId(token){
   if(_siteId)return _siteId;
   var resp=await fetch(GRAPH_ENDPOINT+'/sites/'+SP_HOSTNAME,{headers:{Authorization:'Bearer '+token}});
+  if(resp.status===401||resp.status===403)_authFail();
   if(!resp.ok)throw new Error('SharePoint site lookup failed: '+resp.status);
   var site=await resp.json();_siteId=site.id;sessionStorage.setItem('sp_site_id',_siteId);return _siteId;
 }
@@ -703,6 +718,7 @@ async function odLoad(){
     setSync('loading');
     var siteId=await getSiteId(token);
     var resp=await fetch(folderChildrenUrl(siteId),{headers:{Authorization:'Bearer '+token}});
+    if(resp.status===401||resp.status===403)_authFail();
     if(resp.status===404){setSync('connected');return {tasks:[],clients:[],leave:[]};}
     if(!resp.ok)throw new Error('Graph error '+resp.status);
     var items=await resp.json();
@@ -723,7 +739,9 @@ async function odSave(){
   try{
     var siteId=await getSiteId(token);
     setSync('saving');
-    await fetch(folderFileUrl(siteId,DATA_FILE),{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({tasks:tasks,clients:clients,leave:leave},null,2)});
+    var wr=await fetch(folderFileUrl(siteId,DATA_FILE),{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({tasks:tasks,clients:clients,leave:leave},null,2)});
+    if(wr.status===401||wr.status===403){_authFail();setSync('offline');return;}
+    if(!wr.ok)throw new Error('Graph save error '+wr.status);
     setSync('saved');
   }catch(e){console.error('[Sync] Save error:',e);setSync('error');}
 }

@@ -281,21 +281,11 @@ footer{background:var(--ink);color:rgba(240,243,239,.5);padding:4rem 8vw 2.5rem}
   <div class="auth-box" id="loginBox">
     <div class="auth-logo">LF Advisory</div>
     <div class="auth-title">Staff Portal</div>
-    <p class="auth-sub">Sign in with your LF Advisory credentials.</p>
-    <div class="auth-error" id="loginError">Incorrect email or password.</div>
-    <div class="auth-fg"><label>Email</label><input type="email" id="loginEmail" autocomplete="username" placeholder="liam@lfadvisory.com.au"/></div>
-    <div class="auth-fg"><label>Password</label><input type="password" id="loginPassword" autocomplete="current-password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"/></div>
-    <button class="auth-btn" id="loginBtn">Sign In</button>
-  </div>
-  <div class="auth-box" id="changeBox" style="display:none">
-    <div class="auth-logo">LF Advisory</div>
-    <div class="auth-title">Set your password</div>
-    <p class="auth-sub">First login detected. Set a permanent password to continue.</p>
-    <div class="auth-error" id="changeError">Check passwords and try again.</div>
-    <div class="auth-fg"><label>New Password</label><input type="password" id="newPass1" autocomplete="new-password" placeholder="Minimum 8 characters"/></div>
-    <div class="auth-fg"><label>Confirm Password</label><input type="password" id="newPass2" autocomplete="new-password" placeholder="Repeat password"/></div>
-    <p class="auth-note">Save this in OnePassword when your browser prompts you.</p>
-    <button class="auth-btn" id="changeBtn">Set Password &amp; Enter Portal</button>
+    <p class="auth-sub">Sign in with your LF Advisory Microsoft account.</p>
+    <div class="auth-error" id="loginError">Sign-in failed. Please try again.</div>
+    <button class="auth-btn" id="loginBtn">Sign in with Microsoft</button>
+    <p class="auth-note" id="loginStatus" style="display:none">Checking your session…</p>
+    <p class="auth-note">Access is limited to LF Advisory Microsoft 365 accounts. Signing in also connects OneDrive for every tool.</p>
   </div>
 </div>
 
@@ -323,6 +313,7 @@ footer{background:var(--ink);color:rgba(240,243,239,.5);padding:4rem 8vw 2.5rem}
   <div class="s-label" style="color:var(--olive-lt)">Staff Portal</div>
   <h1>Internal tools &amp; <strong>workpaper applications</strong>.</h1>
   <p>For LF Advisory team members only.</p>
+  <span id="signedInAs" style="display:block;font-size:.8rem;opacity:.75;margin:.4rem 0"></span>
   <button class="signout-btn" onclick="signOut()">Sign Out</button>
 </section>
 
@@ -439,70 +430,146 @@ footer{background:var(--ink);color:rgba(240,243,239,.5);padding:4rem 8vw 2.5rem}
 </div>
 
 <script>
-var USERS = {
-  'liam@lfadvisory.com.au': {password:'Password1', mustChange:true},
-  'hazel@lfadvisory.com.au': {password:'Password1', mustChange:true}
-};
-var pendingEmail = '';
+/* ───── Microsoft (Entra ID) single sign-in — the real portal gate ─────
+   Single-tenant: only accounts in the LF Advisory Microsoft 365 tenant can
+   sign in. One sign-in here mints an access token (shared via localStorage)
+   that every staff tool reuses, so no tool asks you to "connect" again. */
+var MS_CLIENT_ID  = '981d2ee1-a2a9-4787-8972-b349938ba7ab';
+var MS_TENANT_ID  = 'f869ffc9-81fa-4bbf-94ec-a9bd5ca6b3a3';
+var MS_SCOPES     = 'Files.ReadWrite Sites.ReadWrite.All User.Read';
+var MS_AUTH_URL   = 'https://login.microsoftonline.com/' + MS_TENANT_ID + '/oauth2/v2.0/authorize';
+var MS_LOGOUT_URL = 'https://login.microsoftonline.com/' + MS_TENANT_ID + '/oauth2/v2.0/logout';
+var MS_REDIRECT   = window.location.origin + window.location.pathname;
+var _renewTimer   = null;
 
-window.onload = function() {
-  document.getElementById('portalMain').style.display = 'none';
-  try {
-    var s = JSON.parse(localStorage.getItem('lfa_session'));
-    if (s && s.ok && USERS[s.email]) { unlockPortal(); return; }
-  } catch(e) {}
-  document.getElementById('loginBtn').onclick = doLogin;
-  document.getElementById('changeBtn').onclick = doChangePassword;
-  document.getElementById('loginPassword').onkeydown = function(e){ if(e.key==='Enter') doLogin(); };
-  document.getElementById('newPass2').onkeydown = function(e){ if(e.key==='Enter') doChangePassword(); };
-};
-
-function doLogin() {
-  var email = document.getElementById('loginEmail').value.trim().toLowerCase();
-  var pass = document.getElementById('loginPassword').value;
-  document.getElementById('loginError').style.display = 'none';
-  if (!USERS[email]) { showErr('loginError','Incorrect email or password.'); return; }
-  var stored = localStorage.getItem('lfa_pw_'+email);
-  var valid = (stored !== null) ? stored : USERS[email].password;
-  if (pass !== valid) { showErr('loginError','Incorrect email or password.'); return; }
-  pendingEmail = email;
-  var changed = localStorage.getItem('lfa_pc_'+email);
-  if (USERS[email].mustChange && !changed) {
-    document.getElementById('loginBox').style.display = 'none';
-    document.getElementById('changeBox').style.display = 'block';
-    return;
-  }
-  localStorage.setItem('lfa_session', JSON.stringify({ok:true,email:email}));
-  unlockPortal();
+/* Shared sign-in state — localStorage is shared across every tool tab on this origin. */
+function msSaveToken(tok, expiresIn) {
+  localStorage.setItem('lfa_ms_token', tok);
+  localStorage.setItem('lfa_ms_token_exp', String(Date.now() + (parseInt(expiresIn || '3600', 10) * 1000)));
+}
+function msGetToken() {
+  var t = localStorage.getItem('lfa_ms_token');
+  var exp = parseInt(localStorage.getItem('lfa_ms_token_exp') || '0', 10);
+  if (t && Date.now() < exp - 60000) return t;
+  return null;
+}
+function msClear() {
+  localStorage.removeItem('lfa_ms_token');
+  localStorage.removeItem('lfa_ms_token_exp');
+  localStorage.removeItem('lfa_ms_user');
+  sessionStorage.removeItem('portalAuth');
+}
+function parseHash(hash) {
+  var p = {};
+  hash.split('&').forEach(function(kv){ var a = kv.split('='); p[decodeURIComponent(a[0])] = decodeURIComponent(a[1] || ''); });
+  return p;
 }
 
-function doChangePassword() {
-  var p1 = document.getElementById('newPass1').value;
-  var p2 = document.getElementById('newPass2').value;
-  document.getElementById('changeError').style.display = 'none';
-  if (p1.length < 8) { showErr('changeError','Password must be at least 8 characters.'); return; }
-  if (p1 !== p2) { showErr('changeError','Passwords do not match.'); return; }
-  localStorage.setItem('lfa_pw_'+pendingEmail, p1);
-  localStorage.setItem('lfa_pc_'+pendingEmail, '1');
-  localStorage.setItem('lfa_session', JSON.stringify({ok:true,email:pendingEmail}));
+window.onload = function() {
+  // When loaded inside the hidden silent-renew iframe, do nothing: the parent
+  // reads the token straight off this frame's URL. Avoids re-running the app.
+  if (window.top !== window.self) return;
+  document.getElementById('portalMain').style.display = 'none';
+  document.getElementById('loginBtn').onclick = function(){ msSignIn(false); };
+
+  // 1) Returning from Microsoft with a token (or error) in the URL fragment.
+  var hash = window.location.hash.substring(1);
+  if (hash && (hash.indexOf('access_token=') !== -1 || hash.indexOf('error=') !== -1)) {
+    var p = parseHash(hash);
+    history.replaceState(null, '', window.location.pathname);
+    if (p.access_token) { msSaveToken(p.access_token, p.expires_in); finishSignIn(p.access_token); return; }
+    if (p.error && p.error !== 'login_required' && p.error !== 'interaction_required') {
+      showLoginError(p.error_description || 'Sign-in failed. Please try again.');
+    }
+  }
+
+  // 2) Valid shared token already present → straight in.
+  var tok = msGetToken();
+  if (tok) { finishSignIn(tok); return; }
+
+  // 3) Signed in before on this browser but token expired → try a silent renew.
+  if (localStorage.getItem('lfa_ms_user')) { setLoginStatus('Resuming your session…'); msSignIn(true); return; }
+
+  // 4) Cold start → the Sign in button is shown.
+};
+
+function msSignIn(silent) {
+  var url = MS_AUTH_URL +
+    '?client_id=' + MS_CLIENT_ID +
+    '&response_type=token' +
+    '&redirect_uri=' + encodeURIComponent(MS_REDIRECT) +
+    '&scope=' + encodeURIComponent(MS_SCOPES) +
+    '&response_mode=fragment' +
+    (silent ? '&prompt=none' : '');
+  if (silent) {
+    // Best-effort seamless renewal via a hidden iframe; never blocks the button path.
+    var ifr = document.createElement('iframe');
+    ifr.style.display = 'none';
+    ifr.onload = function() {
+      try {
+        var h = ifr.contentWindow.location.hash.substring(1);
+        var p = h ? parseHash(h) : {};
+        if (p.access_token) { msSaveToken(p.access_token, p.expires_in); finishSignIn(p.access_token); }
+        else { setLoginStatus(''); } // interaction needed → leave the button visible
+      } catch (e) { setLoginStatus(''); } // still on Microsoft's origin → interaction needed
+      if (ifr.parentNode) ifr.parentNode.removeChild(ifr);
+    };
+    ifr.src = url;
+    document.body.appendChild(ifr);
+    setTimeout(function(){ if (!msGetToken()) setLoginStatus(''); }, 8000); // safety valve
+  } else {
+    setLoginStatus('Redirecting to Microsoft…');
+    window.location.href = url;
+  }
+}
+
+async function finishSignIn(token) {
+  // Confirm the account and grab a display name (best-effort).
+  try {
+    var r = await fetch('https://graph.microsoft.com/v1.0/me', { headers: { Authorization: 'Bearer ' + token } });
+    if (r.status === 401 || r.status === 403) { msClear(); showLoginError('Your session has expired. Please sign in again.'); return; }
+    if (r.ok) {
+      var me = await r.json();
+      localStorage.setItem('lfa_ms_user', JSON.stringify({ name: me.displayName || '', email: me.userPrincipalName || me.mail || '' }));
+    }
+  } catch (e) { /* offline — allow in with the token we already hold */ }
   unlockPortal();
 }
 
 function unlockPortal() {
-  sessionStorage.setItem('portalAuth', 'true');
+  sessionStorage.setItem('portalAuth', 'true'); // back-compat for the prepayments gate
   document.getElementById('authOverlay').style.display = 'none';
   document.getElementById('portalMain').style.display = 'block';
+  var u = null; try { u = JSON.parse(localStorage.getItem('lfa_ms_user')); } catch (e) {}
+  var who = document.getElementById('signedInAs');
+  if (who) who.textContent = (u && u.name) ? ('Signed in as ' + u.name) : '';
+  scheduleRenew();
 }
 
-function showErr(id,msg) {
-  var el = document.getElementById(id);
-  el.textContent = msg;
-  el.style.display = 'block';
+function scheduleRenew() {
+  if (_renewTimer) clearTimeout(_renewTimer);
+  var exp = parseInt(localStorage.getItem('lfa_ms_token_exp') || '0', 10);
+  var ms = exp - Date.now() - 5 * 60000; // renew ~5 min before expiry
+  if (ms < 10000) ms = 10000;
+  _renewTimer = setTimeout(function(){ msSignIn(true); }, ms);
+}
+
+function setLoginStatus(msg) {
+  var el = document.getElementById('loginStatus');
+  if (el) { el.textContent = msg || ''; el.style.display = msg ? 'block' : 'none'; }
+  var btn = document.getElementById('loginBtn');
+  if (btn) btn.style.display = (msg && msg.indexOf('Redirecting') === 0) ? 'none' : 'inline-block';
+}
+function showLoginError(msg) {
+  var el = document.getElementById('loginError');
+  el.textContent = msg; el.style.display = 'block';
+  setLoginStatus('');
 }
 
 function signOut() {
-  localStorage.removeItem('lfa_session');
-  window.location.reload();
+  msClear();
+  // Clears this browser's Microsoft session too, so no one can silently sign back in.
+  window.location.href = MS_LOGOUT_URL;
 }
 
 window.addEventListener('scroll',function(){document.getElementById('nav').classList.toggle('scrolled',window.scrollY>20);});

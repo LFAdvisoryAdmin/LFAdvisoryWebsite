@@ -302,7 +302,9 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
 
 <script>
 // ─── Auth ────────────────────────────────────────────────────────────────────
-if (sessionStorage.getItem('portalAuth') !== 'true') location.href = 'portal.html';
+// Gated on the portal's Microsoft sign-in (shared via localStorage, so it holds
+// across tabs). No LF Advisory Microsoft 365 sign-in → bounce back to the portal.
+if (!localStorage.getItem('lfa_ms_user') && sessionStorage.getItem('portalAuth') !== 'true') location.href = 'portal.html';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 let items = [];
