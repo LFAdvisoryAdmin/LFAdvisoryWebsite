@@ -126,6 +126,8 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 .card.future-period{opacity:.55}
 .card.is-done{opacity:.6}
 .card.is-done .card-client{text-decoration:line-through}
+@keyframes flashcard{0%,20%{box-shadow:0 0 0 3px var(--teal)}100%{box-shadow:0 1px 3px rgba(0,0,0,.05)}}
+.card.flash{animation:flashcard 2s ease-out}
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
 .card-when{display:flex;align-items:baseline;gap:.4rem;min-width:0}
 .card-date{font-family:var(--display);font-weight:700;font-size:.85rem;color:var(--ink);white-space:nowrap}
@@ -629,6 +631,7 @@ var leave=[];
 var view='due';
 var editing=null;
 var _editAnchorME=null;
+var _focusJob='';
 var showDone=false;
 
 /* ───────────────────────── Microsoft Graph / SharePoint sync ───────────────────────── */
@@ -1073,7 +1076,7 @@ function rowHTML(t,done){
   var revChip=rev?'<span class="chip chip-rev" onclick="setChipPerson(\''+escAttr(rev)+'\')">Rev · '+esc(rev)+'</span>':'';
   var cmtHas=(t.comment||'').trim()?' has':'';
   var cmtBubble='<span class="cmt-wrap"><button class="cmt-btn'+cmtHas+'" title="Comment"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button><span class="cmt-pop"><textarea placeholder="Add a comment…" onchange="setComment(\''+t.id+'\',this.value)">'+esc(t.comment||'')+'</textarea></span></span>';
-  return '<div class="card '+c+(clash.length?' leave-clash':'')+(future?' future-period':'')+'">'
+  return '<div class="card '+c+(clash.length?' leave-clash':'')+(future?' future-period':'')+'" id="job-'+t.id+'">'
     +'<div class="card-head"><div class="card-when"><span class="card-date">'+prettyDate(t.dueDate)+'</span><span class="card-rel">'+(done?'done':relLabel(t.dueDate))+'</span></div>'+stageSel+'</div>'
     +'<div class="card-body"><span class="card-client" title="Filter to this client" onclick="setFilter(\'client\',\''+escAttr(t.client)+'\')">'+esc(t.client)+'</span><span class="card-task">'+esc(t.task)+'</span></div>'
     +'<div class="card-meta">'+prepChip+revChip+recChip+leaveChip+'</div>'
@@ -1152,6 +1155,8 @@ function render(){
   if(done.length){
     dw.innerHTML='<button class="done-toggle" onclick="toggleDone()">'+(showDone?'▾':'▸')+' Completed ('+done.length+')</button>'+(showDone?'<div style="margin-top:.6rem">'+cards(done,true)+'</div>':'');
   }else dw.innerHTML='';
+
+  if(_focusJob){var fe=document.getElementById('job-'+_focusJob);if(fe){_focusJob='';setTimeout(function(){fe.scrollIntoView({block:'center',behavior:'smooth'});fe.classList.add('flash');},60);}}
 }
 function toggleDone(){showDone=!showDone;render();}
 
@@ -1373,7 +1378,7 @@ function doImportAS(){
   try{leave=JSON.parse(localStorage.getItem(LS_LEAVE))||[];}catch(e){leave=[];}
   ensureClients();
   expandRecurring();
-  try{var qc=new URLSearchParams(location.search).get('client');if(qc)flt.client=qc;}catch(e){}
+  try{var q=new URLSearchParams(location.search);var qc=q.get('client');if(qc)flt.client=qc;var qj=q.get('job');if(qj)_focusJob=qj;}catch(e){}
   render();
   window.addEventListener('load',async function(){
     var hashToken=parseTokenFromHash();

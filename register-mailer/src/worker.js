@@ -104,16 +104,17 @@ function parsePeople(env) {
   const m = {}; try { const o = JSON.parse(env.PEOPLE || '{}'); for (const k in o) m[k.toLowerCase()] = o[k]; } catch (e) {}
   return m;
 }
-function clientLink(base, client) {
+function jobLink(base, t) {
   if (!base) return '';
-  return `${base}${base.indexOf('?') < 0 ? '?' : '&'}client=${encodeURIComponent(client)}`;
+  const q = `client=${encodeURIComponent(t.client)}` + (t.id ? `&job=${encodeURIComponent(t.id)}` : '');
+  return `${base}${base.indexOf('?') < 0 ? '?' : '&'}${q}`;
 }
 function taskLine(t, today, toolUrl) {
   const tag = t.dueDate < today
     ? ` <span style="color:#b0432c">(overdue — was due ${prettyDate(t.dueDate)})</span>`
     : ` <span style="color:#888">(due ${prettyDate(t.dueDate)})</span>`;
-  const link = clientLink(toolUrl, t.client);
-  const open = link ? `<td style="padding:4px 0;text-align:right;white-space:nowrap;vertical-align:top"><a href="${link}" style="color:#2d6670;text-decoration:underline;font-size:12px">Open &#8599;</a></td>` : '';
+  const link = jobLink(toolUrl, t);
+  const open = link ? `<td style="padding:4px 0;text-align:right;white-space:nowrap;vertical-align:top"><a href="${link}" style="color:#2d6670;text-decoration:underline;font-size:12px">Go to job &#8599;</a></td>` : '';
   return `<tr><td style="padding:4px 12px 4px 0;font-size:13px;color:#222;vertical-align:top">&bull; <strong>${esc(t.client)}</strong> — ${esc(t.task)}${tag}</td>${open}</tr>`;
 }
 function section(title, items, today, muted, toolUrl) {
