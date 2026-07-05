@@ -104,6 +104,8 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 .chip-who.unassigned{background:var(--warn-soft);border-color:#e4d5ad;color:var(--warn)}
 .chip-rec{background:var(--teal-soft);color:var(--teal)}
 .chip-rev{background:#eef0e0;color:var(--olive)}
+.chip-who,.chip-rev,.chip-rec{cursor:pointer}
+.chip-who:hover,.chip-rev:hover,.chip-rec:hover{filter:brightness(.94)}
 .chip-leave{background:var(--alert-soft);color:var(--alert);font-weight:700}
 .row.leave-clash{border-color:var(--alert-line);box-shadow:inset 4px 0 0 var(--alert)}
 .row.future-period{opacity:.55;background:var(--bg)}
@@ -981,18 +983,20 @@ function removeTask(id){
 function setView(v){view=v;document.querySelectorAll('.view').forEach(function(b){b.setAttribute('aria-selected',b.dataset.view===v?'true':'false');});render();}
 
 /* filters (combine with AND across date / client / group / person / status) */
-var flt={date:'',from:'',to:'',client:'',group:'',person:'',status:'',task:'',bucket:''};
-function fltActive(){return flt.date||flt.client||flt.group||flt.person||flt.status||flt.task||flt.bucket;}
+var flt={date:'',from:'',to:'',client:'',group:'',person:'',status:'',task:'',bucket:'',rec:''};
+function fltActive(){return flt.date||flt.client||flt.group||flt.person||flt.status||flt.task||flt.bucket||flt.rec;}
 function setFilter(field,val){flt[field]=val;if(view==='clients'){setView('due');return;}render();}
 function setRange(){flt.from=document.getElementById('fltFrom').value;flt.to=document.getElementById('fltTo').value;render();}
 function setTaskFilter(v){flt.task=v;render();}
+function setChipPerson(name){if(view==='clients'){setView('due');}flt.person=(flt.person===name?'':name);render();}
+function setRecFilter(label){if(view==='clients'){setView('due');}flt.rec=(flt.rec===label?'':label);render();}
 function setStatFilter(kind){
   if(view==='clients'){view='due';document.querySelectorAll('.view').forEach(function(b){b.setAttribute('aria-selected',b.dataset.view==='due'?'true':'false');});}
   if(kind==='unassigned'){flt.person=(flt.person==='__none__')?'':'__none__';}
   else{flt.bucket=(flt.bucket===kind)?'':kind;}
   render();
 }
-function clearFilters(){flt={date:'',from:'',to:'',client:'',group:'',person:'',status:'',task:'',bucket:''};render();}
+function clearFilters(){flt={date:'',from:'',to:'',client:'',group:'',person:'',status:'',task:'',bucket:'',rec:''};render();}
 function matchClientGroupPerson(t){
   if(flt.client&&t.client!==flt.client)return false;
   if(flt.group){var c=clientByName(t.client);if(!c||(c.group||'')!==flt.group)return false;}
@@ -1011,7 +1015,7 @@ function matchDate(t){
   if(flt.date==='range')return (!flt.from||d>=flt.from)&&(!flt.to||d<=flt.to);
   return true;
 }
-function matchFilters(t){return matchClientGroupPerson(t)&&!(flt.status&&t.stage!==flt.status)&&matchDate(t)&&(!flt.bucket||classify(t.dueDate)===flt.bucket);}
+function matchFilters(t){return matchClientGroupPerson(t)&&!(flt.status&&t.stage!==flt.status)&&matchDate(t)&&(!flt.bucket||classify(t.dueDate)===flt.bucket)&&(!flt.rec||recLabel(t)===flt.rec);}
 function populateFilters(){
   function fill(id,allLabel,vals,cur){var el=document.getElementById(id);el.innerHTML='<option value="">'+allLabel+'</option>'+vals.map(function(v){return '<option value="'+escAttr(v)+'"'+(v===cur?' selected':'')+'>'+esc(v)+'</option>';}).join('');el.value=cur||'';el.className='flt-sel'+(cur?' active':'');}
   var cnames=clients.map(function(c){return c.name;}).sort(function(a,b){return a.localeCompare(b);});
@@ -1057,15 +1061,15 @@ function rowHTML(t,done){
   var clash=done?[]:leaveClash(t);
   var leaveChip=clash.length?'<span class="chip chip-leave">⚠ '+esc(clash.join(', '))+' on leave</span>':'';
   var future=!done&&((t.periodEnd&&todayISO()<t.periodEnd)||_blocked[t.id]);
-  var recChip=(t.recurrence!=='none'||t.seriesRec)?'<span class="chip chip-rec"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> '+recLabel(t)+'</span>':'';
+  var recChip=(t.recurrence!=='none'||t.seriesRec)?'<span class="chip chip-rec" onclick="setRecFilter(\''+escAttr(recLabel(t))+'\')"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> '+recLabel(t)+'</span>':'';
   var stageSel='<select class="stage-sel stage-'+t.stage+'" title="Change status" onchange="setStage(\''+t.id+'\',this.value)">'+STAGES.map(function(s){return '<option value="'+s.key+'"'+(s.key===t.stage?' selected':'')+'>'+s.label+'</option>';}).join('')+'</select>';
   var actions=done
     ? '<button class="ico" title="Reopen" onclick="reopen(\''+t.id+'\')"><svg viewBox="0 0 24 24"><path d="M3 2v6h6"/><path d="M3.5 12a9 9 0 1 0 2.6-6.4L3 8"/></svg></button>'
     : '<button class="ico done" title="Mark done" onclick="complete(\''+t.id+'\')"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></button>'
       +'<button class="ico" title="Edit" onclick="openEdit(\''+t.id+'\')"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>';
   actions+='<button class="ico del" title="Delete" onclick="removeTask(\''+t.id+'\')"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>';
-  var prepChip='<span class="chip chip-who'+(prep?'':' unassigned')+'">'+esc(prep||'Unassigned')+'</span>';
-  var revChip=rev?'<span class="chip chip-rev">Rev · '+esc(rev)+'</span>':'';
+  var prepChip='<span class="chip chip-who'+(prep?'':' unassigned')+'" onclick="'+(prep?'setChipPerson(\''+escAttr(prep)+'\')':'setStatFilter(\'unassigned\')')+'">'+esc(prep||'Unassigned')+'</span>';
+  var revChip=rev?'<span class="chip chip-rev" onclick="setChipPerson(\''+escAttr(rev)+'\')">Rev · '+esc(rev)+'</span>':'';
   var cmtHas=(t.comment||'').trim()?' has':'';
   var cmtBubble='<span class="cmt-wrap"><button class="cmt-btn'+cmtHas+'" title="Comment"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button><span class="cmt-pop"><textarea placeholder="Add a comment…" onchange="setComment(\''+t.id+'\',this.value)">'+esc(t.comment||'')+'</textarea></span></span>';
   return '<div class="card '+c+(clash.length?' leave-clash':'')+(future?' future-period':'')+'">'
