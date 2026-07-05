@@ -17,6 +17,18 @@ export default {
       try { return new Response(await run(env), { status: 200 }); }
       catch (e) { return new Response('Error: ' + (e && e.message || e), { status: 500 }); }
     }
+    // Single test email to ERROR_EMAIL (Liam) — verifies auth + SharePoint read + send, without emailing staff.
+    if (url.pathname === '/test' && env.TRIGGER_KEY && url.searchParams.get('key') === env.TRIGGER_KEY) {
+      try {
+        const token = await getToken(env);
+        let regInfo;
+        try { const data = await readRegister(env, token); regInfo = `Register read OK — ${(data.tasks || []).length} job(s) in the file.`; }
+        catch (e) { regInfo = `Register read FAILED: ${String(e && e.message || e)}`; }
+        const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#222"><p>This is a <strong>test</strong> of the LF Advisory daily task email.</p><p>${esc(regInfo)}</p><p style="color:#888">If you received this, Microsoft Graph auth and sending are working. The live email runs at 3am Brisbane, Mon–Fri.</p></div>`;
+        await sendMail(env, token, env.ERROR_EMAIL, '[TEST] LF Advisory daily task email', html);
+        return new Response('Test email sent to ' + env.ERROR_EMAIL + '. ' + regInfo, { status: 200 });
+      } catch (e) { return new Response('Test FAILED: ' + (e && e.message || e), { status: 500 }); }
+    }
     return new Response('LF register mailer — cron 17:00 UTC (3am Brisbane).', { status: 200 });
   }
 };
