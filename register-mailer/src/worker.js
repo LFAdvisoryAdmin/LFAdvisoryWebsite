@@ -9,7 +9,7 @@ const WD = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 export default {
-  async scheduled(event, env, ctx) { ctx.waitUntil(run(env)); },
+  async scheduled(event, env, ctx) { ctx.waitUntil(run(env).catch(e => reportFailure(env, e))); },
   async fetch(req, env) {
     const url = new URL(req.url);
     // Manual test trigger: /run?key=YOUR_TRIGGER_KEY
@@ -22,6 +22,10 @@ export default {
 };
 
 async function run(env) {
+  // Brisbane weekday guard: no email Sat/Sun (belt-and-braces with the Mon-Fri cron).
+  const bneDow = new Date(Date.now() + 10 * 3600 * 1000).getUTCDay();
+  if (bneDow === 0 || bneDow === 6) return 'Weekend in Brisbane — no email sent.';
+
   const token = await getToken(env);
   const data = await readRegister(env, token);
   const tasks = (data.tasks || []).filter(t => t && t.dueDate);
@@ -40,7 +44,7 @@ async function run(env) {
 
   const people = parsePeople(env);
   let sent = 0;
-  const notes = [];
+  const failures = [];
   for (const who of Object.keys(groups)) {
     const list = groups[who];
     const overdue = list.filter(t => t.dueDate < today).sort(byDue);
@@ -51,11 +55,28 @@ async function run(env) {
     const to = people[who.toLowerCase()] || env.FALLBACK_EMAIL;
     const subject = `LF Advisory — your tasks, ${prettyDate(today)}`;
     const html = buildHtml(who, overdue, todayL, week, today, env.TOOL_URL);
-    await sendMail(env, token, to, subject, html);
-    sent++;
-    if (!people[who.toLowerCase()] && who !== 'Unassigned') notes.push(`no email mapped for "${who}" -> sent to fallback`);
+    try { await sendMail(env, token, to, subject, html); sent++; }
+    catch (e) { failures.push(`${esc(who)} &lt;${esc(to)}&gt; — ${esc(String(e && e.message || e))}`); }
   }
-  return `Sent ${sent} email(s) for ${today}.` + (notes.length ? ' Notes: ' + notes.join('; ') : '');
+
+  // Tell Liam if any sends failed.
+  if (failures.length) {
+    const body = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#222">`
+      + `<p>The daily task email ran on ${prettyDate(today)} but <strong>${failures.length}</strong> message(s) failed to send:</p>`
+      + `<ul>${failures.map(f => `<li>${f}</li>`).join('')}</ul>`
+      + `<p style="color:#888">Sent ${sent} successfully. (Bounces from valid-but-undeliverable addresses arrive separately as non-delivery reports.)</p></div>`;
+    try { await sendMail(env, token, env.ERROR_EMAIL, `LF register mailer — ${failures.length} send failure(s)`, body); } catch (e) {}
+  }
+  return `Sent ${sent} email(s) for ${today}.` + (failures.length ? ` ${failures.length} failed (Liam notified).` : '');
+}
+
+// Last-resort: email Liam if the whole run threw before/around sending.
+async function reportFailure(env, err) {
+  try {
+    const token = await getToken(env);
+    const body = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#222"><p>The daily task-email run <strong>failed</strong>:</p><pre style="white-space:pre-wrap;color:#b0432c">${esc(String(err && err.stack || err))}</pre></div>`;
+    await sendMail(env, token, env.ERROR_EMAIL, 'LF register mailer — run FAILED', body);
+  } catch (e) { /* nothing more we can do */ }
 }
 
 /* ---------- Microsoft Graph ---------- */
