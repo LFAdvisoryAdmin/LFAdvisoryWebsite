@@ -1,0 +1,89 @@
+# LF Advisory — project context
+
+Read this first. It's the handoff for the **Workflow Management Tool** and the wider LF Advisory site so a new session can continue building (next up: timesheets, reports, and more, all run through this staff area).
+
+## What this repo is
+The LF Advisory (accounting/advisory firm, Brisbane QLD) **website + staff portal**, a static site on **Cloudflare Pages**, auto-deployed from GitHub `LFAdvisoryAdmin/LFAdvisoryWebsite` (branch `main`). Live at **https://www.lfadvisory.com.au**. No build step — plain HTML/CSS/vanilla JS files served as-is. **To deploy anything: `git commit` + `git push origin main`** and Cloudflare Pages publishes.
+
+### Files
+- `index.html`, `about.html`, `blog.html`, `case-studies.html` — public marketing site.
+- `portal.html` — **staff portal** (soft client-side login, hardcoded users, password `Password1` on first login → sets own). Grid of tool cards. Real security is the Microsoft sign-in on each tool, not this gate.
+- `payroll-reconciliation.html`, `payroll-history.html`, `prepayments.html` — existing staff tools. **These established the SharePoint/Graph sync pattern** the workflow tool reuses.
+- `practice-register.html` — **the Workflow Management Tool** (the main thing being built). Single self-contained file, vanilla JS, ~1200 lines. Linked from portal.html as "Workflow Management Tool" → opens at `/practice-register`.
+- `register-mailer/` — Cloudflare **Worker** that sends the daily task email (separate from the Pages site).
+
+### Working on `practice-register.html`
+Single file: `<style>` block, HTML body, one big `<script>`. After any edit, **syntax-check** by extracting the inline script and running `node --check` (pattern used all session):
+```
+node -e 'const fs=require("fs");const h=fs.readFileSync("C:/Users/f869f/LFAdvisoryWebsite/practice-register.html","utf8");const re=/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;let m,a="";while((m=re.exec(h)))a+="\n;(function(){\n"+m[1]+"\n})();\n";fs.writeFileSync("s.js",a);' && node --check s.js
+```
+Match the existing style; keep it a single file with no dependencies except the CDN `xlsx` script already loaded. Design language: teal `#2d6670` / olive, Raleway/Source Serif fonts, matches `portal.html`.
+
+## Data & auth (important)
+**Storage:** Microsoft SharePoint via Graph. The app reads/writes one JSON file `lf-advisory-register-data.json` in the **"LF Advisory Workpapers"** folder of the tenant root site (`lfadvisoryptyltd.sharepoint.com`, Documents drive). Shape: `{ tasks:[], clients:[], leave:[] }`. `localStorage` mirrors it as offline fallback. Sync is debounced-on-change; a "connect to OneDrive" flow signs the user in.
+
+**Azure app:** "LF Advisory Payroll Tool"
+- client id `981d2ee1-a2a9-4787-8972-b349938ba7ab`, tenant `f869ffc9-81fa-4bbf-94ec-a9bd5ca6b3a3`.
+- **Delegated** (SPA, implicit `response_type=token` flow) for the web tools: `Files.ReadWrite`, `Sites.ReadWrite.All`, `User.Read`. Redirect URIs are registered under the **Single-page application** platform and must include each tool's clean URL (no `.html`) for `www` and apex, e.g. `https://www.lfadvisory.com.au/practice-register`. **Adding a new tool page = add its redirect URI or sign-in fails with AADSTS50011.**
+- **Application** permissions (for the mailer Worker): `Sites.Read.All`, `Mail.Send` (admin consented). A client secret exists for the Worker.
+
+## The Workflow Management Tool — how it works
+
+### Task model
+`{ id, client, task, dueDate('yyyy-mm-dd'), preparer, reviewer, recurrence, seriesId, seriesRec, bizDays, anchorME, periodEnd, seasonFrom, seasonTo, stage, done, comment, din }`
+- **stage** (status): `notready` → `ready` → `started` → `awaiting` → `review` → `completed`. "Not ready yet" is auto-set on future-period jobs and auto-flips to ready once the period ends (`normalize()`), also greys the card.
+- **preparer + reviewer**: two people per job. Preparer defaults to the client's owner. "Unassigned" = no preparer.
+- **comment**: free text, shown as a hover speech-bubble on each card (green when set).
+
+### Recurrence
+`recurrence ∈ none/daily/weekly/fortnightly/monthly/quarterly/annually/monthlyBizME`.
+- **Series recurrences** (fortnightly, monthly, quarterly, annually, monthlyBizME) generate a **rolling 12-month batch of discrete occurrences** via `expandRecurring()` — each occurrence is its own row (`recurrence:'none'`, `seriesRec` holds the cadence, `seriesId` groups them). Auto-extends on load. In a series, an occurrence is greyed until the earlier one is completed (`computeBlocked()`).
+- **daily/weekly** stay single-rolling (one at a time; too many rows otherwise).
+- **Seasonal**: any recurrence can have `seasonFrom`/`seasonTo` months — only recurs within that window each year (handles wrap-around like Nov–Feb).
+
+### Clients & lodgements (accounting compliance engine)
+Client model: `{ name(unique), group, owner, lodgements:{gstM,gstQ,paygwM,paygwQ,gstA,iasMonthly} }`. Managed in the **"Manage clients"** view. `group` is just a label. Ticking a lodgement auto-generates BAS/IAS jobs (`cyclesFor()` → `genCycle()`):
+- Monthly GST → monthly BAS every month.
+- **Quarterly GST + Monthly PAYGW → interleave**: quarterly BAS at quarter-end month, monthly IAS the other two months (one job per period, never two). This is the medium-withholder pattern and was specifically requested — don't "simplify" it away.
+- Quarterly GST (no monthly PAYGW) → quarterly BAS.
+- PAYGW only (no GST) → monthly/quarterly IAS.
+- `iasMonthly` ("Monthly IAS (no GST)") → flat 12 monthly IAS.
+- Annual GST → yearly return due 15 May of following FY.
+
+### Due-date rules (QLD, registered tax/BAS agent)
+- `QLD_HOLIDAYS` set covers **2026–2028** (statewide only, no regional show days) — extend yearly.
+- **Monthly** BAS/IAS: 21st of the following month, rolled to next business day.
+- **Quarterly** BAS/IAS: firm targets **3 business days before the agent concession date**. Concession dates: Sep qtr = 25 Nov, Dec qtr = 28 Feb, Mar qtr = 26 May, Jun qtr = 25 Aug.
+- **Annual GST**: 15 May of the following financial year (next business day).
+- **"X business days after month-end"**: `monthlyBizME` recurrence, computed per month.
+
+### Leave
+`leave:[{ id, person, start, end }]`, managed via the "Leave" button. Any job whose **due date** falls within the preparer's or reviewer's leave gets a **red flag** on the card so it can be reassigned/rescheduled.
+
+### UI
+Jobs render as **cards in a 3-column grid** (white cards, soft shadow). Group/sort tabs: By due date, By status, By person, By client, and **Manage clients**. A compact **filter bar** combines (AND): due window (overdue/today/this week/next 7 days/this month/next 30 days/custom range), client, group, person, status, task keyword. **Clickable everything**: the summary stat boxes (Overdue/Due today/This week/Unassigned), the person/recurrence chips, the client name, and the "N open" count in Manage clients all set filters. Excel export + copy-paste "email preview" digest. Deep-links: `?client=<name>` pre-filters; `?job=<id>` scrolls to and flashes that card.
+
+## Daily task email — `register-mailer/`
+Cloudflare **Worker** (separate from the Pages site), **already deployed and live**.
+- URL: `https://lf-register-mailer.liam-5b0.workers.dev` (Cloudflare account id `5b0bc9785e0843df52c01a627f3ce3da`).
+- **Schedule:** cron `0 17 * * 1,2,3,4,7` = 17:00 UTC Sun–Thu = **3am Brisbane, Mon–Fri**. (Brisbane = UTC+10 no DST; 3am is the prior UTC day. **Cloudflare cron rejects `0` for Sunday — use `7`.**)
+- **Behaviour:** reads the register from SharePoint via Graph **app-only** auth (client credentials, `CLIENT_SECRET`), groups active jobs (excludes completed/not-ready) by **preparer**, emails each person **Overdue + Due today** (priority, top) then **Due this week** (below), each task with a right-aligned "Go to job" link (`?client=&job=`). **Liam CC'd** on all. Sends via Graph `sendMail` from `liam@lfadvisory.com.au`. Failures/undeliverables alert Liam (bounces also return to his inbox). Weekend guard in code.
+- Config in `wrangler.toml` `[vars]`; secrets `CLIENT_SECRET` + `TRIGGER_KEY`. `PEOPLE` maps preparer names → emails (**verify Hazel's; Jennifer's account not yet active — jennifer@lfadvisory.com.au**). Names must match exactly what's typed in the Preparer field.
+- Endpoints (guarded by `?key=TRIGGER_KEY`): `/run` sends the real daily emails now; `/test` sends ONE verification email to Liam (auth + SharePoint read + send).
+
+### Deploying / changing the Worker
+**Wrangler CANNOT run on this machine — it's Windows ARM64 and `workerd` has no build.** Deploy via the Cloudflare REST API instead:
+1. User creates a Cloudflare API token (template "Edit Cloudflare Workers", their account) and pastes it (then deletes it after — it's deploy-only; the running Worker doesn't need it).
+2. `PUT https://api.cloudflare.com/client/v4/accounts/5b0bc9785e0843df52c01a627f3ce3da/workers/scripts/lf-register-mailer` — multipart: a `metadata` part (JSON: `{main_module:"worker.js", compatibility_date, bindings:[...]}` where bindings are `plain_text` for vars and `secret_text` for CLIENT_SECRET/TRIGGER_KEY) + a `worker.js` module part. **Re-uploading replaces all bindings, so always include every var + both secrets.**
+3. Cron: `PUT .../schedules` body `[{"cron":"0 17 * * 1,2,3,4,7"}]`.
+4. Enable public URL: `POST .../subdomain {"enabled":true}` (subdomain is `liam-5b0`).
+
+## Gotchas / conventions
+- **Deploy the site** = `git push origin main` (Cloudflare Pages). End commit messages with a `Co-Authored-By: Claude ...` trailer.
+- **Windows ARM64** — no local wrangler.
+- **OAuth redirect drops query strings** — deep-links (`?client=`, `?job=`) only pre-filter when the user is already signed in; a cold sign-in bounce loses them (acceptable).
+- **Client secret was exposed in a chat** during setup — user should rotate the Azure client secret and update it in the Worker.
+- The other tools (`payroll-*.html`) are the reference for the Graph/SharePoint pattern.
+
+## Status & what's next
+The Workflow tool and daily email are live and in use (register had ~526 jobs). Planned build-out through this same staff area: **timesheets, reports/dashboards**, and more. Keep new tools consistent — same portal card style, same SharePoint-JSON-per-tool storage, same Azure app (add redirect URIs for new SPA pages), same deploy flow.
