@@ -148,6 +148,9 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 .cmt-wrap:hover .cmt-pop,.cmt-pop:focus-within{display:block}
 .cmt-pop textarea{width:100%;min-height:70px;resize:vertical;font-family:var(--sans);font-size:.78rem;line-height:1.4;color:var(--ink);border:1px solid var(--border);border-radius:4px;padding:.4rem;outline:none}
 .cmt-pop textarea:focus{border-color:var(--teal)}
+.stat{cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.stat:hover{border-color:var(--teal)}
+.stat.sel{border-color:var(--teal);box-shadow:inset 0 0 0 1px var(--teal)}
 .lv-row{display:flex;align-items:center;gap:.8rem;padding:.55rem .2rem;border-bottom:1px solid var(--border)}
 .lv-person{font-family:var(--display);font-weight:700;font-size:.85rem;min-width:100px}
 .lv-dates{flex:1;font-size:.82rem;color:var(--mid)}
@@ -261,10 +264,10 @@ body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-si
 <div class="wrap">
 
   <div class="strip">
-    <div class="stat" id="statOverdue"><div class="stat-n">0</div><div class="stat-l">Overdue</div></div>
-    <div class="stat"><div class="stat-n" id="nToday">0</div><div class="stat-l">Due today</div></div>
-    <div class="stat"><div class="stat-n" id="nWeek">0</div><div class="stat-l">This week</div></div>
-    <div class="stat" id="statUnassigned"><div class="stat-n">0</div><div class="stat-l">Unassigned</div></div>
+    <div class="stat" id="statOverdue" onclick="setStatFilter('overdue')"><div class="stat-n">0</div><div class="stat-l">Overdue</div></div>
+    <div class="stat" id="statToday" onclick="setStatFilter('today')"><div class="stat-n" id="nToday">0</div><div class="stat-l">Due today</div></div>
+    <div class="stat" id="statWeek" onclick="setStatFilter('week')"><div class="stat-n" id="nWeek">0</div><div class="stat-l">This week</div></div>
+    <div class="stat" id="statUnassigned" onclick="setStatFilter('unassigned')"><div class="stat-n">0</div><div class="stat-l">Unassigned</div></div>
   </div>
 
   <div class="form" id="form">
@@ -978,16 +981,22 @@ function removeTask(id){
 function setView(v){view=v;document.querySelectorAll('.view').forEach(function(b){b.setAttribute('aria-selected',b.dataset.view===v?'true':'false');});render();}
 
 /* filters (combine with AND across date / client / group / person / status) */
-var flt={date:'',from:'',to:'',client:'',group:'',person:'',status:'',task:''};
-function fltActive(){return flt.date||flt.client||flt.group||flt.person||flt.status||flt.task;}
+var flt={date:'',from:'',to:'',client:'',group:'',person:'',status:'',task:'',bucket:''};
+function fltActive(){return flt.date||flt.client||flt.group||flt.person||flt.status||flt.task||flt.bucket;}
 function setFilter(field,val){flt[field]=val;if(view==='clients'){setView('due');return;}render();}
 function setRange(){flt.from=document.getElementById('fltFrom').value;flt.to=document.getElementById('fltTo').value;render();}
 function setTaskFilter(v){flt.task=v;render();}
-function clearFilters(){flt={date:'',from:'',to:'',client:'',group:'',person:'',status:'',task:''};render();}
+function setStatFilter(kind){
+  if(view==='clients'){view='due';document.querySelectorAll('.view').forEach(function(b){b.setAttribute('aria-selected',b.dataset.view==='due'?'true':'false');});}
+  if(kind==='unassigned'){flt.person=(flt.person==='__none__')?'':'__none__';}
+  else{flt.bucket=(flt.bucket===kind)?'':kind;}
+  render();
+}
+function clearFilters(){flt={date:'',from:'',to:'',client:'',group:'',person:'',status:'',task:'',bucket:''};render();}
 function matchClientGroupPerson(t){
   if(flt.client&&t.client!==flt.client)return false;
   if(flt.group){var c=clientByName(t.client);if(!c||(c.group||'')!==flt.group)return false;}
-  if(flt.person){var p=(t.preparer||'').trim(),r=(t.reviewer||'').trim();if(p!==flt.person&&r!==flt.person)return false;}
+  if(flt.person){if(flt.person==='__none__'){if((t.preparer||'').trim())return false;}else{var p=(t.preparer||'').trim(),r=(t.reviewer||'').trim();if(p!==flt.person&&r!==flt.person)return false;}}
   if(flt.task&&(t.task||'').toLowerCase().indexOf(flt.task.toLowerCase())<0)return false;
   return true;
 }
@@ -1002,7 +1011,7 @@ function matchDate(t){
   if(flt.date==='range')return (!flt.from||d>=flt.from)&&(!flt.to||d<=flt.to);
   return true;
 }
-function matchFilters(t){return matchClientGroupPerson(t)&&!(flt.status&&t.stage!==flt.status)&&matchDate(t);}
+function matchFilters(t){return matchClientGroupPerson(t)&&!(flt.status&&t.stage!==flt.status)&&matchDate(t)&&(!flt.bucket||classify(t.dueDate)===flt.bucket);}
 function populateFilters(){
   function fill(id,allLabel,vals,cur){var el=document.getElementById(id);el.innerHTML='<option value="">'+allLabel+'</option>'+vals.map(function(v){return '<option value="'+escAttr(v)+'"'+(v===cur?' selected':'')+'>'+esc(v)+'</option>';}).join('');el.value=cur||'';el.className='flt-sel'+(cur?' active':'');}
   var cnames=clients.map(function(c){return c.name;}).sort(function(a,b){return a.localeCompare(b);});
@@ -1010,7 +1019,9 @@ function populateFilters(){
   var people=Array.from(new Set(clients.map(function(c){return c.owner;}).concat(tasks.map(function(t){return t.preparer;})).concat(tasks.map(function(t){return t.reviewer;})).filter(Boolean))).sort();
   fill('fltClient','All clients',cnames,flt.client);
   fill('fltGroup','All groups',gnames,flt.group);
-  fill('fltPerson','All people',people,flt.person);
+  var pel=document.getElementById('fltPerson');
+  pel.innerHTML='<option value="">All people</option><option value="__none__">Unassigned</option>'+people.map(function(v){return '<option value="'+escAttr(v)+'">'+esc(v)+'</option>';}).join('');
+  pel.value=flt.person||'';pel.className='flt-sel'+(flt.person?' active':'');
   var st=document.getElementById('fltStatus');
   st.innerHTML='<option value="">All statuses</option>'+STAGES.map(function(s){return '<option value="'+s.key+'"'+(s.key===flt.status?' selected':'')+'>'+s.label+'</option>';}).join('');
   st.value=flt.status||'';st.className='flt-sel'+(flt.status?' active':'');
@@ -1078,8 +1089,10 @@ function render(){
   document.getElementById('nToday').textContent=today;
   document.getElementById('nWeek').textContent=week;
   document.querySelector('#statUnassigned .stat-n').textContent=unassigned;
-  document.getElementById('statOverdue').className='stat'+(overdue?' alert':'');
-  document.getElementById('statUnassigned').className='stat'+(unassigned?' warn':'');
+  document.getElementById('statOverdue').className='stat'+(overdue?' alert':'')+(flt.bucket==='overdue'?' sel':'');
+  document.getElementById('statToday').className='stat'+(flt.bucket==='today'?' sel':'');
+  document.getElementById('statWeek').className='stat'+(flt.bucket==='week'?' sel':'');
+  document.getElementById('statUnassigned').className='stat'+(unassigned?' warn':'')+(flt.person==='__none__'?' sel':'');
 
   /* datalists */
   fillPeople();
