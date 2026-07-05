@@ -50,7 +50,7 @@ async function run(env) {
 
     const to = people[who.toLowerCase()] || env.FALLBACK_EMAIL;
     const subject = `LF Advisory — your tasks, ${prettyDate(today)}`;
-    const html = buildHtml(who, overdue, todayL, week, today);
+    const html = buildHtml(who, overdue, todayL, week, today, env.TOOL_URL);
     await sendMail(env, token, to, subject, html);
     sent++;
     if (!people[who.toLowerCase()] && who !== 'Unassigned') notes.push(`no email mapped for "${who}" -> sent to fallback`);
@@ -104,28 +104,36 @@ function parsePeople(env) {
   const m = {}; try { const o = JSON.parse(env.PEOPLE || '{}'); for (const k in o) m[k.toLowerCase()] = o[k]; } catch (e) {}
   return m;
 }
-function taskLine(t, today) {
+function clientLink(base, client) {
+  if (!base) return '';
+  return `${base}${base.indexOf('?') < 0 ? '?' : '&'}client=${encodeURIComponent(client)}`;
+}
+function taskLine(t, today, toolUrl) {
   const tag = t.dueDate < today
     ? ` <span style="color:#b0432c">(overdue — was due ${prettyDate(t.dueDate)})</span>`
     : ` <span style="color:#888">(due ${prettyDate(t.dueDate)})</span>`;
-  return `<li style="margin:4px 0"><strong>${esc(t.client)}</strong> — ${esc(t.task)}${tag}</li>`;
+  const link = clientLink(toolUrl, t.client);
+  const open = link ? `<td style="padding:4px 0;text-align:right;white-space:nowrap;vertical-align:top"><a href="${link}" style="color:#2d6670;text-decoration:underline;font-size:12px">Open &#8599;</a></td>` : '';
+  return `<tr><td style="padding:4px 12px 4px 0;font-size:13px;color:#222;vertical-align:top">&bull; <strong>${esc(t.client)}</strong> — ${esc(t.task)}${tag}</td>${open}</tr>`;
 }
-function section(title, items, today, muted) {
+function section(title, items, today, muted, toolUrl) {
   if (!items.length) return '';
   const color = muted ? '#666' : '#15324a';
   return `<h3 style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:${color};margin:18px 0 6px">${title}</h3>`
-    + `<ul style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#222;margin:0;padding-left:18px">${items.map(t => taskLine(t, today)).join('')}</ul>`;
+    + `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-family:Arial,Helvetica,sans-serif">${items.map(t => taskLine(t, today, toolUrl)).join('')}</table>`;
 }
-function buildHtml(who, overdue, todayL, week, today) {
+function buildHtml(who, overdue, todayL, week, today, toolUrl) {
   const named = who && who !== 'Unassigned';
-  let h = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#222;max-width:640px">`;
+  const toolLink = toolUrl ? `<a href="${toolUrl}" style="color:#2d6670;text-decoration:underline">the tool</a>` : 'the tool';
+  let h = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#222;max-width:680px">`;
   h += `<p>Good morning${named ? ' ' + esc(who) : ' — unassigned tasks'},</p>`;
   h += `<p>Your task list for <strong>${prettyDate(today)}</strong>:</p>`;
-  h += section('Overdue', overdue, today, false);
-  h += section('Due today', todayL, today, false);
+  h += section('Overdue', overdue, today, false, toolUrl);
+  h += section('Due today', todayL, today, false, toolUrl);
   if (!overdue.length && !todayL.length) h += `<p style="color:#666">Nothing due today.</p>`;
   h += `<hr style="border:none;border-top:1px solid #ddd;margin:18px 0">`;
-  h += section('Due this week', week, today, true) || `<p style="color:#999">Nothing else due this week.</p>`;
-  h += `<p style="color:#999;font-size:11px;margin-top:22px">Automated daily from the LF Advisory Workflow Management Tool.</p></div>`;
+  h += section('Due this week', week, today, true, toolUrl) || `<p style="color:#999">Nothing else due this week.</p>`;
+  h += `<p style="color:#555;font-size:12px;margin-top:20px">If the data above is incorrect, please go to ${toolLink} and ensure it is up to date. If you require assistance with prioritising tasks, please speak to your manager.</p>`;
+  h += `<p style="color:#999;font-size:11px;margin-top:12px">Automated daily from the LF Advisory Workflow Management Tool.</p></div>`;
   return h;
 }

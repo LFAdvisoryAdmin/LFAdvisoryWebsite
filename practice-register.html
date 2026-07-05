@@ -1373,6 +1373,7 @@ function doImportAS(){
   try{leave=JSON.parse(localStorage.getItem(LS_LEAVE))||[];}catch(e){leave=[];}
   ensureClients();
   expandRecurring();
+  try{var qc=new URLSearchParams(location.search).get('client');if(qc)flt.client=qc;}catch(e){}
   render();
   window.addEventListener('load',async function(){
     var hashToken=parseTokenFromHash();
