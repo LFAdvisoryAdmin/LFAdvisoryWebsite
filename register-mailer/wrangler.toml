@@ -1,0 +1,23 @@
+name = "lf-register-mailer"
+main = "src/worker.js"
+compatibility_date = "2024-11-01"
+
+# 17:00 UTC daily = 03:00 Brisbane (AEST, UTC+10, no daylight saving)
+[triggers]
+crons = ["0 17 * * *"]
+
+[vars]
+SP_HOSTNAME = "lfadvisoryptyltd.sharepoint.com"
+FOLDER_NAME = "LF Advisory Workpapers"
+DATA_FILE = "lf-advisory-register-data.json"
+TENANT_ID = "f869ffc9-81fa-4bbf-94ec-a9bd5ca6b3a3"
+CLIENT_ID = "981d2ee1-a2a9-4787-8972-b349938ba7ab"
+SENDER_UPN = "liam@lfadvisory.com.au"
+CC_EMAIL = "liam@lfadvisory.com.au"
+FALLBACK_EMAIL = "liam@lfadvisory.com.au"
+# Map each preparer NAME (as typed in the app) to their email. VERIFY THESE.
+PEOPLE = '{"Hazel":"hazel@lfadvisory.com.au","Jennifer":"jennifer@lfadvisory.com.au","Liam":"liam@lfadvisory.com.au"}'
+
+# Secrets (do NOT put here) — set with:  wrangler secret put CLIENT_SECRET
+#   CLIENT_SECRET  = Azure app client secret
+#   TRIGGER_KEY    = any random string, used for the manual /run?key=... test
