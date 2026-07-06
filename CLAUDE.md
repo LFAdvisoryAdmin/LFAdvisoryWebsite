@@ -9,6 +9,7 @@ The LF Advisory (accounting/advisory firm, Brisbane QLD) **website + staff porta
 - `index.html`, `about.html`, `blog.html`, `case-studies.html` — public marketing site.
 - `portal.html` — **staff portal**. The **real gate**: a single-tenant **"Sign in with Microsoft"** (Entra ID) that mints a Graph token and publishes it to shared `localStorage` (see below), so every tool opens already-connected. Silent background renewal (hidden-iframe `prompt=none`) + a Sign-in button that always recovers (no dead-ends). Grid of tool cards. (The old hardcoded-password gate was removed 2026-07-06.)
 - `payroll-reconciliation.html`, `payroll-history.html`, `prepayments.html` — existing staff tools. **These established the SharePoint/Graph sync pattern** the workflow tool reuses.
+- `amortisation.html` — **Amortisation Schedule Builder** (added 2026-07-06). Self-contained, vanilla JS, cloned from `prepayments.html` conventions. Builds HP/chattel-mortgage schedules per facility — each entered EITHER from contract terms (principal/rate/term/payment/balloon; solves the missing rate or payment) OR by pasting the financier's schedule (date/payment/interest). Splits **current vs non-current** liability at a reporting month-end (current = net instalments with a month-end in the next 12 months; unexpired interest shown as a contra), builds the monthly HP journal, and exports a multi-sheet Excel workbook (Summary with live SUMIFS/EDATE off a Consolidated sheet + one sheet per facility) plus PDF. **localStorage-only** (like prepayments — no SharePoint sync yet); gates on `localStorage.lfa_ms_user`. Does **not** run its own OAuth, so **no Azure redirect URI needed**. Linked from `portal.html` (Workpaper Applications grid).
 - `practice-register.html` — **the Workflow Management Tool** (the main thing being built). Single self-contained file, vanilla JS, ~1200 lines. Linked from portal.html as "Workflow Management Tool" → opens at `/practice-register`.
 - `register-mailer/` — Cloudflare **Worker** that sends the daily task email (separate from the Pages site).
 
@@ -90,3 +91,21 @@ Cloudflare **Worker** (separate from the Pages site), **already deployed and liv
 
 ## Status & what's next
 The Workflow tool and daily email are live and in use (register had ~526 jobs). Planned build-out through this same staff area: **timesheets, reports/dashboards**, and more. Keep new tools consistent — same portal card style, same SharePoint-JSON-per-tool storage, same Azure app (add redirect URIs for new SPA pages), same deploy flow.
+
+## Backlog / future considerations (not yet built)
+Ideas Liam raised to design later — captured here so they're not lost. Not started; no decision locked in.
+
+### 1. Parent clients / group roll-up
+Want a client **hierarchy**: a parent entity (e.g. *Flux Property Group Pty Ltd*) with child clients (e.g. *Flux Keperra Pty Ltd*, *Flux Byron Bay Unit Trust*) that get **summarised/rolled up** on certain views.
+- **What already exists:** the client model has a `group` field (currently "just a label") and there's a "By group" sort tab. The bones are there.
+- **The gap:** a *parent* is a real entity, not just a text tag — it may itself be a client with its own lodgements, and children should roll up under it (summed open/overdue counts, collapsible parent header).
+- **Suggested approach:** add a `parent` field to the client model pointing at another client's `name`; make the By client / By group views collapsible with a parent header that aggregates the children. Additive + low-risk. Decide whether `group` (label) and `parent` (entity) coexist or `parent` supersedes `group`.
+
+### 2. Split large jobs into sub-jobs (multiple people, sub due dates)
+Break a big deliverable like a **month-end** into stages, each with **its own assignee and its own (earlier) due date**, feeding one final job due date. Visually **distinguish sub-jobs** (different colour / nested).
+- **Current model:** one job = preparer + reviewer (two people, one due date). This wants N people across sequential stages with internal milestone dates.
+- **Two design routes:**
+  - **Sub-jobs as first-class tasks** (`parentJobId` back-link) — reuses all existing card/filter/**mailer** machinery, so each sub-job with its own due date auto-appears in that person's daily email. Trade-off: more rows in the register.
+  - **Embedded `subtasks:[]` array** on the parent job — keeps it to one card with colour-coded rows, but sub-jobs won't flow through the mailer/filters/Excel unless separately wired.
+- **Reusable logic:** the sequential blocking (stage A must finish before stage B unlocks, e.g. bank recs → P&L review → final pack) is the same idea as `computeBlocked()` already used for series occurrences.
+- **Open question:** does the parent's `stage` derive from its sub-jobs' stages, or stay independent?

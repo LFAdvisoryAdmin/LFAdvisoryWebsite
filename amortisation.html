@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Amortisation Schedule Builder — LF Advisory</title>
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;600;700;800&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --primary:#2d6670; --primary-dark:#1e4a52; --secondary:#5a7a3a;
+  --accent:#c8a96e; --dark:#1a2332; --mid:#6b7c8d; --light:#f5f7f8;
+  --white:#fff; --danger:#c0392b; --warn:#e67e22; --ok:#27ae60;
+  --border:#dde3e8; --sans:'Lato',sans-serif; --head:'Raleway',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--light);color:var(--dark);font-size:14px}
+
+nav{background:var(--dark);padding:0 2rem;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100}
+.nav-brand{font-family:var(--head);font-weight:700;font-size:1.1rem;color:#fff;letter-spacing:.05em}
+.nav-brand span{color:var(--accent)}
+.nav-links a{color:#aab4be;text-decoration:none;font-size:.8rem;font-family:var(--head);font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-left:1.5rem;transition:color .2s}
+.nav-links a:hover{color:var(--accent)}
+
+.page-header{background:linear-gradient(135deg,var(--primary-dark) 0%,var(--primary) 60%,#3d8a96 100%);color:#fff;padding:2.5rem 2rem 2rem}
+.page-header h1{font-family:var(--head);font-weight:800;font-size:2rem;letter-spacing:-.02em;margin-bottom:.3rem}
+.page-header p{opacity:.8;font-size:.95rem}
+
+.container{max-width:1320px;margin:0 auto;padding:2rem 1.5rem}
+
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem}
+.tile{background:var(--white);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07);padding:1.2rem 1.5rem;border-left:4px solid var(--primary)}
+.tile.t2{border-left-color:var(--accent)}.tile.t3{border-left-color:var(--secondary)}.tile.t4{border-left-color:var(--warn)}
+.tile-lbl{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--mid);margin-bottom:.25rem}
+.tile-val{font-family:var(--head);font-size:1.55rem;font-weight:800;color:var(--dark)}
+.tile-sub{font-size:.72rem;color:var(--mid);margin-top:.15rem}
+
+.card{background:var(--white);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07);padding:1.5rem;margin-bottom:1.5rem}
+.card-head{font-family:var(--head);font-weight:700;font-size:.85rem;text-transform:uppercase;letter-spacing:.08em;color:var(--primary);margin-bottom:1.2rem;padding-bottom:.7rem;border-bottom:2px solid var(--light);display:flex;align-items:center;justify-content:space-between}
+
+.ctrl-bar{display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap}
+.cg{display:flex;flex-direction:column;gap:.3rem}
+.cg label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mid)}
+.cg input,.cg select{border:1.5px solid var(--border);border-radius:6px;padding:.5rem .75rem;font-family:var(--sans);font-size:.9rem;color:var(--dark);background:var(--white);transition:border-color .2s}
+.cg input:focus,.cg select:focus{outline:none;border-color:var(--primary)}
+
+.btn{display:inline-flex;align-items:center;gap:.35rem;padding:.5rem 1rem;border-radius:6px;border:none;cursor:pointer;font-family:var(--head);font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;transition:all .2s;white-space:nowrap}
+.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:var(--primary-dark)}
+.btn-secondary{background:var(--secondary);color:#fff}.btn-secondary:hover{background:#496430}
+.btn-accent{background:var(--accent);color:var(--dark)}.btn-accent:hover{background:#b8953e}
+.btn-outline{background:transparent;color:var(--primary);border:1.5px solid var(--primary)}.btn-outline:hover{background:var(--primary);color:#fff}
+.btn-danger{background:var(--danger);color:#fff}.btn-danger:hover{background:#a93226}
+.btn-sm{padding:.33rem .7rem;font-size:.7rem}
+.btn-group{display:flex;gap:.5rem;flex-wrap:wrap}
+
+.tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:1.5rem;flex-wrap:wrap}
+.tab{padding:.7rem 1.4rem;cursor:pointer;font-family:var(--head);font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mid);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab.on{color:var(--primary);border-bottom-color:var(--primary)}
+.tc{display:none}.tc.on{display:block}
+
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+thead th{background:var(--dark);color:#fff;font-family:var(--head);font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;padding:.6rem .7rem;text-align:left;white-space:nowrap}
+th.r,td.r{text-align:right}
+tbody tr{border-bottom:1px solid var(--border);transition:background .12s}
+tbody tr:hover{background:#f0f5f6}
+tbody td{padding:.5rem .7rem;vertical-align:middle;white-space:nowrap}
+tfoot td{font-weight:700;font-family:var(--head);background:var(--light);border-top:2px solid var(--border);font-size:.82rem;padding:.55rem .7rem}
+.sub-row td{background:#eef3f0;font-weight:700;color:var(--secondary);border-top:1px solid #cfe0d3;border-bottom:1px solid #cfe0d3}
+.open-row td{background:#faf6ec;font-style:italic;color:var(--mid)}
+
+.badge{display:inline-block;padding:.15rem .5rem;border-radius:20px;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.b-terms{background:#cce5ff;color:#004085}.b-sched{background:#d4edda;color:#155724}
+
+.jnl-tbl thead th{background:var(--secondary)}
+.dr-amt{color:var(--dark)}.cr-amt{color:var(--mid)}
+
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;padding:2rem 1rem;overflow-y:auto}
+.modal.on{display:flex;align-items:flex-start;justify-content:center}
+.modal-box{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:660px;position:relative;margin:auto}
+.modal-ttl{font-family:var(--head);font-weight:700;font-size:1.1rem;color:var(--primary);margin-bottom:1.3rem}
+.modal-x{position:absolute;top:1rem;right:1rem;background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--mid)}
+.modal-x:hover{color:var(--danger)}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
+.frow.f3{grid-template-columns:1fr 1fr 1fr}
+.frow.full{grid-template-columns:1fr}
+.fg{display:flex;flex-direction:column;gap:.3rem}
+.fg label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mid)}
+.fg input,.fg select,.fg textarea{border:1.5px solid var(--border);border-radius:6px;padding:.52rem .75rem;font-family:var(--sans);font-size:.9rem;color:var(--dark)}
+.fg textarea{font-family:monospace;font-size:.8rem;min-height:130px;resize:vertical}
+.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:var(--primary)}
+.fg small{color:var(--mid);font-size:.72rem}
+.modal-foot{display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border)}
+.seg{display:inline-flex;border:1.5px solid var(--primary);border-radius:6px;overflow:hidden;margin-bottom:1.2rem}
+.seg button{background:#fff;color:var(--primary);border:none;padding:.5rem 1.1rem;font-family:var(--head);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
+.seg button.on{background:var(--primary);color:#fff}
+.mode-pane{display:none}.mode-pane.on{display:block}
+.sect-lbl{font-family:var(--head);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--secondary);margin:.4rem 0 .8rem;padding-top:.6rem;border-top:1px dashed var(--border)}
+
+.alert{padding:.85rem 1.1rem;border-radius:8px;margin-bottom:1rem;font-size:.87rem}
+.a-info{background:#e8f4f8;border-left:4px solid var(--primary);color:var(--primary-dark)}
+.a-ok{background:#d4edda;border-left:4px solid var(--ok);color:#155724}
+.a-warn{background:#fff3cd;border-left:4px solid var(--warn);color:#7d5a00}
+.a-err{background:#fdecea;border-left:4px solid var(--danger);color:#922b21}
+
+code{font-family:monospace;background:var(--light);padding:.1rem .35rem;border-radius:3px;font-size:.85em}
+.empty{text-align:center;padding:2.5rem;color:var(--mid)}
+footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-top:2rem;border-top:1px solid var(--border)}
+@media(max-width:900px){.tiles{grid-template-columns:1fr 1fr}.frow,.frow.f3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">LF <span>Advisory</span></div>
+  <div class="nav-links">
+    <a href="portal.html">← Portal</a>
+    <a href="prepayments.html">Prepayments</a>
+    <a href="payroll-reconciliation.html">Payroll Rec</a>
+  </div>
+</nav>
+
+<div class="page-header">
+  <div class="container" style="padding:0">
+    <h1>🚗 Amortisation Schedule Builder</h1>
+    <p>Hire-purchase &amp; chattel-mortgage schedules · current vs non-current liability split · monthly journals</p>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- TILES -->
+  <div class="tiles">
+    <div class="tile"><div class="tile-lbl">Total Liability</div><div class="tile-val" id="tTotal">$0.00</div><div class="tile-sub" id="tPeriodLbl">at reporting date</div></div>
+    <div class="tile t2"><div class="tile-lbl">Current Liability</div><div class="tile-val" id="tCurrent">$0.00</div><div class="tile-sub">due &lt; 12 months</div></div>
+    <div class="tile t3"><div class="tile-lbl">Non-current Liability</div><div class="tile-val" id="tNonCurrent">$0.00</div><div class="tile-sub">due &gt; 12 months</div></div>
+    <div class="tile t4"><div class="tile-lbl">Active Facilities</div><div class="tile-val" id="tCount">0</div><div class="tile-sub">loans / leases</div></div>
+  </div>
+
+  <!-- SETTINGS BAR -->
+  <div class="card">
+    <div class="card-head">
+      <span>Reporting Date &amp; Settings</span>
+      <div class="btn-group">
+        <button class="btn btn-primary btn-sm" onclick="openAdd()">+ Add Facility</button>
+        <button class="btn btn-secondary btn-sm" onclick="persist(true)">💾 Save</button>
+      </div>
+    </div>
+    <div class="ctrl-bar">
+      <div class="cg">
+        <label>Reporting Month-end</label>
+        <input type="month" id="period" onchange="recalcAll()">
+      </div>
+      <div class="cg">
+        <label>Interest Expense Acct</label>
+        <input type="text" id="interestAcct" value="" placeholder="e.g. 91000" style="width:120px" onchange="recalcAll()">
+      </div>
+      <div class="cg">
+        <label>Bank / Repayment Acct</label>
+        <input type="text" id="bankAcct" value="" placeholder="e.g. Bank clearing" style="width:150px" onchange="recalcAll()">
+      </div>
+      <div class="cg" style="margin-left:auto">
+        <label>Schedule shows</label>
+        <select id="schedLoan" onchange="renderSchedule()"></select>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab on" data-tab="loans" onclick="switchTab(this)">Facilities</div>
+    <div class="tab" data-tab="schedule" onclick="switchTab(this)">Amortisation Schedule</div>
+    <div class="tab" data-tab="consol" onclick="switchTab(this)">Consolidated</div>
+    <div class="tab" data-tab="summary" onclick="switchTab(this)">Liability Summary</div>
+    <div class="tab" data-tab="journal" onclick="switchTab(this)">Journal</div>
+  </div>
+
+  <!-- TAB: FACILITIES -->
+  <div class="tc on" id="tc-loans">
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Facility</th><th>Financier</th><th>Input</th>
+            <th class="r">Financed</th><th class="r">Rate</th>
+            <th>Start</th><th class="r">Term</th>
+            <th class="r">Closing Balance</th><th class="r">Current</th><th class="r">Non-current</th><th></th>
+          </tr></thead>
+          <tbody id="loansBody"><tr><td colspan="11" class="empty">No facilities yet — click <strong>+ Add Facility</strong> to enter a loan from its contract or paste an amortisation schedule.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: SCHEDULE -->
+  <div class="tc" id="tc-schedule">
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table id="schedTbl">
+          <thead><tr>
+            <th>Payment Date</th><th>Month End</th>
+            <th class="r">Payment</th><th class="r">Exec Costs</th><th class="r">GST Credits</th>
+            <th class="r">Net Payment</th><th class="r">Interest</th>
+            <th class="r">Principal</th><th class="r">Closing Balance</th><th class="r">Remaining</th>
+          </tr></thead>
+          <tbody id="schedBody"><tr><td colspan="10" class="empty">No facility selected.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-accent" onclick="exportXLSX()">📊 Export Full Workbook</button>
+    </div>
+  </div>
+
+  <!-- TAB: CONSOLIDATED -->
+  <div class="tc" id="tc-consol">
+    <div class="alert a-info">Every facility's <strong>net payment</strong> and <strong>interest</strong> by month-end. This grid drives the current / non-current split on the Liability Summary.</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap"><table id="consolTbl"><thead id="consolHead"></thead><tbody id="consolBody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- TAB: SUMMARY -->
+  <div class="tc" id="tc-summary">
+    <div class="alert a-info" id="sumNote">–</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap"><table id="sumTbl"><thead id="sumHead"></thead><tbody id="sumBody"></tbody></table></div>
+    </div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-outline" onclick="exportSummaryPDF()">📄 Export PDF</button>
+      <button class="btn btn-accent" onclick="exportXLSX()">📊 Export Full Workbook</button>
+    </div>
+  </div>
+
+  <!-- TAB: JOURNAL -->
+  <div class="tc" id="tc-journal">
+    <div class="alert a-info" id="jnlNote">–</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table class="jnl-tbl">
+          <thead><tr><th>Account</th><th>Code</th><th>Description</th><th class="r">Debit</th><th class="r">Credit</th></tr></thead>
+          <tbody id="jnlBody"></tbody>
+          <tfoot id="jnlFoot"></tfoot>
+        </table>
+      </div>
+    </div>
+    <div class="alert a-warn" id="jnlCheck" style="margin-top:1rem"></div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:.5rem">
+      <button class="btn btn-outline" onclick="exportJournalPDF()">📄 Export PDF</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ADD/EDIT MODAL -->
+<div class="modal" id="addModal">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeAdd()">✕</button>
+    <div class="modal-ttl" id="addTitle">Add Facility</div>
+    <input type="hidden" id="editId" value="">
+
+    <div class="frow">
+      <div class="fg"><label>Facility name *</label><input id="fName" placeholder="e.g. Landcruiser LC200 Sahara"></div>
+      <div class="fg"><label>Financier</label><input id="fFin" placeholder="e.g. Macquarie"></div>
+    </div>
+
+    <div class="seg">
+      <button type="button" id="segTerms" class="on" onclick="setMode('terms')">From Contract Terms</button>
+      <button type="button" id="segSched" onclick="setMode('schedule')">Paste Amortisation Schedule</button>
+    </div>
+
+    <!-- MODE: TERMS -->
+    <div class="mode-pane on" id="pane-terms">
+      <div class="frow f3">
+        <div class="fg"><label>Amount financed ($) *</label><input type="number" id="tPrincipal" step="0.01" placeholder="0.00"></div>
+        <div class="fg"><label>Interest rate (% p.a.)</label><input type="number" id="tRate" step="0.01" placeholder="e.g. 6.95"><small>Leave blank to solve from payment</small></div>
+        <div class="fg"><label>Term (months) *</label><input type="number" id="tTerm" step="1" placeholder="e.g. 60"></div>
+      </div>
+      <div class="frow f3">
+        <div class="fg"><label>Monthly payment ($)</label><input type="number" id="tPayment" step="0.01" placeholder="0.00"><small>Leave blank to solve from rate</small></div>
+        <div class="fg"><label>Balloon / residual ($)</label><input type="number" id="tBalloon" step="0.01" placeholder="0.00"></div>
+        <div class="fg"><label>First payment date *</label><input type="date" id="tStart"></div>
+      </div>
+      <div class="frow">
+        <div class="fg"><label>Exec costs / mth ($)</label><input type="number" id="tExec" step="0.01" placeholder="0.00"><small>Charges that don't reduce liability</small></div>
+        <div class="fg"><label>GST credits / mth ($)</label><input type="number" id="tGst" step="0.01" placeholder="0.00"></div>
+      </div>
+    </div>
+
+    <!-- MODE: SCHEDULE -->
+    <div class="mode-pane" id="pane-schedule">
+      <div class="frow">
+        <div class="fg"><label>Opening principal financed ($) *</label><input type="number" id="sPrincipal" step="0.01" placeholder="0.00"><small>Amount financed at day one</small></div>
+        <div class="fg"><label>Opening total repayments ($)</label><input type="number" id="sRemaining" step="0.01" placeholder="auto = Σ payments"><small>Leave blank to total the pasted payments</small></div>
+      </div>
+      <div class="frow full">
+        <div class="fg"><label>Paste schedule — one row per month *</label>
+          <textarea id="sPaste" placeholder="Date, Payment, Interest[, Exec, GST]&#10;15/10/2021, 1816.51, 495.16&#10;15/11/2021, 1816.51, 490.34&#10;..."></textarea>
+          <small>Columns: <strong>Date · Payment · Interest</strong> (optional Exec &amp; GST). Tab, comma or space separated. Copy straight from the financier schedule.</small>
+        </div>
+      </div>
+      <div class="alert a-warn" id="pasteErr" style="display:none"></div>
+      <div class="alert a-ok" id="pasteOk" style="display:none"></div>
+    </div>
+
+    <div class="sect-lbl">GL account codes (for the Xero journal)</div>
+    <div class="frow">
+      <div class="fg"><label>Current HP liability</label><input id="aChp" placeholder="code — e.g. 21221"></div>
+      <div class="fg"><label>Current unexpired interest</label><input id="aCui" placeholder="code — e.g. 21721"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Non-current HP liability</label><input id="aNhp" placeholder="code — e.g. 23221"></div>
+      <div class="fg"><label>Non-current unexpired interest</label><input id="aNui" placeholder="code — e.g. 23721"></div>
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeAdd()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveLoan()">Save Facility</button>
+    </div>
+  </div>
+</div>
+
+<footer>LF Advisory Amortisation Schedule Builder &nbsp;·&nbsp; <a href="portal.html" style="color:var(--mid)">Back to Portal</a></footer>
+
+<script>
+// ─── Auth ────────────────────────────────────────────────────────────────────
+if (!localStorage.getItem('lfa_ms_user') && sessionStorage.getItem('portalAuth') !== 'true') location.href = 'portal.html';
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let loans = [];
+let settings = { interestAcct:'', bankAcct:'' };
+let modalMode = 'terms';
+let seq = 1;
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const r2 = v => Math.round(((+v||0) + Number.EPSILON) * 100) / 100;
+const fmt$ = v => (v==null||isNaN(v)) ? '—' : (v<0?'-':'') + '$' + Math.abs(+v).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtN = v => (v==null||isNaN(v)) ? '' : (+v).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
+const eomOf   = d => new Date(d.getFullYear(), d.getMonth()+1, 0);
+const addMon  = (d,n) => new Date(d.getFullYear(), d.getMonth()+n, d.getDate());
+const eomAdd  = (d,n) => new Date(d.getFullYear(), d.getMonth()+1+n, 0);
+const fmtDate = d => { if(!d) return '—'; const x=(d instanceof Date)?d:new Date(d); if(isNaN(x)) return '—'; return `${String(x.getDate()).padStart(2,'0')}/${String(x.getMonth()+1).padStart(2,'0')}/${x.getFullYear()}`; };
+const fmtISO  = d => { const x=(d instanceof Date)?d:new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; };
+
+function parseDate(s){
+  if(s instanceof Date) return isNaN(s)?null:s;
+  if(s==null) return null;
+  s = String(s).trim();
+  if(!s) return null;
+  let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/);        // yyyy-mm-dd
+  if(m) return new Date(+m[1], +m[2]-1, +m[3]);
+  m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/);          // dd/mm/yyyy
+  if(m){ let y=+m[3]; if(y<100) y+=2000; return new Date(y, +m[2]-1, +m[1]); }
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+
+// Reporting period as month-end Date
+function periodDate(){
+  const v = $('period').value;
+  if(!v){ const t=new Date(); return eomOf(t); }
+  const [y,m] = v.split('-').map(Number);
+  return new Date(y, m, 0);
+}
+function periodLabel(){ const p=periodDate(); return p.toLocaleString('en-AU',{month:'long',year:'numeric'}); }
+
+// ─── Amortisation maths ──────────────────────────────────────────────────────
+function annuityNet(P, r, n, balloon){
+  if(!n) return 0;
+  if(r <= 0) return (P - balloon) / n;
+  return (P - balloon/Math.pow(1+r,n)) * r / (1 - Math.pow(1+r,-n));
+}
+// bisection: find monthly rate so closing balance after n net payments == balloon.
+// closing(r) is monotonically increasing in r (higher rate → less principal repaid).
+function solveRate(P, net, n, balloon){
+  const closing = r => { let b=P; for(let k=0;k<n;k++) b = b*(1+r) - net; return b - balloon; };
+  let lo=0, hi=1;                       // 0% .. 1200% p.a.
+  if(closing(lo) >= 0) return 0;        // payment too small to amortise even at 0%
+  if(closing(hi) <= 0) return hi;       // implausibly high rate; clamp
+  for(let i=0;i<200;i++){ const mid=(lo+hi)/2; if(closing(mid) < 0) lo=mid; else hi=mid; }
+  return (lo+hi)/2;
+}
+
+// Build the monthly rows for a facility → [{date,monthEnd,payment,exec,gst,net,interest,principal,clos,remaining}]
+function buildSchedule(L){
+  if(L.mode === 'schedule') return buildFromPaste(L);
+  return buildFromTerms(L);
+}
+
+function buildFromTerms(L){
+  const P = +L.principal||0, n = parseInt(L.termMonths)||0, balloon = +L.balloon||0;
+  const exec = +L.execCosts||0, gst = +L.gstCredits||0;
+  const start = parseDate(L.startDate);
+  if(!P || !n || !start) return { rows:[], err:'Need amount financed, term and first payment date.' };
+
+  let rate = (L.annualRate!=null && L.annualRate!=='') ? (+L.annualRate/1200) : null;
+  let gross = (L.payment!=null && L.payment!=='') ? (+L.payment) : null;
+  let net   = gross!=null ? r2(gross - exec - gst) : null;
+
+  if(rate==null && net!=null)  rate = solveRate(P, net, n, balloon);
+  if(net==null  && rate!=null){ net = r2(annuityNet(P, rate, n, balloon)); gross = r2(net + exec + gst); }
+  if(rate==null || net==null)  return { rows:[], err:'Enter either the interest rate or the monthly payment.' };
+  // Sanity: with any interest, total instalments + balloon must exceed the amount financed.
+  if(r2(net*n + balloon) < P - 0.01)
+    return { rows:[], err:'The monthly payment and balloon don’t repay the amount financed — check for a missing residual/balloon, or enter the interest rate.' };
+
+  const rows = [];
+  let bal = P;
+  let remaining = r2(net*n + balloon);
+  for(let k=1;k<=n;k++){
+    const date = addMon(start, k-1), me = eomOf(date);
+    let interest = r2(bal*rate);
+    let principal = r2(net - interest);
+    let netPay = net;
+    if(k === n){                                   // final row: clear residual + rounding
+      principal = r2(bal + balloon);
+      netPay    = r2(principal + interest);
+      interest  = r2(netPay - principal);
+    }
+    bal = r2(bal - principal + (k===n ? balloon : 0)); // principal on final already includes balloon
+    if(k===n) bal = 0;
+    remaining = r2(remaining - netPay);
+    rows.push({ date, monthEnd:me, payment:r2(netPay + exec + gst), exec, gst, net:netPay,
+                interest, principal, clos:Math.max(0,bal), remaining:Math.max(0,remaining) });
+  }
+  return { rows, rate:rate*1200, payment:gross };
+}
+
+function buildFromPaste(L){
+  const rows = [];
+  const openP = +L.principal||0;
+  let bal = openP;
+  const parsed = (L.pasted||[]).map(p => ({ date:parseDate(p.date), payment:+p.payment||0, interest:+p.interest||0, exec:+p.exec||0, gst:+p.gst||0 }))
+                               .filter(p => p.date);
+  const sumNet = parsed.reduce((a,p)=> a + r2(p.payment - p.exec - p.gst), 0);
+  let remaining = (L.openRemaining!=null && L.openRemaining!=='') ? +L.openRemaining : r2(sumNet);
+  parsed.forEach(p => {
+    const net = r2(p.payment - p.exec - p.gst);
+    const principal = r2(net - p.interest);
+    bal = r2(bal - principal);
+    remaining = r2(remaining - net);
+    rows.push({ date:p.date, monthEnd:eomOf(p.date), payment:p.payment, exec:p.exec, gst:p.gst,
+                net, interest:p.interest, principal, clos:bal, remaining });
+  });
+  return { rows, payment:parsed.length?parsed[0].payment:null };
+}
+
+// Position at a reporting month-end
+function positionAt(rows, p){
+  const p12 = eomAdd(p, 12);
+  let curHP=0,curUI=0,ncHP=0,ncUI=0, clos=null;
+  rows.forEach(r => {
+    const t = r.monthEnd.getTime();
+    if(t > p.getTime() && t <= p12.getTime()){ curHP+=r.net; curUI+=r.interest; }
+    else if(t > p12.getTime()){ ncHP+=r.net; ncUI+=r.interest; }
+    if(t === p.getTime()) clos = r.clos;
+  });
+  curHP=r2(curHP);curUI=r2(curUI);ncHP=r2(ncHP);ncUI=r2(ncUI);
+  const curNet=r2(curHP-curUI), ncNet=r2(ncHP-ncUI);
+  return { curHP,curUI,curNet, ncHP,ncUI,ncNet, total:r2(curNet+ncNet), clos };
+}
+// interest & net cash falling in the reporting month itself
+function monthActivity(rows, p){
+  let interest=0, net=0;
+  rows.forEach(r => { if(r.monthEnd.getTime()===p.getTime()){ interest+=r.interest; net+=r.net; } });
+  return { interest:r2(interest), net:r2(net) };
+}
+
+// ─── Recalc ──────────────────────────────────────────────────────────────────
+function recalcAll(){
+  settings.interestAcct = $('interestAcct').value.trim();
+  settings.bankAcct = $('bankAcct').value.trim();
+  loans.forEach(L => {
+    const b = buildSchedule(L);
+    L._rows = b.rows; L._err = b.err || null;
+    if(b.rate && (L.annualRate==null||L.annualRate==='')) L._solvedRate = b.rate;
+    else L._solvedRate = (L.annualRate!==''&&L.annualRate!=null)?+L.annualRate:null;
+  });
+  renderAll();
+  persist(false);
+}
+function renderAll(){ renderTiles(); renderLoans(); syncSchedLoanSelect(); renderSchedule(); renderConsol(); renderSummary(); renderJournal(); }
+
+// ─── Tiles ───────────────────────────────────────────────────────────────────
+function renderTiles(){
+  const p = periodDate();
+  let cur=0,nc=0,tot=0,active=0;
+  loans.forEach(L => {
+    const pos = positionAt(L._rows||[], p);
+    cur+=pos.curNet; nc+=pos.ncNet; tot+=pos.total;
+    if(pos.total > 0.005) active++;
+  });
+  $('tTotal').textContent = fmt$(r2(tot));
+  $('tCurrent').textContent = fmt$(r2(cur));
+  $('tNonCurrent').textContent = fmt$(r2(nc));
+  $('tCount').textContent = active;
+  $('tPeriodLbl').textContent = 'at ' + fmtDate(p);
+}
+
+// ─── Facilities table ────────────────────────────────────────────────────────
+function renderLoans(){
+  const p = periodDate();
+  const body = $('loansBody');
+  if(!loans.length){ body.innerHTML = '<tr><td colspan="11" class="empty">No facilities yet — click <strong>+ Add Facility</strong> to enter a loan from its contract or paste an amortisation schedule.</td></tr>'; return; }
+  body.innerHTML = loans.map(L => {
+    const pos = positionAt(L._rows||[], p);
+    const rows = L._rows||[];
+    const financed = L.mode==='schedule' ? (+L.principal||0) : (+L.principal||0);
+    const rate = L._solvedRate!=null ? L._solvedRate.toFixed(2)+'%' : '—';
+    const term = L.mode==='schedule' ? rows.length+' mths' : ((L.termMonths||'—')+' mths');
+    const start = rows.length ? fmtDate(rows[0].date) : '—';
+    const badge = L.mode==='schedule' ? '<span class="badge b-sched">Pasted</span>' : '<span class="badge b-terms">Terms</span>';
+    const errFlag = L._err ? ` <span title="${L._err}" style="color:var(--danger)">⚠</span>` : '';
+    return `<tr>
+      <td><strong>${esc(L.name)}</strong>${errFlag}</td>
+      <td>${esc(L.financier||'')||'—'}</td>
+      <td>${badge}</td>
+      <td class="r">${financed?fmt$(financed):'—'}</td>
+      <td class="r">${rate}</td>
+      <td>${start}</td>
+      <td class="r">${term}</td>
+      <td class="r">${fmt$(pos.total)}</td>
+      <td class="r">${fmt$(pos.curNet)}</td>
+      <td class="r">${fmt$(pos.ncNet)}</td>
+      <td class="r"><div style="display:flex;gap:.3rem;justify-content:flex-end">
+        <button class="btn btn-outline btn-sm" onclick="openEdit('${L.id}')">✏</button>
+        <button class="btn btn-danger btn-sm" onclick="delLoan('${L.id}')">✕</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ─── Schedule tab ────────────────────────────────────────────────────────────
+function syncSchedLoanSelect(){
+  const sel = $('schedLoan'); const prev = sel.value;
+  sel.innerHTML = loans.map(L => `<option value="${L.id}">${esc(L.name)}</option>`).join('') || '<option value="">— no facilities —</option>';
+  if(loans.some(L=>L.id===prev)) sel.value = prev;
+}
+function renderSchedule(){
+  const id = $('schedLoan').value;
+  const L = loans.find(x=>x.id===id);
+  const body = $('schedBody');
+  if(!L || !(L._rows||[]).length){ body.innerHTML = '<tr><td colspan="10" class="empty">No schedule to show — add a facility.</td></tr>'; return; }
+  const p = periodDate();
+  let html = `<tr class="open-row"><td>Opening</td><td>—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">${fmt$(+L.principal||0)}</td><td class="r">${fmt$(L._rows[0]?r2((L._rows[0].remaining)+(L._rows[0].net)):'')}</td></tr>`;
+  let fy=null, fySum=null;
+  const flush = () => { if(fySum){ html += fyRow(fy, fySum); } };
+  L._rows.forEach(r => {
+    const rowFy = r.monthEnd.getMonth()>=6 ? r.monthEnd.getFullYear()+1 : r.monthEnd.getFullYear();
+    if(fy===null) fy=rowFy;
+    if(rowFy!==fy){ flush(); fy=rowFy; fySum=null; }
+    if(!fySum) fySum={net:0,interest:0,principal:0};
+    fySum.net+=r.net; fySum.interest+=r.interest; fySum.principal+=r.principal;
+    const hi = r.monthEnd.getTime()===p.getTime() ? ' style="background:#e8f4f8;font-weight:700"' : '';
+    html += `<tr${hi}>
+      <td>${fmtDate(r.date)}</td><td>${fmtDate(r.monthEnd)}</td>
+      <td class="r">${fmtN(r.payment)}</td><td class="r">${r.exec?fmtN(r.exec):'—'}</td><td class="r">${r.gst?fmtN(r.gst):'—'}</td>
+      <td class="r">${fmtN(r.net)}</td><td class="r">${fmtN(r.interest)}</td>
+      <td class="r">${fmtN(r.principal)}</td><td class="r">${fmtN(r.clos)}</td><td class="r">${fmtN(r.remaining)}</td>
+    </tr>`;
+  });
+  flush();
+  body.innerHTML = html;
+}
+function fyRow(fy, s){
+  return `<tr class="sub-row"><td colspan="5">FY ${fy-1}–${String(fy).slice(2)} totals</td>
+    <td class="r">${fmtN(r2(s.net))}</td><td class="r">${fmtN(r2(s.interest))}</td><td class="r">${fmtN(r2(s.principal))}</td><td class="r"></td><td class="r"></td></tr>`;
+}
+
+// ─── Consolidated tab ────────────────────────────────────────────────────────
+function allMonthEnds(){
+  const set = new Map();
+  loans.forEach(L => (L._rows||[]).forEach(r => set.set(r.monthEnd.getTime(), r.monthEnd)));
+  return [...set.values()].sort((a,b)=>a-b);
+}
+function loanAtMonth(L, t){ return (L._rows||[]).find(r => r.monthEnd.getTime()===t); }
+function renderConsol(){
+  const head=$('consolHead'), body=$('consolBody');
+  if(!loans.length){ head.innerHTML=''; body.innerHTML='<tr><td class="empty">No data.</td></tr>'; return; }
+  const mes = allMonthEnds();
+  head.innerHTML = `<tr><th>Month End</th>${loans.map(L=>`<th class="r">${esc(L.name)}</th>`).join('')}<th class="r">Total Pmt</th>${loans.map(L=>`<th class="r">${esc(L.name)} int</th>`).join('')}<th class="r">Total Int</th></tr>`;
+  const p = periodDate().getTime();
+  body.innerHTML = mes.map(me => {
+    const hi = me.getTime()===p ? ' style="background:#e8f4f8;font-weight:700"' : '';
+    let pays=[], ints=[], tp=0, ti=0;
+    loans.forEach(L => { const r=loanAtMonth(L,me.getTime()); const pv=r?r.net:0, iv=r?r.interest:0; tp+=pv; ti+=iv; pays.push(pv?fmtN(pv):'—'); ints.push(iv?fmtN(iv):'—'); });
+    return `<tr${hi}><td>${fmtDate(me)}</td>${pays.map(v=>`<td class="r">${v}</td>`).join('')}<td class="r">${fmtN(r2(tp))}</td>${ints.map(v=>`<td class="r">${v}</td>`).join('')}<td class="r">${fmtN(r2(ti))}</td></tr>`;
+  }).join('');
+}
+
+// ─── Liability Summary tab ───────────────────────────────────────────────────
+function renderSummary(){
+  const p = periodDate();
+  $('sumNote').innerHTML = `<strong>Liability position at ${fmtDate(p)}.</strong> Current = instalments with a month-end in the 12 months after the reporting date; the balance is non-current. Unexpired interest is shown as a contra to reach the net principal.`;
+  const head=$('sumHead'), body=$('sumBody');
+  if(!loans.length){ head.innerHTML=''; body.innerHTML='<tr><td class="empty">No facilities.</td></tr>'; return; }
+  head.innerHTML = `<tr><th>Component</th>${loans.map(L=>`<th class="r">${esc(L.name)}</th>`).join('')}<th class="r">Total</th></tr>`;
+  const pos = loans.map(L => positionAt(L._rows||[], p));
+  const T = k => r2(pos.reduce((a,x)=>a+x[k],0));
+  const line = (lbl,k,opt={}) => `<tr${opt.cls?` class="${opt.cls}"`:''}><td>${opt.strong?`<strong>${lbl}</strong>`:lbl}</td>${pos.map(x=>`<td class="r">${opt.strong?`<strong>${fmt$(x[k])}</strong>`:fmt$(x[k])}</td>`).join('')}<td class="r"><strong>${fmt$(T(k))}</strong></td></tr>`;
+  body.innerHTML =
+    line('Current HP liability','curHP') +
+    line('Less: current unexpired interest','curUI') +
+    line('Current liability','curNet',{strong:true,cls:'sub-row'}) +
+    `<tr><td colspan="${loans.length+2}" style="height:.4rem;background:#fff"></td></tr>` +
+    line('Non-current HP liability','ncHP') +
+    line('Less: non-current unexpired interest','ncUI') +
+    line('Non-current liability','ncNet',{strong:true,cls:'sub-row'}) +
+    `<tr><td colspan="${loans.length+2}" style="height:.4rem;background:#fff"></td></tr>` +
+    line('Total liability','total',{strong:true,cls:'sub-row'});
+}
+
+// ─── Journal tab ─────────────────────────────────────────────────────────────
+function buildJournal(){
+  const p = periodDate(), prev = eomAdd(p,-1);
+  const lines = [];
+  let totInt=0, totNet=0;
+  loans.forEach(L => {
+    const now = positionAt(L._rows||[], p), was = positionAt(L._rows||[], prev);
+    const act = monthActivity(L._rows||[], p);
+    totInt += act.interest; totNet += act.net;
+    // debit-side movement per account (see derivation): HP liab Cr-normal, UI Dr-normal
+    const items = [
+      { name:`${L.name} — Current HP liability`,        code:L.aChp, dm: r2(was.curHP - now.curHP) },
+      { name:`${L.name} — Current unexpired interest`,  code:L.aCui, dm: r2(now.curUI - was.curUI) },
+      { name:`${L.name} — Non-current HP liability`,    code:L.aNhp, dm: r2(was.ncHP - now.ncHP) },
+      { name:`${L.name} — Non-current unexpired int.`,  code:L.aNui, dm: r2(now.ncUI - was.ncUI) },
+    ];
+    items.forEach(it => { if(Math.abs(it.dm) > 0.005) lines.push(it); });
+  });
+  if(Math.abs(totInt) > 0.005) lines.push({ name:'Interest expense', code:settings.interestAcct, dm: r2(totInt) });
+  if(Math.abs(totNet) > 0.005) lines.push({ name:'Finance repayments — bank / clearing', code:settings.bankAcct, dm: r2(-totNet) });
+  return lines;
+}
+function renderJournal(){
+  const p = periodDate();
+  $('jnlNote').innerHTML = `<strong>Monthly journal for ${periodLabel()}.</strong> Movement in each liability account plus interest expense, computed as this month-end's position less last month-end's. Review the bank / clearing line against how the repayment is coded before posting.`;
+  const lines = buildJournal();
+  const body=$('jnlBody'), foot=$('jnlFoot');
+  if(!lines.length){ body.innerHTML='<tr><td colspan="5" class="empty">No movement for this period.</td></tr>'; foot.innerHTML=''; $('jnlCheck').textContent=''; return; }
+  let dr=0, cr=0;
+  body.innerHTML = lines.map(l => {
+    const d = l.dm>0?l.dm:0, c = l.dm<0?-l.dm:0; dr+=d; cr+=c;
+    return `<tr><td>${esc(l.name)}</td><td>${l.code?`<code>${esc(l.code)}</code>`:'—'}</td><td>${p.toLocaleString('en-AU',{month:'short',year:'numeric'})} movement</td>
+      <td class="r dr-amt">${d?fmt$(d):'—'}</td><td class="r cr-amt">${c?fmt$(c):'—'}</td></tr>`;
+  }).join('');
+  dr=r2(dr); cr=r2(cr);
+  foot.innerHTML = `<tr><td colspan="3" style="text-transform:uppercase;letter-spacing:.06em">Totals</td><td class="r">${fmt$(dr)}</td><td class="r">${fmt$(cr)}</td></tr>`;
+  const diff = r2(dr-cr);
+  const ck = $('jnlCheck');
+  if(Math.abs(diff) < 0.02){ ck.className='alert a-ok'; ck.textContent = `✅ Journal balances — debits ${fmt$(dr)} = credits ${fmt$(cr)}.`; }
+  else { ck.className='alert a-err'; ck.textContent = `⚠ Out of balance by ${fmt$(diff)} — check account codes and pasted figures.`; }
+}
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+function switchTab(el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('.tc').forEach(t=>t.classList.remove('on'));
+  el.classList.add('on'); $('tc-'+el.dataset.tab).classList.add('on');
+}
+
+// ─── Add / Edit ──────────────────────────────────────────────────────────────
+function setMode(m){
+  modalMode = m;
+  $('segTerms').classList.toggle('on', m==='terms');
+  $('segSched').classList.toggle('on', m==='schedule');
+  $('pane-terms').classList.toggle('on', m==='terms');
+  $('pane-schedule').classList.toggle('on', m==='schedule');
+}
+function openAdd(){
+  $('editId').value=''; $('addTitle').textContent='Add Facility';
+  ['fName','fFin','tPrincipal','tRate','tTerm','tPayment','tBalloon','tStart','tExec','tGst','sPrincipal','sRemaining','sPaste','aChp','aCui','aNhp','aNui'].forEach(id=>$(id).value='');
+  $('pasteErr').style.display='none'; $('pasteOk').style.display='none';
+  setMode('terms');
+  $('addModal').classList.add('on');
+}
+function openEdit(id){
+  const L = loans.find(x=>x.id===id); if(!L) return;
+  $('editId').value=id; $('addTitle').textContent='Edit Facility';
+  $('fName').value=L.name||''; $('fFin').value=L.financier||'';
+  $('tPrincipal').value = L.mode==='terms'?(L.principal||''):''; $('tRate').value=L.annualRate||'';
+  $('tTerm').value=L.termMonths||''; $('tPayment').value=L.payment||''; $('tBalloon').value=L.balloon||'';
+  $('tStart').value = L.startDate?fmtISO(parseDate(L.startDate)):''; $('tExec').value=L.execCosts||''; $('tGst').value=L.gstCredits||'';
+  $('sPrincipal').value = L.mode==='schedule'?(L.principal||''):''; $('sRemaining').value=L.openRemaining||'';
+  $('sPaste').value = (L.pasted||[]).map(p=>[p.rawdate||fmtDate(parseDate(p.date)), p.payment, p.interest].concat(p.exec?[p.exec]:[]).concat(p.gst?[p.gst]:[]).join(', ')).join('\n');
+  $('aChp').value=L.aChp||''; $('aCui').value=L.aCui||''; $('aNhp').value=L.aNhp||''; $('aNui').value=L.aNui||'';
+  $('pasteErr').style.display='none'; $('pasteOk').style.display='none';
+  setMode(L.mode||'terms');
+  $('addModal').classList.add('on');
+}
+function closeAdd(){ $('addModal').classList.remove('on'); }
+
+function parsePaste(txt){
+  const out=[]; const lines = txt.split(/\r?\n/);
+  for(const ln of lines){
+    const t = ln.trim(); if(!t) continue;
+    if(/date/i.test(t) && /pay/i.test(t)) continue;          // header row
+    const parts = t.split(/\t|,|\s{2,}|\s(?=\d)/).map(s=>s.trim()).filter(x=>x!=='');
+    // fallback simple split
+    let cells = parts.length>=3 ? parts : t.split(/[\t,]+/).map(s=>s.trim()).filter(Boolean);
+    if(cells.length < 3){ cells = t.split(/\s+/); }
+    const d = parseDate(cells[0]);
+    if(!d) continue;
+    const num = i => cells[i]!=null ? +String(cells[i]).replace(/[$,]/g,'') : 0;
+    out.push({ rawdate:cells[0], date:fmtISO(d), payment:num(1)||0, interest:num(2)||0, exec:cells[3]?num(3):0, gst:cells[4]?num(4):0 });
+  }
+  return out;
+}
+
+function saveLoan(){
+  const name = $('fName').value.trim();
+  if(!name){ alert('Facility name is required.'); return; }
+  const base = {
+    name, financier:$('fFin').value.trim(),
+    aChp:$('aChp').value.trim(), aCui:$('aCui').value.trim(), aNhp:$('aNhp').value.trim(), aNui:$('aNui').value.trim(),
+  };
+  let L;
+  if(modalMode==='terms'){
+    if(!$('tPrincipal').value || !$('tTerm').value || !$('tStart').value){ alert('Amount financed, term and first payment date are required.'); return; }
+    L = { ...base, mode:'terms',
+      principal:$('tPrincipal').value, annualRate:$('tRate').value, termMonths:$('tTerm').value,
+      payment:$('tPayment').value, balloon:$('tBalloon').value, startDate:$('tStart').value,
+      execCosts:$('tExec').value, gstCredits:$('tGst').value };
+    if(!$('tRate').value && !$('tPayment').value){ alert('Enter either an interest rate or a monthly payment.'); return; }
+  } else {
+    const pasted = parsePaste($('sPaste').value);
+    if(!pasted.length){ $('pasteErr').style.display='block'; $('pasteErr').textContent='Could not read any rows. Expected: Date, Payment, Interest per line.'; return; }
+    if(!$('sPrincipal').value){ alert('Opening principal financed is required for a pasted schedule.'); return; }
+    L = { ...base, mode:'schedule', principal:$('sPrincipal').value, openRemaining:$('sRemaining').value, pasted };
+  }
+  const id = $('editId').value;
+  if(id){ L.id=id; const i=loans.findIndex(x=>x.id===id); loans[i]=L; }
+  else  { L.id='L'+(seq++); loans.push(L); }
+  closeAdd();
+  const sel=$('schedLoan'); recalcAll(); sel.value=L.id; renderSchedule();
+}
+function delLoan(id){
+  const L=loans.find(x=>x.id===id); if(!L) return;
+  if(!confirm(`Delete facility "${L.name}"?`)) return;
+  loans = loans.filter(x=>x.id!==id);
+  recalcAll();
+}
+
+// ─── Persist ─────────────────────────────────────────────────────────────────
+function persist(announce){
+  const clean = loans.map(({_rows,_err,_solvedRate,...keep})=>keep);
+  localStorage.setItem('lfa_amortisation_v1', JSON.stringify({ loans:clean, settings, period:$('period').value, seq }));
+  if(announce){ const b=event&&event.target; if(b){ const t=b.textContent; b.textContent='✓ Saved'; setTimeout(()=>b.textContent=t,1200);} }
+}
+
+// ═══ EXCEL EXPORT ════════════════════════════════════════════════════════════
+function colL(n){ let s=''; while(n>0){ let m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=(n-m-1)/26; } return s; }
+function exportXLSX(){
+  if(!loans.length){ alert('Add a facility first.'); return; }
+  const ACC='_(* #,##0.00_);_(* (#,##0.00);_(* "-"??_);_(@_)';
+  const NUM='#,##0.00', DATEF='dd/mm/yyyy';
+  const s=v=>({v:v==null?'':v,t:'s'});
+  const n=(v,z)=>({v:r2(v),t:'n',z:z||NUM});
+  const dt=v=>({v:(v instanceof Date)?v:parseDate(v),t:'d',z:DATEF});
+  const f=(fo,z)=>({f:fo,t:'n',z:z||NUM});
+  const wb=XLSX.utils.book_new();
+  const p=periodDate();
+  const N=loans.length;
+
+  // ── Consolidated Schedule (built first; Summary references it) ──────────────
+  const CON='Consolidated Schedule';
+  const payStart=3, payTotal=payStart+N, intStart=payTotal+1, intTotal=intStart+N;
+  const mes=allMonthEnds();
+  const cAoa=[];
+  const hdr1=['','Month End']; for(let i=0;i<N;i++) hdr1.push(loans[i].name); hdr1.push('Total Pmt');
+  for(let i=0;i<N;i++) hdr1.push(loans[i].name+' — interest'); hdr1.push('Total Int');
+  cAoa.push(hdr1);
+  mes.forEach(me=>{
+    const row=['',dt(me)];
+    for(let i=0;i<N;i++){ const r=loanAtMonth(loans[i],me.getTime()); row.push(r?n(r.net):n(0)); }
+    row.push(n(0)); // placeholder total, set as formula below
+    for(let i=0;i<N;i++){ const r=loanAtMonth(loans[i],me.getTime()); row.push(r?n(r.interest):n(0)); }
+    row.push(n(0));
+    cAoa.push(row);
+  });
+  const cWs=XLSX.utils.aoa_to_sheet(cAoa);
+  // total formulas
+  for(let ri=1;ri<cAoa.length;ri++){
+    const xlR=ri+1;
+    cWs[colL(payTotal)+xlR]=f(`SUM(${colL(payStart)}${xlR}:${colL(payTotal-1)}${xlR})`);
+    cWs[colL(intTotal)+xlR]=f(`SUM(${colL(intStart)}${xlR}:${colL(intTotal-1)}${xlR})`);
+  }
+  cWs['!cols']=[{wch:2},{wch:12}].concat(Array(N).fill({wch:15})).concat([{wch:13}]).concat(Array(N).fill({wch:15})).concat([{wch:13}]);
+  XLSX.utils.book_append_sheet(wb,cWs,CON);
+
+  // ── Summary (live SUMIFS off Consolidated) ──────────────────────────────────
+  const meCol=`'${CON}'!$B:$B`;
+  const A=[];
+  A.push(['','Month-end',dt(p)]);
+  A.push([]);
+  const h=['','']; for(let i=0;i<N;i++) h.push(loans[i].name); h.push('Total'); A.push(h);   // row3
+  const rowSUMIFS=(label,build)=>{ const row=['',label]; for(let i=0;i<N;i++) row.push(build(i)); row.push(''); A.push(row); };
+  // row indices (1-based Excel): period C1; header row = 3; data rows below
+  rowSUMIFS('Current HP liability', i=>f(`SUMIFS('${CON}'!${colL(payStart+i)}:${colL(payStart+i)},${meCol},">"&$C$1,${meCol},"<="&EDATE($C$1,12))`,ACC));            // r5
+  rowSUMIFS('Less: current unexpired interest', i=>f(`-SUMIFS('${CON}'!${colL(intStart+i)}:${colL(intStart+i)},${meCol},">"&$C$1,${meCol},"<="&EDATE($C$1,12))`,ACC)); // r6
+  A.push(['','Current liability'].concat(Array(N+1).fill('')));                                    // r7 (formula below)
+  A.push([]);                                                                                       // r8
+  rowSUMIFS('Non-current HP liability', i=>f(`SUMIFS('${CON}'!${colL(payStart+i)}:${colL(payStart+i)},${meCol},">"&EDATE($C$1,12))`,ACC));                    // r9
+  rowSUMIFS('Less: non-current unexpired interest', i=>f(`-SUMIFS('${CON}'!${colL(intStart+i)}:${colL(intStart+i)},${meCol},">"&EDATE($C$1,12))`,ACC));       // r10
+  A.push(['','Non-current liability'].concat(Array(N+1).fill('')));                                 // r11
+  A.push([]);                                                                                       // r12
+  A.push(['','Total liability'].concat(Array(N+1).fill('')));                                       // r13
+  const sWs=XLSX.utils.aoa_to_sheet(A);
+  // Columns: B(2)=label, C(3)=loan1 … (2+N)=loanN, (3+N)=Total. Fill computed rows + Total column.
+  const firstDataCol=3, totalColIdx=3+N;
+  const setTotal=r=>{ sWs[colL(totalColIdx)+r]=f(`SUM(${colL(firstDataCol)}${r}:${colL(totalColIdx-1)}${r})`,ACC); };
+  const setLoanCalc=(r,a,b)=>{ for(let i=0;i<N;i++){ const c=colL(firstDataCol+i); sWs[c+r]=f(`${c}${a}+${c}${b}`,ACC);} };
+  [4,5,8,9].forEach(setTotal);        // the four SUMIFS rows
+  setLoanCalc(6,4,5); setTotal(6);    // Current liability      = HP + (−unexpired int)
+  setLoanCalc(10,8,9); setTotal(10);  // Non-current liability
+  setLoanCalc(12,6,10); setTotal(12); // Total liability        = current + non-current
+  sWs['!cols']=[{wch:2},{wch:34}].concat(Array(N).fill({wch:15})).concat([{wch:15}]);
+  XLSX.utils.book_append_sheet(wb,sWs,'Summary');
+  // move Summary to front
+  wb.SheetNames = ['Summary', CON].concat(wb.SheetNames.filter(x=>x!=='Summary'&&x!==CON));
+
+  // ── One sheet per facility ──────────────────────────────────────────────────
+  const used={};
+  loans.forEach(L=>{
+    let nm=(L.name||'Facility').replace(/[\\\/\?\*\[\]:]/g,'').slice(0,28)||'Facility';
+    let base=nm,k=1; while(used[nm.toLowerCase()]){ nm=(base.slice(0,26)+' '+(++k)); } used[nm.toLowerCase()]=1;
+    const a=[];
+    a.push([L.name+(L.financier?'  ·  '+L.financier:'')]);
+    a.push(['Reporting date',dt(p)]);
+    a.push([]);
+    a.push(['Payment Date','Month End','Payment','Exec Costs','GST Credits','Net Payment','Interest','Principal','Closing Balance','Remaining']);
+    a.push(['Opening','','','','','','','',n(+L.principal||0),n((L._rows[0]?r2(L._rows[0].remaining+L._rows[0].net):0))]);
+    (L._rows||[]).forEach(r=>{
+      a.push([dt(r.date),dt(r.monthEnd),n(r.payment),n(r.exec),n(r.gst),n(r.net),n(r.interest),n(r.principal),n(r.clos),n(r.remaining)]);
+    });
+    const first=6, last=a.length;
+    a.push(['Totals','','','','',f(`SUM(F${first}:F${last})`),f(`SUM(G${first}:G${last})`),f(`SUM(H${first}:H${last})`),'','']);
+    const ws=XLSX.utils.aoa_to_sheet(a);
+    ws['!cols']=[{wch:12},{wch:12},{wch:12},{wch:11},{wch:11},{wch:13},{wch:11},{wch:12},{wch:14},{wch:13}];
+    XLSX.utils.book_append_sheet(wb,ws,nm);
+  });
+
+  XLSX.writeFile(wb, `Amortisation_Schedule_${periodLabel().replace(/ /g,'_')}.xlsx`);
+}
+
+// ═══ PDF EXPORT ══════════════════════════════════════════════════════════════
+function pdfHeader(doc,w,title){
+  doc.setFillColor(29,66,82); doc.rect(0,0,w,26,'F');
+  doc.setTextColor(255,255,255); doc.setFont(undefined,'bold'); doc.setFontSize(14);
+  doc.text(title, w/2, 11, {align:'center'});
+  doc.setFont(undefined,'normal'); doc.setFontSize(9);
+  const today=new Date();
+  doc.text(`Reporting date: ${fmtDate(periodDate())}  ·  Generated: ${fmtDate(today)}`, w/2, 19, {align:'center'});
+  doc.setTextColor(0,0,0);
+}
+function exportSummaryPDF(){
+  if(!loans.length){ alert('Add a facility first.'); return; }
+  const { jsPDF }=window.jspdf; const doc=new jsPDF({orientation:'landscape'}); const W=297;
+  pdfHeader(doc,W,'HP / LEASE LIABILITY SUMMARY');
+  const p=periodDate(); const pos=loans.map(L=>positionAt(L._rows||[],p));
+  const T=k=>r2(pos.reduce((a,x)=>a+x[k],0));
+  const nameW=64, colW=Math.min(26,(W-nameW-20)/(loans.length+1));
+  let y=36;
+  doc.setFontSize(7.5); doc.setFont(undefined,'bold');
+  doc.setFillColor(29,66,82); doc.rect(10,y-5,W-20,7,'F'); doc.setTextColor(255,255,255);
+  doc.text('Component',12,y);
+  loans.forEach((L,i)=>doc.text(String(L.name).substring(0,14), 14+nameW+i*colW+colW-2, y, {align:'right'}));
+  doc.text('Total', 14+nameW+loans.length*colW+colW-2, y, {align:'right'});
+  y+=7; doc.setTextColor(0,0,0); doc.setFont(undefined,'normal');
+  const row=(lbl,k,bold)=>{
+    if(bold){ doc.setFont(undefined,'bold'); doc.setFillColor(238,243,240); doc.rect(10,y-5,W-20,7,'F'); }
+    doc.setFontSize(7.5); doc.text(lbl,12,y);
+    pos.forEach((x,i)=>doc.text(fmt$(x[k]).replace('$',''), 14+nameW+i*colW+colW-2, y, {align:'right'}));
+    doc.text(fmt$(T(k)).replace('$',''), 14+nameW+loans.length*colW+colW-2, y, {align:'right'});
+    y+=7; doc.setFont(undefined,'normal');
+    doc.setDrawColor(220,220,220); doc.line(10,y-3.5,W-10,y-3.5);
+  };
+  row('Current HP liability','curHP');
+  row('Less: current unexpired interest','curUI');
+  row('Current liability','curNet',true);
+  y+=2;
+  row('Non-current HP liability','ncHP');
+  row('Less: non-current unexpired interest','ncUI');
+  row('Non-current liability','ncNet',true);
+  y+=2;
+  row('Total liability','total',true);
+  doc.save(`HP_Liability_Summary_${periodLabel().replace(/ /g,'_')}.pdf`);
+}
+function exportJournalPDF(){
+  if(!loans.length){ alert('Add a facility first.'); return; }
+  const { jsPDF }=window.jspdf; const doc=new jsPDF(); const W=210;
+  pdfHeader(doc,W,'HP / LEASE MONTHLY JOURNAL');
+  const lines=buildJournal();
+  let y=36; doc.setFont(undefined,'bold'); doc.setFontSize(8.5);
+  doc.text('Account',14,y); doc.text('Code',120,y); doc.text('Debit',170,y,{align:'right'}); doc.text('Credit',196,y,{align:'right'});
+  y+=3; doc.setLineWidth(0.4); doc.line(14,y,196,y); y+=6; doc.setFont(undefined,'normal'); doc.setFontSize(7.5);
+  let dr=0,cr=0;
+  lines.forEach(l=>{
+    if(y>276){ doc.addPage(); y=18; }
+    const d=l.dm>0?l.dm:0, c=l.dm<0?-l.dm:0; dr+=d; cr+=c;
+    doc.text(String(l.name).substring(0,62),14,y);
+    doc.text(String(l.code||'—'),120,y);
+    doc.text(d?fmt$(d).replace('$',''):'—',170,y,{align:'right'});
+    doc.text(c?fmt$(c).replace('$',''):'—',196,y,{align:'right'});
+    y+=5.5;
+  });
+  y+=1; doc.setLineWidth(0.4); doc.line(14,y,196,y); y+=6; doc.setFont(undefined,'bold');
+  doc.text('TOTALS',14,y); doc.text(fmt$(r2(dr)).replace('$',''),170,y,{align:'right'}); doc.text(fmt$(r2(cr)).replace('$',''),196,y,{align:'right'});
+  doc.save(`HP_Journal_${periodLabel().replace(/ /g,'_')}.pdf`);
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+(function(){
+  const t=new Date(); $('period').value = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}`;
+  const saved=localStorage.getItem('lfa_amortisation_v1');
+  if(saved){
+    try{
+      const d=JSON.parse(saved);
+      loans=d.loans||[]; settings=d.settings||settings; seq=d.seq||(loans.length+1);
+      if(d.period) $('period').value=d.period;
+      $('interestAcct').value=settings.interestAcct||''; $('bankAcct').value=settings.bankAcct||'';
+    }catch(e){ console.warn('load failed',e); }
+  }
+  recalcAll();
+})();
+</script>
+</body>
+</html>
