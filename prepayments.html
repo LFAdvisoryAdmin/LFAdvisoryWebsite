@@ -154,14 +154,19 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
   <!-- SETTINGS BAR -->
   <div class="card">
     <div class="card-head">
-      <span>Period & Settings</span>
+      <span>Client, Period &amp; Settings <span id="syncStatus" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--mid);margin-left:.8rem"></span></span>
       <div class="btn-group">
+        <button class="btn btn-outline btn-sm" id="syncBtn" style="display:none" onclick="location.href='portal.html'">Sign in via Portal</button>
         <button class="btn btn-outline btn-sm" onclick="openImport()">⬆ Import Excel</button>
         <button class="btn btn-primary btn-sm" onclick="openAdd()">+ Add Item</button>
         <button class="btn btn-secondary btn-sm" onclick="persist()">💾 Save</button>
       </div>
     </div>
     <div class="ctrl-bar">
+      <div class="cg">
+        <label>Client</label>
+        <select id="clientSel" onchange="switchClient(this.value)" style="min-width:230px"></select>
+      </div>
       <div class="cg">
         <label>Current Period</label>
         <input type="month" id="period" onchange="recalc()">
@@ -307,11 +312,149 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
 if (!localStorage.getItem('lfa_ms_user') && sessionStorage.getItem('portalAuth') !== 'true') location.href = 'portal.html';
 
 // ─── State ───────────────────────────────────────────────────────────────────
-let items = [];
+let store = { clients: {} };      // { clients: { "<client name>": { items, assetAcct, period, updatedAt } } }
+let currentClient = '';
+let registerClients = [];         // client names read from the workflow register
+let items = [];                   // working copy of store.clients[currentClient].items
 let staged = [];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ─── Microsoft Graph / SharePoint sync ───────────────────────────────────────
+// Same Azure app + "LF Advisory Workpapers" folder as the other tools, new data
+// file. The client dropdown reads the workflow register's client list from the
+// same folder. This page never runs its own OAuth (no redirect URI registered):
+// it relies on the portal's shared sign-in; with no valid token it keeps working
+// offline against localStorage and offers a link back to the portal.
+const GRAPH = 'https://graph.microsoft.com/v1.0';
+const SP_HOSTNAME = 'lfadvisoryptyltd.sharepoint.com';
+const FOLDER = 'LF Advisory Workpapers';
+const DATA_FILE = 'lf-advisory-prepayments-data.json';
+const REGISTER_FILE = 'lf-advisory-register-data.json';
+const LS_KEY = 'lfa_prepayments_v2';
+const LS_CLIENT_CACHE = 'lfa_register_clients_cache';
+let _siteId = sessionStorage.getItem('sp_site_id') || null;
+let _saveTimer = null;
+let _loaded = false;   // block SharePoint writes until the server copy has been read
+
+function setSync(state){
+  const map = {
+    loading:'· connecting…', connected:'· synced with team (SharePoint)',
+    saving:'· saving…', saved:'· saved to SharePoint',
+    offline:'· offline — saving on this device only', error:'· SharePoint unavailable — using local copy'
+  };
+  const el = $('syncStatus');
+  el.textContent = map[state] || '';
+  el.style.color = (state==='offline'||state==='error') ? 'var(--warn)' : 'var(--mid)';
+  $('syncBtn').style.display = (state==='offline') ? 'inline-flex' : 'none';
+}
+function getStoredToken(){
+  const t = localStorage.getItem('lfa_ms_token'), exp = parseInt(localStorage.getItem('lfa_ms_token_exp')||'0');
+  return (t && Date.now() < exp - 60000) ? t : null;
+}
+function _authFail(){ localStorage.removeItem('lfa_ms_token'); localStorage.removeItem('lfa_ms_token_exp'); }
+async function getSiteId(token){
+  if(_siteId) return _siteId;
+  const r = await fetch(`${GRAPH}/sites/${SP_HOSTNAME}`, {headers:{Authorization:'Bearer '+token}});
+  if(r.status===401||r.status===403) _authFail();
+  if(!r.ok) throw new Error('site lookup '+r.status);
+  _siteId = (await r.json()).id; sessionStorage.setItem('sp_site_id', _siteId);
+  return _siteId;
+}
+async function listFolder(token){
+  const siteId = await getSiteId(token);
+  const r = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encodeURIComponent(FOLDER)}:/children`, {headers:{Authorization:'Bearer '+token}});
+  if(r.status===401||r.status===403){ _authFail(); throw new Error('auth '+r.status); }
+  if(r.status===404) return [];
+  if(!r.ok) throw new Error('graph '+r.status);
+  return (await r.json()).value || [];
+}
+const downloadJson = async file => await (await fetch(file['@microsoft.graph.downloadUrl'])).json();
+
+async function odInit(){
+  const token = getStoredToken();
+  if(!token){ setSync('offline'); return; }
+  try{
+    setSync('loading');
+    const kids = await listFolder(token);
+    const reg = kids.find(f => f.name === REGISTER_FILE);
+    if(reg){
+      const d = await downloadJson(reg);
+      registerClients = (Array.isArray(d) ? [] : (d.clients||[])).map(c => c.name).filter(Boolean);
+      localStorage.setItem(LS_CLIENT_CACHE, JSON.stringify(registerClients));
+    }
+    // Merge: server copy wins per client, unless the local copy is newer (offline edits)
+    const mine = kids.find(f => f.name === DATA_FILE);
+    const local = store.clients || {};
+    let dirty = false;
+    if(mine){
+      const server = await downloadJson(mine);
+      store = { clients: (server && server.clients) || {} };
+      Object.keys(local).forEach(n => {
+        const sv = store.clients[n];
+        if(!sv || (local[n].updatedAt||0) > (sv.updatedAt||0)){ store.clients[n] = local[n]; dirty = true; }
+      });
+    } else if(Object.keys(local).length){
+      dirty = true;   // first run: push migrated/local data up
+    }
+    _loaded = true;
+    if(dirty) queueSave();
+    setSync('connected');
+  }catch(e){
+    console.error('[Sync] load error:', e);
+    setSync(getStoredToken() ? 'error' : 'offline');
+  }
+  fillClientSel();
+  hydrateClient();
+  renderAll();
+}
+function queueSave(){ if(!_loaded) return; clearTimeout(_saveTimer); _saveTimer = setTimeout(odSave, 1200); }
+async function odSave(){
+  const token = getStoredToken();
+  if(!token){ setSync('offline'); return; }
+  try{
+    const siteId = await getSiteId(token);
+    setSync('saving');
+    const r = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encodeURIComponent(FOLDER)}/${encodeURIComponent(DATA_FILE)}:/content`,
+      {method:'PUT', headers:{Authorization:'Bearer '+token, 'Content-Type':'application/json'}, body: JSON.stringify(store, null, 2)});
+    if(r.status===401||r.status===403){ _authFail(); setSync('offline'); return; }
+    if(!r.ok) throw new Error('save '+r.status);
+    setSync('saved');
+  }catch(e){ console.error('[Sync] save error:', e); setSync('error'); }
+}
+
+// ─── Client selection ────────────────────────────────────────────────────────
+function clientNames(){
+  const set = new Set(registerClients);
+  Object.keys(store.clients).forEach(n => { if((store.clients[n].items||[]).length) set.add(n); });
+  return [...set].sort((a,b) => a.localeCompare(b));
+}
+function fillClientSel(){
+  const sel = $('clientSel');
+  sel.innerHTML = '<option value="">— Select client —</option>' + clientNames().map(n => {
+    const has = store.clients[n] && (store.clients[n].items||[]).length;
+    return `<option value="${esc(n)}">${esc(n)}${has ? ' ●' : ''}</option>`;
+  }).join('');
+  sel.value = currentClient || '';
+  if(sel.value !== (currentClient||'')){ sel.value = ''; currentClient = ''; }
+}
+function defaultPeriod(){ const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}`; }
+function hydrateClient(){
+  const d = (currentClient && store.clients[currentClient]) || null;
+  $('period').value = (d && d.period) || defaultPeriod();
+  $('assetAcct').value = (d && d.assetAcct) || '5400';
+  items = (d && d.items ? JSON.parse(JSON.stringify(d.items)) : []).map(calcItem);
+}
+function switchClient(name){
+  saveCurrentIntoStore();                    // capture the outgoing client first
+  currentClient = name;
+  hydrateClient();
+  localStorage.setItem(LS_KEY, JSON.stringify({store, currentClient}));
+  renderAll();
+}
+function slug(v){ return String(v||'').replace(/[\\\/\?\*\[\]:()]/g,'').trim().replace(/\s+/g,'_'); }
 const eom = (y, m) => new Date(y, m + 1, 0);   // end of month (0-based m)
 const fmt$ = v => v == null || isNaN(v) ? '—' : '$' + parseFloat(v).toLocaleString('en-AU', {minimumFractionDigits:2, maximumFractionDigits:2});
 const fmtDate = d => { if (!d) return '—'; const dt = new Date(d); return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`; };
@@ -377,6 +520,7 @@ function calcItem(raw) {
 function recalc() {
   items = items.map(calcItem);
   renderAll();
+  if (currentClient) persist();   // period / asset-account changes are per-client too
 }
 
 function renderAll() {
@@ -412,7 +556,7 @@ function renderSchedule() {
   });
 
   const tbody = $('schedBody');
-  if (!vis.length) { tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:2rem;color:var(--mid)">No items match filter.</td></tr>'; return; }
+  if (!vis.length) { tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:2rem;color:var(--mid)">' + (currentClient ? (items.length ? 'No items match filter.' : `No items yet for <strong>${esc(currentClient)}</strong> — import an Excel file or add items manually.`) : 'Select a <strong>client</strong> above to load or start that client\'s prepayments.') + '</td></tr>'; return; }
 
   tbody.innerHTML = vis.map(item => {
     const idx  = items.indexOf(item);
@@ -527,6 +671,7 @@ function switchTab(el) {
 
 // ─── Add / Edit ───────────────────────────────────────────────────────────────
 function openAdd() {
+  if (!currentClient) { alert('Select a client first — prepayments are stored per client.'); return; }
   $('editIdx').value = -1;
   $('addTitle').textContent = 'Add Prepayment Item';
   ['fSup','fPart','fDate','fAcct','fNotes'].forEach(id => $(id).value = '');
@@ -582,7 +727,7 @@ function delItem(idx) {
 }
 
 // ─── Import ───────────────────────────────────────────────────────────────────
-function openImport()  { $('importModal').classList.add('on'); }
+function openImport()  { if (!currentClient) { alert('Select a client first — prepayments are stored per client.'); return; } $('importModal').classList.add('on'); }
 function closeImport() {
   $('importModal').classList.remove('on');
   $('impPreview').style.display = 'none';
@@ -668,10 +813,23 @@ dz.addEventListener('dragleave', () => dz.classList.remove('over'));
 dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
 
 // ─── Persist ──────────────────────────────────────────────────────────────────
-function persist() {
+function saveCurrentIntoStore() {
+  if (!currentClient) return;
   const clean = items.map(({ supplier, particulars, amount, length, dateStarted, account, notes, manualBalance }) =>
     ({ supplier, particulars, amount, length, dateStarted, account, notes, manualBalance }));
-  localStorage.setItem('lfa_prepayments_v1', JSON.stringify({ items: clean, assetAcct: $('assetAcct').value, period: $('period').value }));
+  const prev = store.clients[currentClient];
+  if (!clean.length && !prev) return;   // merely selecting a client shouldn't create an entry
+  const entry = { items: clean, assetAcct: $('assetAcct').value, period: $('period').value };
+  // Keep the old timestamp when nothing changed, so viewing a client offline can't
+  // outrank genuinely newer data from another device in the merge.
+  const same = prev && JSON.stringify({a:prev.items,b:prev.assetAcct,c:prev.period}) === JSON.stringify({a:entry.items,b:entry.assetAcct,c:entry.period});
+  entry.updatedAt = same ? (prev.updatedAt||0) : Date.now();
+  store.clients[currentClient] = entry;
+}
+function persist() {
+  saveCurrentIntoStore();
+  localStorage.setItem(LS_KEY, JSON.stringify({ store, currentClient }));
+  queueSave();
 }
 
 // ─── PDF: Schedule ─────────────────────────────────────────────────────────────
@@ -689,7 +847,7 @@ function exportSchedPDF() {
   doc.setFont(undefined,'bold'); doc.setFontSize(15);
   doc.text('PREPAYMENTS AMORTISATION SCHEDULE', 148.5, 11, {align:'center'});
   doc.setFont(undefined,'normal'); doc.setFontSize(9);
-  doc.text(`Period: ${lbl}  ·  Prepaid Asset: ${asset}  ·  Generated: ${ds}`, 148.5, 20, {align:'center'});
+  doc.text(`${currentClient?currentClient+'  ·  ':''}Period: ${lbl}  ·  Prepaid Asset: ${asset}  ·  Generated: ${ds}`, 148.5, 20, {align:'center'});
 
   // Summary line
   let balance = 0, monthly = 0;
@@ -736,7 +894,7 @@ function exportSchedPDF() {
   doc.text('TOTAL', cx[0], y);
   doc.text(fmt$(balance), cx[9], y);
 
-  doc.save(`Prepayments_Schedule_${lbl.replace(/ /g,'_')}.pdf`);
+  doc.save(`Prepayments_Schedule_${slug(currentClient)?slug(currentClient)+'_':''}${lbl.replace(/ /g,'_')}.pdf`);
 }
 
 // ─── PDF: Journal ─────────────────────────────────────────────────────────────
@@ -753,7 +911,7 @@ function exportJnlPDF() {
   doc.setFont(undefined,'bold'); doc.setFontSize(14);
   doc.text('PREPAYMENTS JOURNAL ENTRY', 105, 11, {align:'center'});
   doc.setFont(undefined,'normal'); doc.setFontSize(9);
-  doc.text(`Period: ${lbl}  ·  Generated: ${ds}`, 105, 20, {align:'center'});
+  doc.text(`${currentClient?currentClient+'  ·  ':''}Period: ${lbl}  ·  Generated: ${ds}`, 105, 20, {align:'center'});
 
   let y = 36;
   doc.setTextColor(0,0,0); doc.setFont(undefined,'bold'); doc.setFontSize(9);
@@ -785,7 +943,7 @@ function exportJnlPDF() {
   doc.text(fmt$(total), 158, y, {align:'right'});
   doc.text(fmt$(total), 193, y, {align:'right'});
 
-  doc.save(`Prepayments_Journal_${lbl.replace(/ /g,'_')}.pdf`);
+  doc.save(`Prepayments_Journal_${slug(currentClient)?slug(currentClient)+'_':''}${lbl.replace(/ /g,'_')}.pdf`);
 }
 
 // ─── Excel: Schedule ──────────────────────────────────────────────────────────
@@ -803,7 +961,7 @@ function exportSchedXLSX() {
 
   // ── Schedule sheet ──────────────────────────────────────────────────────────
   const schedRows = [
-    [`Prepayments Amortisation Schedule — ${lbl}`,'','','','','','','','','',''],
+    [`${currentClient?currentClient+' — ':''}Prepayments Amortisation Schedule — ${lbl}`,'','','','','','','','','',''],
     [`Prepaid Asset Account: ${asset}  |  Generated: ${ds}`,'','','','','','','','','',''],
     ['','','','','','','','','','',''],
     ['Supplier','Particulars','Amount','Length (Mths)','Date Started','Start Month','End Month','Months Elapsed','Monthly Charge','Remaining Balance','Expense Account'],
@@ -839,7 +997,7 @@ function exportSchedXLSX() {
   // ── Journal sheet ───────────────────────────────────────────────────────────
   const { groups, total } = buildJournalGroups();
   const jRows = [
-    [`Prepayments Journal Entry — ${lbl}`,'','',''],
+    [`${currentClient?currentClient+' — ':''}Prepayments Journal Entry — ${lbl}`,'','',''],
     [`Dr Expense Account / Cr ${asset} (Prepaid Asset)`,'','',''],
     ['','','',''],
     ['Account','Description','Debit','Credit'],
@@ -879,7 +1037,7 @@ function exportSchedXLSX() {
   ws3['!cols'] = [18,18,18,10].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb, ws3, 'By Account');
 
-  XLSX.writeFile(wb, `Prepayments_${lbl.replace(/ /g,'_')}.xlsx`);
+  XLSX.writeFile(wb, `Prepayments_${slug(currentClient)?slug(currentClient)+'_':''}${lbl.replace(/ /g,'_')}.xlsx`);
 }
 
 // ─── Excel: Journal only ──────────────────────────────────────────────────────
@@ -894,7 +1052,7 @@ function exportJnlXLSX() {
 
   const { groups, total } = buildJournalGroups();
   const rows = [
-    [`Prepayments Journal — ${lbl}`,'','',''],
+    [`${currentClient?currentClient+' — ':''}Prepayments Journal — ${lbl}`,'','',''],
     [`Dr Expense / Cr ${asset}`,'','',''],
     ['','','',''],
     ['Account','Description','Debit','Credit'],
@@ -908,24 +1066,34 @@ function exportJnlXLSX() {
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = [12,65,16,16].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb, ws, 'Journal');
-  XLSX.writeFile(wb, `Prepayments_Journal_${lbl.replace(/ /g,'_')}.xlsx`);
+  XLSX.writeFile(wb, `Prepayments_Journal_${slug(currentClient)?slug(currentClient)+'_':''}${lbl.replace(/ /g,'_')}.xlsx`);
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 (function() {
-  const today = new Date();
-  $('period').value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
-
-  const saved = localStorage.getItem('lfa_prepayments_v1');
-  if (saved) {
-    try {
+  // Load the per-client store, migrating the old single-client v1 data if present.
+  try {
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved) {
       const d = JSON.parse(saved);
-      if (d.assetAcct) $('assetAcct').value = d.assetAcct;
-      if (d.period)    $('period').value     = d.period;
-      items = (d.items || []).map(calcItem);
-    } catch(e) { console.warn('Could not load saved data:', e); }
-  }
+      store = d.store || {clients:{}};
+      currentClient = d.currentClient || '';
+    } else {
+      const v1 = localStorage.getItem('lfa_prepayments_v1');
+      if (v1) {
+        const d = JSON.parse(v1);
+        if ((d.items || []).length) {
+          store.clients['(Unassigned)'] = { items: d.items, assetAcct: d.assetAcct || '5400', period: d.period || defaultPeriod(), updatedAt: Date.now() };
+          currentClient = '(Unassigned)';
+        }
+      }
+    }
+  } catch(e) { console.warn('Could not load saved data:', e); }
+  try { registerClients = JSON.parse(localStorage.getItem(LS_CLIENT_CACHE)||'[]'); } catch(e) {}
+  fillClientSel();
+  hydrateClient();
   renderAll();
+  odInit();   // async: refreshes client list + merges the SharePoint copy, then re-renders
 })();
 </script>
 </body>

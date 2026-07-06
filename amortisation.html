@@ -141,13 +141,18 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
   <!-- SETTINGS BAR -->
   <div class="card">
     <div class="card-head">
-      <span>Reporting Date &amp; Settings</span>
+      <span>Client &amp; Reporting Settings <span id="syncStatus" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--mid);margin-left:.8rem"></span></span>
       <div class="btn-group">
+        <button class="btn btn-outline btn-sm" id="syncBtn" style="display:none" onclick="location.href='portal.html'">Sign in via Portal</button>
         <button class="btn btn-primary btn-sm" onclick="openAdd()">+ Add Facility</button>
         <button class="btn btn-secondary btn-sm" onclick="persist(true)">💾 Save</button>
       </div>
     </div>
     <div class="ctrl-bar">
+      <div class="cg">
+        <label>Client</label>
+        <select id="clientSel" onchange="switchClient(this.value)" style="min-width:230px"></select>
+      </div>
       <div class="cg">
         <label>Reporting Month-end</label>
         <input type="month" id="period" onchange="recalcAll()">
@@ -328,10 +333,150 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
 if (!localStorage.getItem('lfa_ms_user') && sessionStorage.getItem('portalAuth') !== 'true') location.href = 'portal.html';
 
 // ─── State ───────────────────────────────────────────────────────────────────
-let loans = [];
+let store = { clients: {} };      // { clients: { "<client name>": { loans, settings, period, seq, updatedAt } } }
+let currentClient = '';
+let registerClients = [];         // client names read from the workflow register
+let loans = [];                   // working copy of store.clients[currentClient]
 let settings = { interestAcct:'', bankAcct:'' };
 let modalMode = 'terms';
 let seq = 1;
+
+// ─── Microsoft Graph / SharePoint sync ───────────────────────────────────────
+// Same Azure app + "LF Advisory Workpapers" folder as the other tools, new data
+// file. The client dropdown reads the workflow register's client list from the
+// same folder. This page never runs its own OAuth (no redirect URI registered):
+// it relies on the portal's shared sign-in; with no valid token it keeps working
+// offline against localStorage and offers a link back to the portal.
+const GRAPH = 'https://graph.microsoft.com/v1.0';
+const SP_HOSTNAME = 'lfadvisoryptyltd.sharepoint.com';
+const FOLDER = 'LF Advisory Workpapers';
+const DATA_FILE = 'lf-advisory-amortisation-data.json';
+const REGISTER_FILE = 'lf-advisory-register-data.json';
+const LS_KEY = 'lfa_amortisation_v2';
+const LS_CLIENT_CACHE = 'lfa_register_clients_cache';
+let _siteId = sessionStorage.getItem('sp_site_id') || null;
+let _saveTimer = null;
+let _loaded = false;   // block SharePoint writes until the server copy has been read
+
+function setSync(state){
+  const map = {
+    loading:'· connecting…', connected:'· synced with team (SharePoint)',
+    saving:'· saving…', saved:'· saved to SharePoint',
+    offline:'· offline — saving on this device only', error:'· SharePoint unavailable — using local copy'
+  };
+  const el = $('syncStatus');
+  el.textContent = map[state] || '';
+  el.style.color = (state==='offline'||state==='error') ? 'var(--warn)' : 'var(--mid)';
+  $('syncBtn').style.display = (state==='offline') ? 'inline-flex' : 'none';
+}
+function getStoredToken(){
+  const t = localStorage.getItem('lfa_ms_token'), exp = parseInt(localStorage.getItem('lfa_ms_token_exp')||'0');
+  return (t && Date.now() < exp - 60000) ? t : null;
+}
+function _authFail(){ localStorage.removeItem('lfa_ms_token'); localStorage.removeItem('lfa_ms_token_exp'); }
+async function getSiteId(token){
+  if(_siteId) return _siteId;
+  const r = await fetch(`${GRAPH}/sites/${SP_HOSTNAME}`, {headers:{Authorization:'Bearer '+token}});
+  if(r.status===401||r.status===403) _authFail();
+  if(!r.ok) throw new Error('site lookup '+r.status);
+  _siteId = (await r.json()).id; sessionStorage.setItem('sp_site_id', _siteId);
+  return _siteId;
+}
+async function listFolder(token){
+  const siteId = await getSiteId(token);
+  const r = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encodeURIComponent(FOLDER)}:/children`, {headers:{Authorization:'Bearer '+token}});
+  if(r.status===401||r.status===403){ _authFail(); throw new Error('auth '+r.status); }
+  if(r.status===404) return [];
+  if(!r.ok) throw new Error('graph '+r.status);
+  return (await r.json()).value || [];
+}
+const downloadJson = async file => await (await fetch(file['@microsoft.graph.downloadUrl'])).json();
+
+async function odInit(){
+  const token = getStoredToken();
+  if(!token){ setSync('offline'); return; }
+  try{
+    setSync('loading');
+    const kids = await listFolder(token);
+    const reg = kids.find(f => f.name === REGISTER_FILE);
+    if(reg){
+      const d = await downloadJson(reg);
+      registerClients = (Array.isArray(d) ? [] : (d.clients||[])).map(c => c.name).filter(Boolean);
+      localStorage.setItem(LS_CLIENT_CACHE, JSON.stringify(registerClients));
+    }
+    // Merge: server copy wins per client, unless the local copy is newer (offline edits)
+    const mine = kids.find(f => f.name === DATA_FILE);
+    const local = store.clients || {};
+    let dirty = false;
+    if(mine){
+      const server = await downloadJson(mine);
+      store = { clients: (server && server.clients) || {} };
+      Object.keys(local).forEach(n => {
+        const sv = store.clients[n];
+        if(!sv || (local[n].updatedAt||0) > (sv.updatedAt||0)){ store.clients[n] = local[n]; dirty = true; }
+      });
+    } else if(Object.keys(local).length){
+      dirty = true;   // first run: push migrated/local data up
+    }
+    _loaded = true;
+    if(dirty) queueSave();
+    setSync('connected');
+  }catch(e){
+    console.error('[Sync] load error:', e);
+    setSync(getStoredToken() ? 'error' : 'offline');
+  }
+  fillClientSel();
+  hydrateClient();
+  recalcAll();
+}
+function queueSave(){ if(!_loaded) return; clearTimeout(_saveTimer); _saveTimer = setTimeout(odSave, 1200); }
+async function odSave(){
+  const token = getStoredToken();
+  if(!token){ setSync('offline'); return; }
+  try{
+    const siteId = await getSiteId(token);
+    setSync('saving');
+    const r = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encodeURIComponent(FOLDER)}/${encodeURIComponent(DATA_FILE)}:/content`,
+      {method:'PUT', headers:{Authorization:'Bearer '+token, 'Content-Type':'application/json'}, body: JSON.stringify(store, null, 2)});
+    if(r.status===401||r.status===403){ _authFail(); setSync('offline'); return; }
+    if(!r.ok) throw new Error('save '+r.status);
+    setSync('saved');
+  }catch(e){ console.error('[Sync] save error:', e); setSync('error'); }
+}
+
+// ─── Client selection ────────────────────────────────────────────────────────
+function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function clientNames(){
+  const set = new Set(registerClients);
+  Object.keys(store.clients).forEach(n => { if((store.clients[n].loans||[]).length) set.add(n); });
+  return [...set].sort((a,b) => a.localeCompare(b));
+}
+function fillClientSel(){
+  const sel = $('clientSel');
+  sel.innerHTML = '<option value="">— Select client —</option>' + clientNames().map(n => {
+    const has = store.clients[n] && (store.clients[n].loans||[]).length;
+    return `<option value="${escAttr(n)}">${esc(n)}${has ? ' ●' : ''}</option>`;
+  }).join('');
+  sel.value = currentClient || '';
+  if(sel.value !== (currentClient||'')){ sel.value = ''; currentClient = ''; }
+}
+function defaultPeriod(){ const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}`; }
+function hydrateClient(){
+  const d = (currentClient && store.clients[currentClient]) || null;
+  loans = d && d.loans ? JSON.parse(JSON.stringify(d.loans)) : [];
+  settings = d && d.settings ? {...d.settings} : {interestAcct:'', bankAcct:''};
+  seq = d && d.seq ? d.seq : loans.reduce((m,L) => Math.max(m, parseInt(String(L.id).slice(1))||0), 0) + 1;
+  $('period').value = (d && d.period) || defaultPeriod();
+  $('interestAcct').value = settings.interestAcct || '';
+  $('bankAcct').value = settings.bankAcct || '';
+}
+function switchClient(name){
+  saveCurrentIntoStore();                    // capture the outgoing client first
+  currentClient = name;
+  hydrateClient();
+  localStorage.setItem(LS_KEY, JSON.stringify({store, currentClient}));
+  recalcAll();
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const $  = id => document.getElementById(id);
@@ -503,7 +648,7 @@ function renderTiles(){
 function renderLoans(){
   const p = periodDate();
   const body = $('loansBody');
-  if(!loans.length){ body.innerHTML = '<tr><td colspan="11" class="empty">No facilities yet — click <strong>+ Add Facility</strong> to enter a loan from its contract or paste an amortisation schedule.</td></tr>'; return; }
+  if(!loans.length){ body.innerHTML = '<tr><td colspan="11" class="empty">' + (currentClient ? `No facilities yet for <strong>${esc(currentClient)}</strong> — click <strong>+ Add Facility</strong> to enter a loan from its contract or paste an amortisation schedule.` : 'Select a <strong>client</strong> above to load or start that client\'s facilities.') + '</td></tr>'; return; }
   body.innerHTML = loans.map(L => {
     const pos = positionAt(L._rows||[], p);
     const rows = L._rows||[];
@@ -671,6 +816,7 @@ function setMode(m){
   $('pane-schedule').classList.toggle('on', m==='schedule');
 }
 function openAdd(){
+  if(!currentClient){ alert('Select a client first — facilities are stored per client.'); return; }
   $('editId').value=''; $('addTitle').textContent='Add Facility';
   ['fName','fFin','tPrincipal','tRate','tTerm','tPayment','tBalloon','tStart','tExec','tGst','sPrincipal','sRemaining','sPaste','aChp','aCui','aNhp','aNui'].forEach(id=>$(id).value='');
   $('pasteErr').style.display='none'; $('pasteOk').style.display='none';
@@ -745,9 +891,22 @@ function delLoan(id){
 }
 
 // ─── Persist ─────────────────────────────────────────────────────────────────
-function persist(announce){
+function saveCurrentIntoStore(){
+  if(!currentClient) return;
   const clean = loans.map(({_rows,_err,_solvedRate,...keep})=>keep);
-  localStorage.setItem('lfa_amortisation_v1', JSON.stringify({ loans:clean, settings, period:$('period').value, seq }));
+  const prev = store.clients[currentClient];
+  if(!clean.length && !prev) return;   // merely selecting a client shouldn't create an entry
+  const entry = { loans:clean, settings:{...settings}, period:$('period').value, seq };
+  // Keep the old timestamp when nothing changed, so viewing a client offline can't
+  // outrank genuinely newer data from another device in the merge.
+  const same = prev && JSON.stringify({a:prev.loans,b:prev.settings,c:prev.period}) === JSON.stringify({a:entry.loans,b:entry.settings,c:entry.period});
+  entry.updatedAt = same ? (prev.updatedAt||0) : Date.now();
+  store.clients[currentClient] = entry;
+}
+function persist(announce){
+  saveCurrentIntoStore();
+  localStorage.setItem(LS_KEY, JSON.stringify({store, currentClient}));
+  queueSave();
   if(announce){ const b=event&&event.target; if(b){ const t=b.textContent; b.textContent='✓ Saved'; setTimeout(()=>b.textContent=t,1200);} }
 }
 
@@ -795,7 +954,7 @@ function exportXLSX(){
   const meCol=`'${CON}'!$B:$B`;
   const A=[];
   A.push(['','Month-end',dt(p)]);
-  A.push([]);
+  A.push(['','Client',s(currentClient||'')]);
   const h=['','']; for(let i=0;i<N;i++) h.push(loans[i].name); h.push('Total'); A.push(h);   // row3
   const rowSUMIFS=(label,build)=>{ const row=['',label]; for(let i=0;i<N;i++) row.push(build(i)); row.push(''); A.push(row); };
   // row indices (1-based Excel): period C1; header row = 3; data rows below
@@ -828,7 +987,7 @@ function exportXLSX(){
     let nm=(L.name||'Facility').replace(/[\\\/\?\*\[\]:]/g,'').slice(0,28)||'Facility';
     let base=nm,k=1; while(used[nm.toLowerCase()]){ nm=(base.slice(0,26)+' '+(++k)); } used[nm.toLowerCase()]=1;
     const a=[];
-    a.push([L.name+(L.financier?'  ·  '+L.financier:'')]);
+    a.push([(currentClient?currentClient+' — ':'')+L.name+(L.financier?'  ·  '+L.financier:'')]);
     a.push(['Reporting date',dt(p)]);
     a.push([]);
     a.push(['Payment Date','Month End','Payment','Exec Costs','GST Credits','Net Payment','Interest','Principal','Closing Balance','Remaining']);
@@ -843,8 +1002,9 @@ function exportXLSX(){
     XLSX.utils.book_append_sheet(wb,ws,nm);
   });
 
-  XLSX.writeFile(wb, `Amortisation_Schedule_${periodLabel().replace(/ /g,'_')}.xlsx`);
+  XLSX.writeFile(wb, `Amortisation_${slug(currentClient)||'Schedule'}_${periodLabel().replace(/ /g,'_')}.xlsx`);
 }
+function slug(v){ return String(v||'').replace(/[\\\/\?\*\[\]:()]/g,'').trim().replace(/\s+/g,'_'); }
 
 // ═══ PDF EXPORT ══════════════════════════════════════════════════════════════
 function pdfHeader(doc,w,title){
@@ -853,7 +1013,7 @@ function pdfHeader(doc,w,title){
   doc.text(title, w/2, 11, {align:'center'});
   doc.setFont(undefined,'normal'); doc.setFontSize(9);
   const today=new Date();
-  doc.text(`Reporting date: ${fmtDate(periodDate())}  ·  Generated: ${fmtDate(today)}`, w/2, 19, {align:'center'});
+  doc.text(`${currentClient?currentClient+'  ·  ':''}Reporting date: ${fmtDate(periodDate())}  ·  Generated: ${fmtDate(today)}`, w/2, 19, {align:'center'});
   doc.setTextColor(0,0,0);
 }
 function exportSummaryPDF(){
@@ -887,7 +1047,7 @@ function exportSummaryPDF(){
   row('Non-current liability','ncNet',true);
   y+=2;
   row('Total liability','total',true);
-  doc.save(`HP_Liability_Summary_${periodLabel().replace(/ /g,'_')}.pdf`);
+  doc.save(`HP_Liability_Summary_${slug(currentClient)?slug(currentClient)+'_':''}${periodLabel().replace(/ /g,'_')}.pdf`);
 }
 function exportJournalPDF(){
   if(!loans.length){ alert('Add a facility first.'); return; }
@@ -909,22 +1069,34 @@ function exportJournalPDF(){
   });
   y+=1; doc.setLineWidth(0.4); doc.line(14,y,196,y); y+=6; doc.setFont(undefined,'bold');
   doc.text('TOTALS',14,y); doc.text(fmt$(r2(dr)).replace('$',''),170,y,{align:'right'}); doc.text(fmt$(r2(cr)).replace('$',''),196,y,{align:'right'});
-  doc.save(`HP_Journal_${periodLabel().replace(/ /g,'_')}.pdf`);
+  doc.save(`HP_Journal_${slug(currentClient)?slug(currentClient)+'_':''}${periodLabel().replace(/ /g,'_')}.pdf`);
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 (function(){
-  const t=new Date(); $('period').value = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}`;
-  const saved=localStorage.getItem('lfa_amortisation_v1');
-  if(saved){
-    try{
-      const d=JSON.parse(saved);
-      loans=d.loans||[]; settings=d.settings||settings; seq=d.seq||(loans.length+1);
-      if(d.period) $('period').value=d.period;
-      $('interestAcct').value=settings.interestAcct||''; $('bankAcct').value=settings.bankAcct||'';
-    }catch(e){ console.warn('load failed',e); }
-  }
+  // Load the per-client store, migrating the old single-client v1 data if present.
+  try{
+    const saved = localStorage.getItem(LS_KEY);
+    if(saved){
+      const d = JSON.parse(saved);
+      store = d.store || {clients:{}};
+      currentClient = d.currentClient || '';
+    } else {
+      const v1 = localStorage.getItem('lfa_amortisation_v1');
+      if(v1){
+        const d = JSON.parse(v1);
+        if((d.loans||[]).length){
+          store.clients['(Unassigned)'] = { loans:d.loans, settings:d.settings||{interestAcct:'',bankAcct:''}, period:d.period||defaultPeriod(), seq:d.seq||(d.loans.length+1), updatedAt:Date.now() };
+          currentClient = '(Unassigned)';
+        }
+      }
+    }
+  }catch(e){ console.warn('load failed', e); }
+  try{ registerClients = JSON.parse(localStorage.getItem(LS_CLIENT_CACHE)||'[]'); }catch(e){}
+  fillClientSel();
+  hydrateClient();
   recalcAll();
+  odInit();   // async: refreshes client list + merges the SharePoint copy, then re-renders
 })();
 </script>
 </body>
