@@ -289,7 +289,6 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
       </div>
       <div class="frow">
         <div class="fg"><label>Exec costs / mth ($)</label><input type="number" id="tExec" step="0.01" placeholder="0.00"><small>Charges that don't reduce liability</small></div>
-        <div class="fg"><label>GST credits / mth ($)</label><input type="number" id="tGst" step="0.01" placeholder="0.00"></div>
       </div>
     </div>
 
@@ -559,12 +558,12 @@ function buildFromTerms(L){
     let interest = r2(bal*rate);
     let principal = r2(net - interest);
     let netPay = net;
-    if(k === n){                                   // final row: clear residual + rounding
-      principal = r2(bal + balloon);
+    if(k === n){                                   // final row: clear the whole remaining balance
+      principal = r2(bal);                         // includes the balloon (bal still carries it) + rounding
       netPay    = r2(principal + interest);
       interest  = r2(netPay - principal);
     }
-    bal = r2(bal - principal + (k===n ? balloon : 0)); // principal on final already includes balloon
+    bal = r2(bal - principal);
     if(k===n) bal = 0;
     remaining = r2(remaining - netPay);
     rows.push({ date, monthEnd:me, payment:r2(netPay + exec + gst), exec, gst, net:netPay,
@@ -818,7 +817,7 @@ function setMode(m){
 function openAdd(){
   if(!currentClient){ alert('Select a client first — facilities are stored per client.'); return; }
   $('editId').value=''; $('addTitle').textContent='Add Facility';
-  ['fName','fFin','tPrincipal','tRate','tTerm','tPayment','tBalloon','tStart','tExec','tGst','sPrincipal','sRemaining','sPaste','aChp','aCui','aNhp','aNui'].forEach(id=>$(id).value='');
+  ['fName','fFin','tPrincipal','tRate','tTerm','tPayment','tBalloon','tStart','tExec','sPrincipal','sRemaining','sPaste','aChp','aCui','aNhp','aNui'].forEach(id=>$(id).value='');
   $('pasteErr').style.display='none'; $('pasteOk').style.display='none';
   setMode('terms');
   $('addModal').classList.add('on');
@@ -829,7 +828,7 @@ function openEdit(id){
   $('fName').value=L.name||''; $('fFin').value=L.financier||'';
   $('tPrincipal').value = L.mode==='terms'?(L.principal||''):''; $('tRate').value=L.annualRate||'';
   $('tTerm').value=L.termMonths||''; $('tPayment').value=L.payment||''; $('tBalloon').value=L.balloon||'';
-  $('tStart').value = L.startDate?fmtISO(parseDate(L.startDate)):''; $('tExec').value=L.execCosts||''; $('tGst').value=L.gstCredits||'';
+  $('tStart').value = L.startDate?fmtISO(parseDate(L.startDate)):''; $('tExec').value=L.execCosts||'';
   $('sPrincipal').value = L.mode==='schedule'?(L.principal||''):''; $('sRemaining').value=L.openRemaining||'';
   $('sPaste').value = (L.pasted||[]).map(p=>[p.rawdate||fmtDate(parseDate(p.date)), p.payment, p.interest].concat(p.exec?[p.exec]:[]).concat(p.gst?[p.gst]:[]).join(', ')).join('\n');
   $('aChp').value=L.aChp||''; $('aCui').value=L.aCui||''; $('aNhp').value=L.aNhp||''; $('aNui').value=L.aNui||'';
@@ -869,7 +868,7 @@ function saveLoan(){
     L = { ...base, mode:'terms',
       principal:$('tPrincipal').value, annualRate:$('tRate').value, termMonths:$('tTerm').value,
       payment:$('tPayment').value, balloon:$('tBalloon').value, startDate:$('tStart').value,
-      execCosts:$('tExec').value, gstCredits:$('tGst').value };
+      execCosts:$('tExec').value, gstCredits:'' };
     if(!$('tRate').value && !$('tPayment').value){ alert('Enter either an interest rate or a monthly payment.'); return; }
   } else {
     const pasted = parsePaste($('sPaste').value);
