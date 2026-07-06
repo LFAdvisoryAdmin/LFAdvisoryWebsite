@@ -178,7 +178,8 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
     <div class="tab" data-tab="schedule" onclick="switchTab(this)">Amortisation Schedule</div>
     <div class="tab" data-tab="consol" onclick="switchTab(this)">Consolidated</div>
     <div class="tab" data-tab="summary" onclick="switchTab(this)">Liability Summary</div>
-    <div class="tab" data-tab="journal" onclick="switchTab(this)">Journal</div>
+    <div class="tab" data-tab="journal" onclick="switchTab(this)">Monthly Journal</div>
+    <div class="tab" data-tab="estab" onclick="switchTab(this)">Establishment Journal</div>
   </div>
 
   <!-- TAB: FACILITIES -->
@@ -253,6 +254,36 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
     <div class="alert a-warn" id="jnlCheck" style="margin-top:1rem"></div>
     <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:.5rem">
       <button class="btn btn-outline" onclick="exportJournalPDF()">📄 Export PDF</button>
+    </div>
+  </div>
+
+  <!-- TAB: ESTABLISHMENT JOURNAL -->
+  <div class="tc" id="tc-estab">
+    <div class="card">
+      <div class="ctrl-bar">
+        <div class="cg">
+          <label>Facility</label>
+          <select id="estabLoan" onchange="renderEstab()"></select>
+        </div>
+        <div class="cg">
+          <label>Journal date</label>
+          <input type="date" id="estabDate" onchange="estabDateChanged()">
+        </div>
+      </div>
+    </div>
+    <div class="alert a-info" id="estabNote">–</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table class="jnl-tbl">
+          <thead><tr><th>Account</th><th>Code</th><th>Description</th><th class="r">Debit</th><th class="r">Credit</th></tr></thead>
+          <tbody id="estabBody"></tbody>
+          <tfoot id="estabFoot"></tfoot>
+        </table>
+      </div>
+    </div>
+    <div class="alert a-warn" id="estabCheck" style="margin-top:1rem;display:none"></div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:.5rem">
+      <button class="btn btn-outline" onclick="exportEstabPDF()">📄 Export PDF</button>
     </div>
   </div>
 
@@ -645,7 +676,7 @@ function recalcAll(){
   renderAll();
   persist(false);
 }
-function renderAll(){ renderTiles(); renderLoans(); syncSchedLoanSelect(); renderSchedule(); renderConsol(); renderSummary(); renderJournal(); }
+function renderAll(){ renderTiles(); renderLoans(); syncSchedLoanSelect(); renderSchedule(); renderConsol(); renderSummary(); renderJournal(); renderEstab(); }
 
 // ─── Tiles ───────────────────────────────────────────────────────────────────
 function renderTiles(){
@@ -699,9 +730,11 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;',
 
 // ─── Schedule tab ────────────────────────────────────────────────────────────
 function syncSchedLoanSelect(){
-  const sel = $('schedLoan'); const prev = sel.value;
-  sel.innerHTML = loans.map(L => `<option value="${L.id}">${esc(L.name)}</option>`).join('') || '<option value="">— no facilities —</option>';
-  if(loans.some(L=>L.id===prev)) sel.value = prev;
+  ['schedLoan','estabLoan'].forEach(id => {
+    const sel = $(id); const prev = sel.value;
+    sel.innerHTML = loans.map(L => `<option value="${L.id}">${esc(L.name)}</option>`).join('') || '<option value="">— no facilities —</option>';
+    if(loans.some(L=>L.id===prev)) sel.value = prev;
+  });
 }
 function renderSchedule(){
   const id = $('schedLoan').value;
@@ -783,7 +816,11 @@ function buildJournal(){
   const lines = [];
   let totInt=0, totNet=0;
   loans.forEach(L => {
-    const now = positionAt(L._rows||[], p), was = positionAt(L._rows||[], prev);
+    const rows = L._rows||[];
+    // No monthly journal before the contract's first instalment month — the
+    // set-up entry lives on the Establishment Journal tab instead.
+    if(!rows.length || p.getTime() < rows[0].monthEnd.getTime()) return;
+    const now = positionAt(rows, p), was = positionAt(rows, prev);
     const act = monthActivity(L._rows||[], p);
     totInt += act.interest; totNet += act.net;
     // debit-side movement per account (see derivation): HP liab Cr-normal, UI Dr-normal
@@ -801,7 +838,7 @@ function buildJournal(){
 }
 function renderJournal(){
   const p = periodDate();
-  $('jnlNote').innerHTML = `<strong>Monthly journal for ${periodLabel()}.</strong> Movement in each liability account plus interest expense, computed as this month-end's position less last month-end's. Review the bank / clearing line against how the repayment is coded before posting.`;
+  $('jnlNote').innerHTML = `<strong>Monthly journal for ${periodLabel()}.</strong> Movement in each liability account plus interest expense, computed as this month-end's position less last month-end's. Facilities whose first instalment falls after this month are excluded — post their set-up entry from the Establishment Journal tab. Review the bank / clearing line against how the repayment is coded before posting.`;
   const lines = buildJournal();
   const body=$('jnlBody'), foot=$('jnlFoot');
   if(!lines.length){ body.innerHTML='<tr><td colspan="5" class="empty">No movement for this period.</td></tr>'; foot.innerHTML=''; $('jnlCheck').textContent=''; return; }
@@ -817,6 +854,87 @@ function renderJournal(){
   const ck = $('jnlCheck');
   if(Math.abs(diff) < 0.02){ ck.className='alert a-ok'; ck.textContent = `✅ Journal balances — debits ${fmt$(dr)} = credits ${fmt$(cr)}.`; }
   else { ck.className='alert a-err'; ck.textContent = `⚠ Out of balance by ${fmt$(diff)} — check account codes and pasted figures.`; }
+}
+
+// ─── Establishment journal tab ───────────────────────────────────────────────
+// Dr Financed asset (balancing item, no code) + Dr unexpired interest,
+// Cr gross HP liability, split current/non-current on the same month-end basis
+// as the monthly journals (position at the month-end before the first
+// instalment), so the first monthly journal follows straight on from this one.
+function buildEstabLines(L){
+  const rows = L._rows||[];
+  if(!rows.length) return null;
+  const pos = positionAt(rows, eomAdd(rows[0].monthEnd, -1));
+  const asset = r2(pos.curHP - pos.curUI + pos.ncHP - pos.ncUI);   // = principal financed
+  const lines = [
+    { name:'Financed asset',                          code:'',     d:asset,     c:0 },
+    { name:`${L.name} — Current unexpired interest`,  code:L.aCui, d:pos.curUI, c:0 },
+    { name:`${L.name} — Non-current unexpired int.`,  code:L.aNui, d:pos.ncUI,  c:0 },
+    { name:`${L.name} — Current HP liability`,        code:L.aChp, d:0, c:pos.curHP },
+    { name:`${L.name} — Non-current HP liability`,    code:L.aNhp, d:0, c:pos.ncHP },
+  ].filter(l => Math.abs(l.d) > 0.005 || Math.abs(l.c) > 0.005);
+  return { lines, asset };
+}
+let _lastEstabId = null;
+function estabDateChanged(){
+  const L = loans.find(x=>x.id===$('estabLoan').value);
+  if(L){ L.estabDate = $('estabDate').value; persist(false); }
+  renderEstab();
+}
+function renderEstab(){
+  const L = loans.find(x=>x.id===$('estabLoan').value);
+  const body=$('estabBody'), foot=$('estabFoot'), note=$('estabNote'), ck=$('estabCheck');
+  if(!L || !(L._rows||[]).length){
+    note.textContent = 'Add a facility to build its establishment journal.';
+    body.innerHTML = '<tr><td colspan="5" class="empty">No facility selected.</td></tr>';
+    foot.innerHTML = ''; ck.style.display='none'; _lastEstabId = null;
+    return;
+  }
+  if(_lastEstabId !== L.id){ _lastEstabId = L.id; $('estabDate').value = L.estabDate || fmtISO(L._rows[0].date); }
+  const d = parseDate($('estabDate').value) || L._rows[0].date;
+  const { lines, asset } = buildEstabLines(L);
+  note.innerHTML = `<strong>Establishment journal for ${esc(L.name)}${L.financier?' — '+esc(L.financier):''}, dated ${fmtDate(d)}.</strong> Sets up the gross HP liability and unexpired interest at inception, with the financed asset as the balancing item (code it to the asset/clearing account when posting). Post this once, then run the monthly journal from the first instalment month.`;
+  const desc = `Establish ${L.name} — ${fmtDate(d)}`;
+  let dr=0, cr=0;
+  body.innerHTML = lines.map(l => {
+    dr+=l.d; cr+=l.c;
+    return `<tr><td>${esc(l.name)}</td><td>${l.code?`<code>${esc(l.code)}</code>`:'—'}</td><td>${esc(desc)}</td>
+      <td class="r dr-amt">${l.d?fmt$(l.d):'—'}</td><td class="r cr-amt">${l.c?fmt$(l.c):'—'}</td></tr>`;
+  }).join('');
+  dr=r2(dr); cr=r2(cr);
+  foot.innerHTML = `<tr><td colspan="3" style="text-transform:uppercase;letter-spacing:.06em">Totals</td><td class="r">${fmt$(dr)}</td><td class="r">${fmt$(cr)}</td></tr>`;
+  ck.style.display='block';
+  const finDiff = r2(asset - (+L.principal||0));
+  if(Math.abs(finDiff) < 0.02){ ck.className='alert a-ok'; ck.textContent = `✅ Journal balances — financed asset of ${fmt$(asset)} equals the amount financed.`; }
+  else { ck.className='alert a-warn'; ck.textContent = `⚠ Financed asset ${fmt$(asset)} differs from the amount financed ${fmt$(+L.principal||0)} by ${fmt$(finDiff)} — usually rounding in a pasted schedule; check the pasted figures if it's more than a few cents.`; }
+}
+function exportEstabPDF(){
+  const L = loans.find(x=>x.id===$('estabLoan').value);
+  if(!L || !(L._rows||[]).length){ alert('Select a facility first.'); return; }
+  const { jsPDF }=window.jspdf; const doc=new jsPDF(); const W=210;
+  const d = parseDate($('estabDate').value) || L._rows[0].date;
+  doc.setFillColor(29,66,82); doc.rect(0,0,W,26,'F');
+  doc.setTextColor(255,255,255); doc.setFont(undefined,'bold'); doc.setFontSize(14);
+  doc.text('HP ESTABLISHMENT JOURNAL', W/2, 11, {align:'center'});
+  doc.setFont(undefined,'normal'); doc.setFontSize(9);
+  doc.text(`${currentClient?currentClient+'  ·  ':''}${L.name}  ·  Journal date: ${fmtDate(d)}`, W/2, 19, {align:'center'});
+  doc.setTextColor(0,0,0);
+  const { lines } = buildEstabLines(L);
+  let y=36; doc.setFont(undefined,'bold'); doc.setFontSize(8.5);
+  doc.text('Account',14,y); doc.text('Code',120,y); doc.text('Debit',170,y,{align:'right'}); doc.text('Credit',196,y,{align:'right'});
+  y+=3; doc.setLineWidth(0.4); doc.line(14,y,196,y); y+=6; doc.setFont(undefined,'normal'); doc.setFontSize(7.5);
+  let dr=0,cr=0;
+  lines.forEach(l=>{
+    dr+=l.d; cr+=l.c;
+    doc.text(String(l.name).substring(0,62),14,y);
+    doc.text(String(l.code||'—'),120,y);
+    doc.text(l.d?fmt$(l.d).replace('$',''):'—',170,y,{align:'right'});
+    doc.text(l.c?fmt$(l.c).replace('$',''):'—',196,y,{align:'right'});
+    y+=5.5;
+  });
+  y+=1; doc.setLineWidth(0.4); doc.line(14,y,196,y); y+=6; doc.setFont(undefined,'bold');
+  doc.text('TOTALS',14,y); doc.text(fmt$(r2(dr)).replace('$',''),170,y,{align:'right'}); doc.text(fmt$(r2(cr)).replace('$',''),196,y,{align:'right'});
+  doc.save(`HP_Establishment_${slug(currentClient)?slug(currentClient)+'_':''}${slug(L.name)}.pdf`);
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
@@ -899,7 +1017,7 @@ function saveLoan(){
     L = { ...base, mode:'schedule', principal:$('sPrincipal').value, openRemaining:$('sRemaining').value, pasted };
   }
   const id = $('editId').value;
-  if(id){ L.id=id; const i=loans.findIndex(x=>x.id===id); loans[i]=L; }
+  if(id){ L.id=id; const i=loans.findIndex(x=>x.id===id); L.estabDate=loans[i].estabDate; loans[i]=L; }
   else  { L.id='L'+(seq++); loans.push(L); }
   closeAdd();
   const sel=$('schedLoan'); recalcAll(); sel.value=L.id; renderSchedule();
