@@ -288,6 +288,13 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
         <div class="fg"><label>First payment date *</label><input type="date" id="tStart"></div>
       </div>
       <div class="frow">
+        <div class="fg"><label>Balloon timing</label>
+          <select id="tBalTiming">
+            <option value="with">Paid on top of the final instalment</option>
+            <option value="final">Is the final payment (n−1 instalments, then balloon)</option>
+          </select>
+          <small>"59 payments of $X plus a final payment of $Y" → second option</small>
+        </div>
         <div class="fg"><label>Exec costs / mth ($)</label><input type="number" id="tExec" step="0.01" placeholder="0.00"><small>Charges that don't reduce liability</small></div>
       </div>
     </div>
@@ -511,15 +518,22 @@ function periodDate(){
 function periodLabel(){ const p=periodDate(); return p.toLocaleString('en-AU',{month:'long',year:'numeric'}); }
 
 // ─── Amortisation maths ──────────────────────────────────────────────────────
-function annuityNet(P, r, n, balloon){
-  if(!n) return 0;
-  if(r <= 0) return (P - balloon) / n;
-  return (P - balloon/Math.pow(1+r,n)) * r / (1 - Math.pow(1+r,-n));
+// Two balloon conventions: 'with' = n instalments and the balloon is paid on top
+// of the nth ("inLieu" false); 'final' = n−1 instalments and the balloon IS the
+// nth payment (Nissan-style "59 payments of $X plus a final payment of $Y").
+// In both, the balloon falls due at month n.
+function annuityNet(P, r, n, balloon, inLieu){
+  const m = inLieu ? n-1 : n;           // number of regular instalments
+  if(!m || m < 1) return 0;
+  if(r <= 0) return (P - balloon) / m;
+  return (P - balloon/Math.pow(1+r,n)) * r / (1 - Math.pow(1+r,-m));
 }
-// bisection: find monthly rate so closing balance after n net payments == balloon.
+// bisection: find monthly rate so the balance after the regular instalments
+// (plus, in-lieu, one more month's interest accrual) equals the balloon.
 // closing(r) is monotonically increasing in r (higher rate → less principal repaid).
-function solveRate(P, net, n, balloon){
-  const closing = r => { let b=P; for(let k=0;k<n;k++) b = b*(1+r) - net; return b - balloon; };
+function solveRate(P, net, n, balloon, inLieu){
+  const m = inLieu ? n-1 : n;
+  const closing = r => { let b=P; for(let k=0;k<m;k++) b = b*(1+r) - net; if(inLieu) b = b*(1+r); return b - balloon; };
   let lo=0, hi=1;                       // 0% .. 1200% p.a.
   if(closing(lo) >= 0) return 0;        // payment too small to amortise even at 0%
   if(closing(hi) <= 0) return hi;       // implausibly high rate; clamp
@@ -536,37 +550,43 @@ function buildSchedule(L){
 function buildFromTerms(L){
   const P = +L.principal||0, n = parseInt(L.termMonths)||0, balloon = +L.balloon||0;
   const exec = +L.execCosts||0, gst = +L.gstCredits||0;
+  const inLieu = L.balloonTiming === 'final';    // balloon IS the final payment (n−1 instalments)
   const start = parseDate(L.startDate);
   if(!P || !n || !start) return { rows:[], err:'Need amount financed, term and first payment date.' };
+  if(inLieu && n < 2) return { rows:[], err:'A balloon-as-final-payment facility needs a term of at least 2 months.' };
+  const pmtCount = inLieu ? n-1 : n;
 
   let rate = (L.annualRate!=null && L.annualRate!=='') ? (+L.annualRate/1200) : null;
   let gross = (L.payment!=null && L.payment!=='') ? (+L.payment) : null;
   let net   = gross!=null ? r2(gross - exec - gst) : null;
 
-  if(rate==null && net!=null)  rate = solveRate(P, net, n, balloon);
-  if(net==null  && rate!=null){ net = r2(annuityNet(P, rate, n, balloon)); gross = r2(net + exec + gst); }
+  if(rate==null && net!=null)  rate = solveRate(P, net, n, balloon, inLieu);
+  if(net==null  && rate!=null){ net = r2(annuityNet(P, rate, n, balloon, inLieu)); gross = r2(net + exec + gst); }
   if(rate==null || net==null)  return { rows:[], err:'Enter either the interest rate or the monthly payment.' };
   // Sanity: with any interest, total instalments + balloon must exceed the amount financed.
-  if(r2(net*n + balloon) < P - 0.01)
+  if(r2(net*pmtCount + balloon) < P - 0.01)
     return { rows:[], err:'The monthly payment and balloon don’t repay the amount financed — check for a missing residual/balloon, or enter the interest rate.' };
 
   const rows = [];
   let bal = P;
-  let remaining = r2(net*n + balloon);
+  let remaining = r2(net*pmtCount + balloon);
   for(let k=1;k<=n;k++){
     const date = addMon(start, k-1), me = eomOf(date);
     let interest = r2(bal*rate);
-    let principal = r2(net - interest);
-    let netPay = net;
+    let principal, netPay, ex = exec, g = gst;
     if(k === n){                                   // final row: clear the whole remaining balance
       principal = r2(bal);                         // includes the balloon (bal still carries it) + rounding
       netPay    = r2(principal + interest);
       interest  = r2(netPay - principal);
+      if(inLieu){ ex = 0; g = 0; }                 // balloon-only month carries no instalment charges
+    } else {
+      netPay = net;
+      principal = r2(net - interest);
     }
     bal = r2(bal - principal);
     if(k===n) bal = 0;
     remaining = r2(remaining - netPay);
-    rows.push({ date, monthEnd:me, payment:r2(netPay + exec + gst), exec, gst, net:netPay,
+    rows.push({ date, monthEnd:me, payment:r2(netPay + ex + g), exec:ex, gst:g, net:netPay,
                 interest, principal, clos:Math.max(0,bal), remaining:Math.max(0,remaining) });
   }
   return { rows, rate:rate*1200, payment:gross };
@@ -818,6 +838,7 @@ function openAdd(){
   if(!currentClient){ alert('Select a client first — facilities are stored per client.'); return; }
   $('editId').value=''; $('addTitle').textContent='Add Facility';
   ['fName','fFin','tPrincipal','tRate','tTerm','tPayment','tBalloon','tStart','tExec','sPrincipal','sRemaining','sPaste','aChp','aCui','aNhp','aNui'].forEach(id=>$(id).value='');
+  $('tBalTiming').value='with';
   $('pasteErr').style.display='none'; $('pasteOk').style.display='none';
   setMode('terms');
   $('addModal').classList.add('on');
@@ -829,6 +850,7 @@ function openEdit(id){
   $('tPrincipal').value = L.mode==='terms'?(L.principal||''):''; $('tRate').value=L.annualRate||'';
   $('tTerm').value=L.termMonths||''; $('tPayment').value=L.payment||''; $('tBalloon').value=L.balloon||'';
   $('tStart').value = L.startDate?fmtISO(parseDate(L.startDate)):''; $('tExec').value=L.execCosts||'';
+  $('tBalTiming').value = L.balloonTiming||'with';
   $('sPrincipal').value = L.mode==='schedule'?(L.principal||''):''; $('sRemaining').value=L.openRemaining||'';
   $('sPaste').value = (L.pasted||[]).map(p=>[p.rawdate||fmtDate(parseDate(p.date)), p.payment, p.interest].concat(p.exec?[p.exec]:[]).concat(p.gst?[p.gst]:[]).join(', ')).join('\n');
   $('aChp').value=L.aChp||''; $('aCui').value=L.aCui||''; $('aNhp').value=L.aNhp||''; $('aNui').value=L.aNui||'';
@@ -867,7 +889,7 @@ function saveLoan(){
     if(!$('tPrincipal').value || !$('tTerm').value || !$('tStart').value){ alert('Amount financed, term and first payment date are required.'); return; }
     L = { ...base, mode:'terms',
       principal:$('tPrincipal').value, annualRate:$('tRate').value, termMonths:$('tTerm').value,
-      payment:$('tPayment').value, balloon:$('tBalloon').value, startDate:$('tStart').value,
+      payment:$('tPayment').value, balloon:$('tBalloon').value, balloonTiming:$('tBalTiming').value, startDate:$('tStart').value,
       execCosts:$('tExec').value, gstCredits:'' };
     if(!$('tRate').value && !$('tPayment').value){ alert('Enter either an interest rate or a monthly payment.'); return; }
   } else {
