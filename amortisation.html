@@ -720,7 +720,7 @@ function renderLoans(){
       <td class="r">${fmt$(pos.curNet)}</td>
       <td class="r">${fmt$(pos.ncNet)}</td>
       <td class="r"><div style="display:flex;gap:.3rem;justify-content:flex-end">
-        <button class="btn btn-outline btn-sm" onclick="openEdit('${L.id}')">✏</button>
+        <button class="btn btn-outline btn-sm" onclick="openEdit('${L.id}')" title="Edit">✏️</button>
         <button class="btn btn-danger btn-sm" onclick="delLoan('${L.id}')">✕</button>
       </div></td>
     </tr>`;
