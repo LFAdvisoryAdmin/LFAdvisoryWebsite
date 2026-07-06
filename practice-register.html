@@ -616,8 +616,11 @@ function normalize(arr){return (arr||[]).map(function(t){
   var stage=t.stage;
   if(!STAGE_LABEL[stage])stage=(t.status==='done')?'completed':'ready';
   var pe=t.periodEnd||(isLodgementJob(t)?inferPeriodEnd(t.task):'');
-  if(stage==='ready'&&pe&&todayISO()<pe)stage='notready';
-  else if(stage==='notready'&&pe&&todayISO()>=pe)stage='ready';
+  /* Auto not-ready/ready is only for jobs the user hasn't manually set the status on. */
+  if(!t.userStage){
+    if(stage==='ready'&&pe&&todayISO()<pe)stage='notready';
+    else if(stage==='notready'&&pe&&todayISO()>=pe)stage='ready';
+  }
   return Object.assign({},t,{stage:stage,periodEnd:pe,preparer:(t.preparer!=null?t.preparer:(t.responsible||'')),reviewer:(t.reviewer||'')});
 });}
 
@@ -948,7 +951,7 @@ function saveTask(){
 }
 function setStage(id,stage){
   if(stage==='completed'){complete(id);return;}
-  tasks=tasks.map(function(t){return t.id===id?Object.assign({},t,{stage:stage}):t;});
+  tasks=tasks.map(function(t){return t.id===id?Object.assign({},t,{stage:stage,userStage:true}):t;});
   persist();
 }
 function complete(id){
@@ -963,7 +966,7 @@ function complete(id){
   });
   persist();
 }
-function reopen(id){tasks=tasks.map(function(t){return t.id===id?Object.assign({},t,{stage:'ready'}):t;});persist();}
+function reopen(id){tasks=tasks.map(function(t){return t.id===id?Object.assign({},t,{stage:'ready',userStage:true}):t;});persist();}
 function setComment(id,val){var t=tasks.find(function(x){return x.id===id;});if(!t||(t.comment||'')===val)return;t.comment=val;persist();}
 /* Recurrences that generate a rolling 12-month batch of discrete jobs (vs one-at-a-time). */
 var SERIES_RECS={fortnightly:1,monthly:1,quarterly:1,annually:1};
