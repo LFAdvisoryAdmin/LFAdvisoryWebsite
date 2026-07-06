@@ -549,6 +549,8 @@ function parseDate(s){
   if(m) return new Date(+m[1], +m[2]-1, +m[3]);
   m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/);          // dd/mm/yyyy
   if(m){ let y=+m[3]; if(y<100) y+=2000; return new Date(y, +m[2]-1, +m[1]); }
+  m = s.match(/^(\d{1,2})[-\/.](\d{4})$/);                           // mm/yyyy (month-only schedules, e.g. NAB)
+  if(m) return new Date(+m[2], +m[1]-1, 1);
   const d = new Date(s);
   return isNaN(d) ? null : d;
 }
@@ -1053,7 +1055,9 @@ function parsePaste(txt){
     const d = parseDate(cells[0]);
     if(!d) continue;
     const num = i => cells[i]!=null ? +String(cells[i]).replace(/[$,]/g,'') : 0;
-    out.push({ rawdate:cells[0], date:fmtISO(d), payment:num(1)||0, interest:num(2)||0, exec:cells[3]?num(3):0, gst:cells[4]?num(4):0 });
+    const payment = num(1)||0, interest = num(2)||0;
+    if(payment === 0 && interest === 0) continue;   // settlement/drawdown row — no cash moves
+    out.push({ rawdate:cells[0], date:fmtISO(d), payment, interest, exec:cells[3]?num(3):0, gst:cells[4]?num(4):0 });
   }
   return out;
 }

@@ -13,23 +13,26 @@
 const ALLOWED_ORIGINS = ['https://www.lfadvisory.com.au', 'https://lfadvisory.com.au'];
 const MODEL = 'claude-sonnet-5';
 
-const PROMPT = `You are given a vehicle/equipment finance amortisation schedule PDF from a financier (hire purchase or chattel mortgage).
+const PROMPT = `You are given a finance amortisation schedule PDF from a financier (hire purchase, chattel mortgage or equipment loan).
 
 Extract the repayment schedule and reply with EXACTLY this plain-text format and nothing else:
 
 PRINCIPAL: <amount financed at day one, plain number, or UNKNOWN>
-BALLOON: <balloon/residual payable at the end, plain number, or 0>
+BALLOON: <balloon/residual payable at the end of the term, plain number, or 0>
 ROWS:
 <one line per scheduled payment: date,payment,interest>
 
 Rules:
-- Dates as dd/mm/yyyy.
+- Dates as dd/mm/yyyy. If the schedule shows only month/year (e.g. 07/2026), use day 01 (01/07/2026).
 - Amounts as plain numbers with no currency symbols, commas, or spaces (e.g. 1816.51).
-- payment = the total instalment paid that period. If a balloon/residual is paid with or as the final payment, include it in the final row's payment.
-- interest = the interest charge for that period (0 if the schedule shows none).
+- payment = the total instalment paid that period; interest = the interest charge for that period (0 if none shown).
+- SKIP settlement/drawdown rows where both payment and interest are zero.
+- Balloon / residual — the rows must fully repay the amount financed:
+  - If the balloon is shown as (or included in) the final scheduled payment, include it there.
+  - If the schedule instead ENDS with a remaining balance still owing (final balance column not zero), that remaining balance is the balloon: append one extra row dated the same as the final repayment, with payment = that remaining balance and interest = 0.
 - If the schedule has separate fee/account-keeping and GST columns, append them: date,payment,interest,fee,gst.
-- Include every payment row in the schedule. Do not summarise, skip rows, or add totals, headers, or commentary.
-- If the document is not an amortisation/repayment schedule, reply exactly: ERROR: not an amortisation schedule`;
+- Include every repayment row. Do not summarise, skip repayment rows, or add totals, headers, or commentary.
+- If the document is not an amortisation/repayment schedule (e.g. it is a loan contract or invoice), reply exactly: ERROR: not an amortisation schedule`;
 
 export default {
   async fetch(request, env) {
