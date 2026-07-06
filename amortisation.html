@@ -148,6 +148,8 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
       <span>Client &amp; Reporting Settings <span id="syncStatus" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--mid);margin-left:.8rem"></span></span>
       <div class="btn-group">
         <button class="btn btn-outline btn-sm" id="syncBtn" style="display:none" onclick="location.href='portal.html'">Sign in via Portal</button>
+        <button class="btn btn-outline btn-sm" onclick="if(!currentClient){alert('Select a client first — facilities are stored per client.');}else{document.getElementById('wbFile').click();}">⬆ Import Workbook</button>
+        <input type="file" id="wbFile" accept=".xlsx,.xls" style="display:none" onchange="importWorkbook(this.files[0])">
         <button class="btn btn-primary btn-sm" onclick="openAdd()">+ Add Facility</button>
         <button class="btn btn-secondary btn-sm" onclick="persist(true)">💾 Save</button>
       </div>
@@ -1042,6 +1044,81 @@ async function handlePdf(file){
   dz.addEventListener('dragleave', () => dz.classList.remove('over'));
   dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); const f = e.dataTransfer.files[0]; if(f) handlePdf(f); });
 })();
+
+// ─── Import an existing amortisation workbook (one sheet per facility) ───────
+// Reads the manual workbook layout: header row Date/Month End/Payment/Exec
+// Costs/GST Credits/Net Payment/Interest/…/Clos Balance/Remaining, a
+// "Principal" row whose Clos Balance + Remaining cells hold the openers, and
+// blank/"Year End" subtotal rows in between. Facilities import in pasted mode
+// so the workbook's own figures carry over exactly.
+function importWorkbook(file){
+  if(!file) return;
+  if(!currentClient){ alert('Select a client first.'); return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try{
+      const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
+      const skipSheet = /^(summary|consolidated)/i;
+      const added = [], skipped = [];
+      wb.SheetNames.forEach(name => {
+        const nm = name.trim();
+        if(skipSheet.test(nm)) return;
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, raw:true, defval:null});
+        const L = sheetToLoan(nm, rows);
+        if(!L){ skipped.push(nm + ' — no schedule found'); return; }
+        if(loans.some(x => (x.name||'').toLowerCase() === nm.toLowerCase())){ skipped.push(nm + ' — already exists'); return; }
+        added.push(L);
+      });
+      if(!added.length){ alert('Nothing to import.' + (skipped.length ? '\n\nSkipped:\n' + skipped.join('\n') : '')); $('wbFile').value=''; return; }
+      const lines = added.map(L => `• ${L.name} — ${L.pasted.length} payments, financed ${fmt$(+L.principal)}`).join('\n');
+      if(!confirm(`Add ${added.length} facilit${added.length===1?'y':'ies'} to ${currentClient}?\n\n${lines}` + (skipped.length ? `\n\nSkipped:\n${skipped.join('\n')}` : '') + '\n\nRemember to add the GL account codes to each facility afterwards (edit ✏️).')){ $('wbFile').value=''; return; }
+      added.forEach(L => { L.id = 'L' + (seq++); loans.push(L); });
+      recalcAll();
+      alert(`✅ Imported ${added.length} facilit${added.length===1?'y':'ies'} for ${currentClient}.`);
+    }catch(err){ alert('Import failed: ' + (err.message || err)); }
+    $('wbFile').value='';
+  };
+  reader.readAsArrayBuffer(file);
+}
+function sheetToLoan(name, rows){
+  let hdr = -1;
+  for(let i=0;i<Math.min(rows.length,10);i++){
+    const r = rows[i]||[];
+    if(r.some(c => typeof c==='string' && /^date$/i.test(String(c).trim())) && r.some(c => typeof c==='string' && /interest/i.test(String(c)))){ hdr=i; break; }
+  }
+  if(hdr < 0) return null;
+  const heads = (rows[hdr]||[]).map(c => String(c==null?'':c).toLowerCase().trim());
+  const col = re => heads.findIndex(h => re.test(h));
+  const cDate=col(/^date$/), cPay=col(/^payment$/), cExec=col(/exec/), cGst=col(/gst/), cNet=col(/net/), cInt=col(/^interest/), cClos=col(/clos/), cRem=col(/remain/);
+  if(cDate<0 || cInt<0 || (cNet<0 && cPay<0)) return null;
+  let principal='', openRemaining='';
+  const pasted = [];
+  for(let i=hdr+1;i<rows.length;i++){
+    const r = rows[i]||[];
+    const label = String(r[0]==null?'':r[0]).trim();
+    if(/^principal/i.test(label)){
+      if(cClos>=0 && r[cClos]!=null) principal = String(r[cClos]);
+      if(cRem>=0 && r[cRem]!=null) openRemaining = String(r[cRem]);
+      continue;
+    }
+    if(/year\s*end|total/i.test(label)) continue;               // subtotal rows
+    const d = parseDate(r[cDate]);
+    if(!d) continue;
+    const num = idx => idx>=0 && r[idx]!=null && r[idx]!=='' ? +r[idx] : 0;
+    const gross=num(cPay), exec=num(cExec), gst=num(cGst), interest=num(cInt);
+    const net = cNet>=0 ? num(cNet) : r2(gross-exec-gst);
+    if(net===0 && interest===0) continue;                        // settlement / GST-refund rows
+    if(Math.abs(r2(gross-exec-gst) - net) < 0.02){
+      pasted.push({ rawdate:fmtDate(d), date:fmtISO(d), payment:gross, interest, exec, gst });
+    } else {
+      // Net was hand-adjusted in the workbook (extra repayment etc.) — the net
+      // is what drives the liability, so trust it over the gross columns.
+      pasted.push({ rawdate:fmtDate(d), date:fmtISO(d), payment:net, interest, exec:0, gst:0 });
+    }
+  }
+  if(!pasted.length || !principal) return null;
+  return { name, financier:'', mode:'schedule', principal, openRemaining, pasted, aChp:'', aCui:'', aNhp:'', aNui:'' };
+}
 
 function parsePaste(txt){
   const out=[]; const lines = txt.split(/\r?\n/);
