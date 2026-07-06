@@ -98,6 +98,10 @@ tfoot td{font-weight:700;font-family:var(--head);background:var(--light);border-
 .mode-pane{display:none}.mode-pane.on{display:block}
 .sect-lbl{font-family:var(--head);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--secondary);margin:.4rem 0 .8rem;padding-top:.6rem;border-top:1px dashed var(--border)}
 
+.drop{border:2px dashed var(--border);border-radius:10px;padding:1.1rem;text-align:center;cursor:pointer;transition:all .2s;color:var(--mid)}
+.drop:hover,.drop.over{border-color:var(--primary);background:#f0f8fa;color:var(--primary)}
+.drop p{font-family:var(--head);font-weight:600;font-size:.85rem}
+
 .alert{padding:.85rem 1.1rem;border-radius:8px;margin-bottom:1rem;font-size:.87rem}
 .a-info{background:#e8f4f8;border-left:4px solid var(--primary);color:var(--primary-dark)}
 .a-ok{background:#d4edda;border-left:4px solid var(--ok);color:#155724}
@@ -340,6 +344,16 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
         <div class="fg"><label>Paste schedule — one row per month *</label>
           <textarea id="sPaste" placeholder="Date, Payment, Interest[, Exec, GST]&#10;15/10/2021, 1816.51, 495.16&#10;15/11/2021, 1816.51, 490.34&#10;..."></textarea>
           <small>Columns: <strong>Date · Payment · Interest</strong> (optional Exec &amp; GST). Tab, comma or space separated. Copy straight from the financier schedule.</small>
+        </div>
+      </div>
+      <div class="frow full">
+        <div class="fg">
+          <label>…or upload the financier's PDF</label>
+          <div class="drop" id="pdfDrop" onclick="document.getElementById('pdfFile').click()">
+            <p>📄 Click to choose a PDF (or drag &amp; drop) — Claude reads it and fills the boxes above</p>
+            <small id="pdfStatus">Uses your portal sign-in · a few cents per document</small>
+          </div>
+          <input type="file" id="pdfFile" accept=".pdf,application/pdf" style="display:none" onchange="handlePdf(this.files[0])">
         </div>
       </div>
       <div class="alert a-warn" id="pasteErr" style="display:none"></div>
@@ -977,6 +991,55 @@ function openEdit(id){
   $('addModal').classList.add('on');
 }
 function closeAdd(){ $('addModal').classList.remove('on'); }
+
+// ─── PDF upload → Claude parser (lf-pdf-parser Worker) ──────────────────────
+// Sends the PDF + the portal's Graph token; the Worker verifies the caller is
+// an LF Advisory account, has Claude extract the rows, and returns
+// { principal, balloon, rows } ready for the paste box.
+const PDF_PARSER_URL = 'https://lf-pdf-parser.liam-5b0.workers.dev';
+async function handlePdf(file){
+  if(!file) return;
+  const err = $('pasteErr'), ok = $('pasteOk'), st = $('pdfStatus');
+  err.style.display='none'; ok.style.display='none';
+  const token = getStoredToken();
+  if(!token){ err.style.display='block'; err.textContent='❌ Your Microsoft sign-in has lapsed — open the portal, sign in, then try again.'; $('pdfFile').value=''; return; }
+  st.textContent = `Reading ${file.name} with Claude — usually 15–60 seconds…`;
+  try{
+    const b64 = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result).split(',')[1] || '');
+      r.onerror = () => rej(new Error('Could not read the file.'));
+      r.readAsDataURL(file);
+    });
+    const resp = await fetch(PDF_PARSER_URL, {
+      method:'POST',
+      headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json' },
+      body: JSON.stringify({ pdf: b64 }),
+    });
+    const data = await resp.json().catch(() => ({ error:'Unexpected response from the parser.' }));
+    if(!resp.ok) throw new Error(data.error || ('Parser error ' + resp.status));
+    $('sPaste').value = data.rows || '';
+    if(data.principal && data.principal !== 'UNKNOWN' && !$('sPrincipal').value) $('sPrincipal').value = data.principal;
+    const n = (data.rows || '').split('\n').filter(Boolean).length;
+    ok.style.display='block';
+    ok.textContent = `✅ Read ${n} payment rows from ${file.name}`
+      + (data.principal && data.principal !== 'UNKNOWN' ? ` · amount financed ${data.principal}` : '')
+      + (data.balloon && +data.balloon > 0 ? ` · balloon ${data.balloon} (should be inside the final row's payment — check it)` : '')
+      + '. Review the rows against the PDF, then Save Facility.';
+  }catch(e){
+    err.style.display='block';
+    err.textContent = '❌ ' + (e.message || e);
+  }finally{
+    st.textContent = 'Uses your portal sign-in · a few cents per document';
+    $('pdfFile').value='';
+  }
+}
+(function(){
+  const dz = $('pdfDrop'); if(!dz) return;
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); const f = e.dataTransfer.files[0]; if(f) handlePdf(f); });
+})();
 
 function parsePaste(txt){
   const out=[]; const lines = txt.split(/\r?\n/);

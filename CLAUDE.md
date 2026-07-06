@@ -97,14 +97,12 @@ The Workflow tool and daily email are live and in use (register had ~526 jobs). 
 ## Backlog / future considerations (not yet built)
 Ideas Liam raised to design later — captured here so they're not lost. Not started; no decision locked in.
 
-### 0. PDF upload → Claude parsing for amortisation schedules (NEXT UP — agreed 2026-07-06, Liam will kick it off)
-Let staff upload a financier's PDF amortisation schedule on `amortisation.html`'s "Paste Amortisation Schedule" pane instead of hand-copying rows. **Design agreed:**
-- **New Cloudflare Worker** (e.g. `lf-pdf-parser`, separate from `register-mailer`): `POST /parse` takes the PDF (base64) + the caller's Microsoft Graph token in `Authorization`.
-- **Auth**: Worker verifies the token by calling Graph `/me` and checking the account is in the LF Advisory tenant (`@lfadvisory.com.au`) — no secret in the page (page JS is public).
-- **Parsing**: Worker calls the Claude API (model `claude-sonnet-5`; PDF as a `document` content block — handles native AND scanned PDFs) with a strict instruction to return only CSV rows `date,payment,interest[,exec,gst]` plus amount financed/balloon if stated.
-- **Page wiring**: "Upload PDF" drop zone on the paste pane → response drops into the existing paste textarea for review before saving (existing `parsePaste` + balance checks catch misreads).
-- **Deploy**: same REST-API method as the mailer Worker (no wrangler on ARM64; see "Deploying / changing the Worker"). Cost: cents per schedule.
-- **Needed from Liam to start**: (1) an Anthropic API key (console.anthropic.com) → Worker secret `ANTHROPIC_API_KEY`; (2) a Cloudflare deploy token ("Edit Cloudflare Workers" template, delete after deploy).
+### 0. PDF upload → Claude parsing for amortisation schedules (BUILT 2026-07-07)
+Staff upload a financier's PDF amortisation schedule on `amortisation.html`'s "Paste Amortisation Schedule" pane (drop zone under the textarea) instead of hand-copying rows.
+- **Worker `lf-pdf-parser`** (source: `pdf-parser/worker.js`), deployed at **https://lf-pdf-parser.liam-5b0.workers.dev** (same Cloudflare account as the mailer). Deployed via the REST API method described under "Deploying / changing the Worker" (re-uploading replaces all bindings — always re-include the `ANTHROPIC_API_KEY` secret_text binding).
+- **Auth**: page sends the portal's shared Graph token in `Authorization`; the Worker calls Graph `/me` and requires an `@lfadvisory.com.au` account. CORS locked to the www/apex origins. No secret in the page.
+- **Parsing**: Claude API, model `claude-sonnet-5`, PDF as a base64 `document` content block (handles native and scanned PDFs). Returns `{principal, balloon, rows}` where rows are `dd/mm/yyyy,payment,interest[,fee,gst]` lines; the balloon is included in the final row's payment. Page fills `sPrincipal` + the paste textarea for review; existing parse/balance checks catch misreads. Cost ≈ 4–7c/document.
+- **Secrets**: `ANTHROPIC_API_KEY` (Anthropic Console org "LF Advisory", key `lf-pdf-parser`). Key transited a chat during setup — rotate at leisure (create new key in Console, redeploy Worker with new binding, delete old).
 
 ### 1. Parent clients / group roll-up
 Want a client **hierarchy**: a parent entity (e.g. *Flux Property Group Pty Ltd*) with child clients (e.g. *Flux Keperra Pty Ltd*, *Flux Byron Bay Unit Trust*) that get **summarised/rolled up** on certain views.
