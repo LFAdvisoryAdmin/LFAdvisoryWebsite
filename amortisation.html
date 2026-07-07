@@ -1315,33 +1315,49 @@ function exportXLSX(){
   cWs['!cols']=[{wch:2},{wch:12}].concat(Array(N).fill({wch:15})).concat([{wch:13}]).concat(Array(N).fill({wch:15})).concat([{wch:13}]);
   XLSX.utils.book_append_sheet(wb,cWs,CON);
 
-  // ── Summary (live SUMIFS off Consolidated) ──────────────────────────────────
+  // ── Summary — mirrors the manual workbook layout exactly:
+  //    r1 Month-end | date, r3 facility header + Total, r5-13 the liability
+  //    blocks (labels in column A), r16+ the monthly journal block
+  //    (Account name | Account code | Dr | Cr with a Check row).
   const meCol=`'${CON}'!$B:$B`;
   const A=[];
-  A.push(['','Month-end',dt(p)]);
-  A.push(['','Client',s(currentClient||'')]);
-  const h=['','']; for(let i=0;i<N;i++) h.push(loans[i].name); h.push('Total'); A.push(h);   // row3
-  const rowSUMIFS=(label,build)=>{ const row=['',label]; for(let i=0;i<N;i++) row.push(build(i)); row.push(''); A.push(row); };
-  // row indices (1-based Excel): period C1; header row = 3; data rows below
-  rowSUMIFS('Current HP liability', i=>f(`SUMIFS('${CON}'!${colL(payStart+i)}:${colL(payStart+i)},${meCol},">"&$C$1,${meCol},"<="&EOMONTH($C$1,12))`,ACC));            // r5
-  rowSUMIFS('Less: current unexpired interest', i=>f(`-SUMIFS('${CON}'!${colL(intStart+i)}:${colL(intStart+i)},${meCol},">"&$C$1,${meCol},"<="&EOMONTH($C$1,12))`,ACC)); // r6
-  A.push(['','Current liability'].concat(Array(N+1).fill('')));                                    // r7 (formula below)
-  A.push([]);                                                                                       // r8
-  rowSUMIFS('Non-current HP liability', i=>f(`SUMIFS('${CON}'!${colL(payStart+i)}:${colL(payStart+i)},${meCol},">"&EOMONTH($C$1,12))`,ACC));                    // r9
-  rowSUMIFS('Less: non-current unexpired interest', i=>f(`-SUMIFS('${CON}'!${colL(intStart+i)}:${colL(intStart+i)},${meCol},">"&EOMONTH($C$1,12))`,ACC));       // r10
-  A.push(['','Non-current liability'].concat(Array(N+1).fill('')));                                 // r11
-  A.push([]);                                                                                       // r12
-  A.push(['','Total liability'].concat(Array(N+1).fill('')));                                       // r13
+  A.push(['Month-end', dt(p)]);                                                       // r1  (date in B1)
+  A.push([]);                                                                          // r2
+  A.push([''].concat(loans.map(L=>L.name)).concat(['Total']));                         // r3
+  A.push([]);                                                                          // r4
+  const rowSUMIFS=(label,build)=>{ const row=[label]; for(let i=0;i<N;i++) row.push(build(i)); row.push(''); A.push(row); };
+  rowSUMIFS('Current HP Liability', i=>f(`SUMIFS('${CON}'!${colL(payStart+i)}:${colL(payStart+i)},${meCol},">"&$B$1,${meCol},"<="&EOMONTH($B$1,12))`,ACC));            // r5
+  rowSUMIFS('Current Unexpired Interest', i=>f(`-SUMIFS('${CON}'!${colL(intStart+i)}:${colL(intStart+i)},${meCol},">"&$B$1,${meCol},"<="&EOMONTH($B$1,12))`,ACC));     // r6
+  A.push(['Current Liability'].concat(Array(N+1).fill('')));                           // r7 (formula below)
+  A.push([]);                                                                          // r8
+  rowSUMIFS('Non-current HP Liability', i=>f(`SUMIFS('${CON}'!${colL(payStart+i)}:${colL(payStart+i)},${meCol},">"&EOMONTH($B$1,12))`,ACC));                           // r9
+  rowSUMIFS('Non-current Unexpired Interest', i=>f(`-SUMIFS('${CON}'!${colL(intStart+i)}:${colL(intStart+i)},${meCol},">"&EOMONTH($B$1,12))`,ACC));                    // r10
+  A.push(['Non-current Liability'].concat(Array(N+1).fill('')));                       // r11
+  A.push([]);                                                                          // r12
+  A.push(['Total Liabilities'].concat(Array(N+1).fill('')));                           // r13
+  A.push([]); A.push([]);                                                              // r14, r15
+  // Monthly journal block — same figures as the Monthly Journal tab for the
+  // exported reporting month (values, not formulas: regenerate the workbook to
+  // move the journal to another month; the liability block above stays live).
+  A.push(['Account name','Account code','Dr','Cr']);                                   // r16
+  const jlines = buildJournal();
+  let jdr=0, jcr=0;
+  jlines.forEach(l => {
+    const d = l.dm>0 ? r2(l.dm) : 0, c = l.dm<0 ? r2(-l.dm) : 0;
+    jdr = r2(jdr+d); jcr = r2(jcr+c);
+    A.push([l.name, l.code||'', d?n(d,ACC):'', c?n(c,ACC):'']);
+  });
+  A.push(['Check:','', n(jdr,ACC), n(jcr,ACC)]);
   const sWs=XLSX.utils.aoa_to_sheet(A);
-  // Columns: B(2)=label, C(3)=loan1 … (2+N)=loanN, (3+N)=Total. Fill computed rows + Total column.
-  const firstDataCol=3, totalColIdx=3+N;
+  // Columns: A(1)=label, B(2)=loan1 … (1+N)=loanN, (2+N)=Total. Fill computed rows + Total column.
+  const firstDataCol=2, totalColIdx=2+N;
   const setTotal=r=>{ sWs[colL(totalColIdx)+r]=f(`SUM(${colL(firstDataCol)}${r}:${colL(totalColIdx-1)}${r})`,ACC); };
   const setLoanCalc=(r,a,b)=>{ for(let i=0;i<N;i++){ const c=colL(firstDataCol+i); sWs[c+r]=f(`${c}${a}+${c}${b}`,ACC);} };
-  [4,5,8,9].forEach(setTotal);        // the four SUMIFS rows
-  setLoanCalc(6,4,5); setTotal(6);    // Current liability      = HP + (−unexpired int)
-  setLoanCalc(10,8,9); setTotal(10);  // Non-current liability
-  setLoanCalc(12,6,10); setTotal(12); // Total liability        = current + non-current
-  sWs['!cols']=[{wch:2},{wch:34}].concat(Array(N).fill({wch:15})).concat([{wch:15}]);
+  [5,6,9,10].forEach(setTotal);        // the four SUMIFS rows
+  setLoanCalc(7,5,6); setTotal(7);     // Current Liability      = HP + (−unexpired int)
+  setLoanCalc(11,9,10); setTotal(11);  // Non-current Liability
+  setLoanCalc(13,7,11); setTotal(13);  // Total Liabilities      = current + non-current
+  sWs['!cols']=[{wch:38}].concat(Array(N).fill({wch:15})).concat([{wch:15}]);
   XLSX.utils.book_append_sheet(wb,sWs,'Summary');
   // move Summary to front
   wb.SheetNames = ['Summary', CON].concat(wb.SheetNames.filter(x=>x!=='Summary'&&x!==CON));
