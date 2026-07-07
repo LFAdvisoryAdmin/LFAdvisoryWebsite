@@ -371,6 +371,9 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
       <div class="fg"><label>Non-current HP liability</label><input id="aNhp" placeholder="code — e.g. 23221"></div>
       <div class="fg"><label>Non-current unexpired interest</label><input id="aNui" placeholder="code — e.g. 23721"></div>
     </div>
+    <div class="frow">
+      <div class="fg"><label>Interest expense (this facility)</label><input id="aIexp" placeholder="optional — e.g. 61900"><small>Leave blank to use the global Interest Expense Acct from the settings bar</small></div>
+    </div>
 
     <div class="modal-foot">
       <button class="btn btn-outline" onclick="closeAdd()">Cancel</button>
@@ -832,7 +835,8 @@ function renderSummary(){
 function buildJournal(){
   const p = periodDate(), prev = eomAdd(p,-1);
   const lines = [];
-  let totInt=0, totNet=0;
+  let totNet=0;
+  const intByAcct = {};   // interest expense grouped by facility override code ('' = global acct)
   loans.forEach(L => {
     const rows = L._rows||[];
     // No monthly journal before the contract's first instalment month — the
@@ -840,7 +844,11 @@ function buildJournal(){
     if(!rows.length || p.getTime() < rows[0].monthEnd.getTime()) return;
     const now = positionAt(rows, p), was = positionAt(rows, prev);
     const act = monthActivity(L._rows||[], p);
-    totInt += act.interest; totNet += act.net;
+    const iKey = (L.aIexp||'').trim();
+    if(!intByAcct[iKey]) intByAcct[iKey] = { amt:0, names:[] };
+    intByAcct[iKey].amt = r2(intByAcct[iKey].amt + act.interest);
+    if(Math.abs(act.interest) > 0.005) intByAcct[iKey].names.push(L.name);
+    totNet += act.net;
     // debit-side movement per account (see derivation): HP liab Cr-normal, UI Dr-normal
     const items = [
       { name:`${L.name} — Current HP liability`,        code:L.aChp, dm: r2(was.curHP - now.curHP) },
@@ -850,7 +858,11 @@ function buildJournal(){
     ];
     items.forEach(it => { if(Math.abs(it.dm) > 0.005) lines.push(it); });
   });
-  if(Math.abs(totInt) > 0.005) lines.push({ name:'Interest expense', code:settings.interestAcct, dm: r2(totInt) });
+  Object.keys(intByAcct).forEach(k => {
+    const e = intByAcct[k];
+    if(Math.abs(e.amt) > 0.005)
+      lines.push({ name: k ? `Interest expense — ${e.names.join(', ')}` : 'Interest expense', code: k || settings.interestAcct, dm: e.amt });
+  });
   if(Math.abs(totNet) > 0.005) lines.push({ name:'Finance repayments — bank / clearing', code:settings.bankAcct, dm: r2(-totNet) });
   return lines;
 }
@@ -973,7 +985,7 @@ function setMode(m){
 function openAdd(){
   if(!currentClient){ alert('Select a client first — facilities are stored per client.'); return; }
   $('editId').value=''; $('addTitle').textContent='Add Facility';
-  ['fName','fFin','tPrincipal','tRate','tTerm','tPayment','tBalloon','tStart','tExec','sPrincipal','sRemaining','sPaste','aChp','aCui','aNhp','aNui'].forEach(id=>$(id).value='');
+  ['fName','fFin','tPrincipal','tRate','tTerm','tPayment','tBalloon','tStart','tExec','sPrincipal','sRemaining','sPaste','aChp','aCui','aNhp','aNui','aIexp'].forEach(id=>$(id).value='');
   $('tBalTiming').value='with';
   $('pasteErr').style.display='none'; $('pasteOk').style.display='none';
   setMode('terms');
@@ -989,7 +1001,7 @@ function openEdit(id){
   $('tBalTiming').value = L.balloonTiming||'with';
   $('sPrincipal').value = L.mode==='schedule'?(L.principal||''):''; $('sRemaining').value=L.openRemaining||'';
   $('sPaste').value = (L.pasted||[]).map(p=>[p.rawdate||fmtDate(parseDate(p.date)), p.payment, p.interest].concat(p.exec?[p.exec]:[]).concat(p.gst?[p.gst]:[]).join(', ')).join('\n');
-  $('aChp').value=L.aChp||''; $('aCui').value=L.aCui||''; $('aNhp').value=L.aNhp||''; $('aNui').value=L.aNui||'';
+  $('aChp').value=L.aChp||''; $('aCui').value=L.aCui||''; $('aNhp').value=L.aNhp||''; $('aNui').value=L.aNui||''; $('aIexp').value=L.aIexp||'';
   $('pasteErr').style.display='none'; $('pasteOk').style.display='none';
   setMode(L.mode||'terms');
   $('addModal').classList.add('on');
@@ -1059,6 +1071,11 @@ function importWorkbook(file){
     try{
       const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
       const skipSheet = /^(summary|consolidated)/i;
+      // GL account codes live in the Summary sheet's journal block — grab them up front
+      const sumName = wb.SheetNames.find(n => /^summary/i.test(n.trim()));
+      const codeInfo = sumName
+        ? extractSummaryCodes(XLSX.utils.sheet_to_json(wb.Sheets[sumName], {header:1, raw:true, defval:null}))
+        : { groups:[], interest:'' };
       const added = [], skipped = [];
       wb.SheetNames.forEach(name => {
         const nm = name.trim();
@@ -1070,8 +1087,13 @@ function importWorkbook(file){
         added.push(L);
       });
       if(!added.length){ alert('Nothing to import.' + (skipped.length ? '\n\nSkipped:\n' + skipped.join('\n') : '')); $('wbFile').value=''; return; }
-      const lines = added.map(L => `• ${L.name} — ${L.pasted.length} payments, financed ${fmt$(+L.principal)}`).join('\n');
-      if(!confirm(`Add ${added.length} facilit${added.length===1?'y':'ies'} to ${currentClient}?\n\n${lines}` + (skipped.length ? `\n\nSkipped:\n${skipped.join('\n')}` : '') + '\n\nRemember to add the GL account codes to each facility afterwards (edit ✏️).')){ $('wbFile').value=''; return; }
+      assignSummaryCodes(added, codeInfo.groups);
+      if(codeInfo.interest && !$('interestAcct').value.trim()){ $('interestAcct').value = codeInfo.interest; settings.interestAcct = codeInfo.interest; }
+      const unmatched = added.filter(L => !L.aChp).length;
+      const lines = added.map(L => `• ${L.name} — ${L.pasted.length} payments, financed ${fmt$(+L.principal)}${L.aChp ? `, GL ${L.aChp}/${L.aCui}/${L.aNhp}/${L.aNui}` : ', no GL codes matched'}`).join('\n');
+      if(!confirm(`Add ${added.length} facilit${added.length===1?'y':'ies'} to ${currentClient}?\n\n${lines}`
+        + (skipped.length ? `\n\nSkipped:\n${skipped.join('\n')}` : '')
+        + (unmatched ? `\n\n⚠ ${unmatched} facilit${unmatched===1?'y has':'ies have'} no GL codes — add them via edit ✏️ afterwards.` : ''))){ $('wbFile').value=''; return; }
       added.forEach(L => { L.id = 'L' + (seq++); loans.push(L); });
       recalcAll();
       alert(`✅ Imported ${added.length} facilit${added.length===1?'y':'ies'} for ${currentClient}.`);
@@ -1080,6 +1102,62 @@ function importWorkbook(file){
   };
   reader.readAsArrayBuffer(file);
 }
+// Pull the GL codes from the Summary sheet's journal block: a header row
+// "Account name | Account code", then four accounts per facility in a fixed
+// order — Current HP, Current unexpired interest, Non-current HP, Non-current
+// unexpired interest — plus Interest Expense and Bank Charges at the end.
+function extractSummaryCodes(rows){
+  let hdr = -1;
+  for(let i=0;i<rows.length;i++){
+    const r = rows[i]||[];
+    if(/account\s*name/i.test(String(r[0]||'')) && /account\s*code/i.test(String(r[1]||''))){ hdr=i; break; }
+  }
+  if(hdr < 0) return { groups:[], interest:'' };
+  const accts = []; let interest = '';
+  for(let i=hdr+1;i<rows.length;i++){
+    const r = rows[i]||[];
+    const nm = String(r[0]||'').trim(), code = r[1];
+    if(/^check|monthly journal/i.test(nm)) break;
+    if(!nm || code == null || code === '') continue;
+    if(/interest\s*expense/i.test(nm)){ interest = String(code); continue; }
+    if(/bank\s*charge/i.test(nm)) continue;
+    accts.push({ name:nm, code:String(code) });
+  }
+  const groups = [];
+  for(let i=0;i+3<accts.length;i+=4){
+    const g = accts.slice(i, i+4);
+    // sanity check the 4-row grouping — rows 3+4 must be the non-current pair,
+    // otherwise a stray row has shifted everything and codes would be wrong
+    if(/\(nc\)|non[\s-]?current|\bnc\b/i.test(g[2].name + ' ' + g[3].name)) groups.push(g);
+  }
+  return { groups, interest };
+}
+// Match each code group to an imported facility by name similarity (account
+// names rarely equal sheet names exactly); if exactly one of each is left
+// unmatched, pair them by elimination.
+function assignSummaryCodes(added, groups){
+  const squashS = s => String(s).toLowerCase().replace(/[^a-z0-9]/g,'');
+  const toksS = s => String(s).toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 2);
+  const scoreS = (sheet, acct) => {
+    const sq = squashS(sheet), asq = squashS(acct);
+    if(sq && asq && (asq.includes(sq) || sq.includes(asq))) return 100;
+    const at = new Set(toksS(acct));
+    return toksS(sheet).filter(t => at.has(t)).length;
+  };
+  const cands = [];
+  groups.forEach((g, gi) => added.forEach((L, fi) => { const s = scoreS(L.name, g[0].name); if(s > 0) cands.push({gi, fi, s}); }));
+  cands.sort((a,b) => b.s - a.s);
+  const gUsed = new Set(), fUsed = new Set(), pairs = [];
+  cands.forEach(c => { if(!gUsed.has(c.gi) && !fUsed.has(c.fi)){ gUsed.add(c.gi); fUsed.add(c.fi); pairs.push(c); } });
+  const gLeft = groups.map((_,i)=>i).filter(i => !gUsed.has(i));
+  const fLeft = added.map((_,i)=>i).filter(i => !fUsed.has(i));
+  if(gLeft.length === 1 && fLeft.length === 1) pairs.push({ gi:gLeft[0], fi:fLeft[0] });
+  pairs.forEach(({gi, fi}) => {
+    const g = groups[gi], L = added[fi];
+    L.aChp = g[0].code; L.aCui = g[1].code; L.aNhp = g[2].code; L.aNui = g[3].code;
+  });
+}
+
 function sheetToLoan(name, rows){
   let hdr = -1;
   for(let i=0;i<Math.min(rows.length,10);i++){
@@ -1117,7 +1195,7 @@ function sheetToLoan(name, rows){
     }
   }
   if(!pasted.length || !principal) return null;
-  return { name, financier:'', mode:'schedule', principal, openRemaining, pasted, aChp:'', aCui:'', aNhp:'', aNui:'' };
+  return { name, financier:'', mode:'schedule', principal, openRemaining, pasted, aChp:'', aCui:'', aNhp:'', aNui:'', aIexp:'' };
 }
 
 function parsePaste(txt){
@@ -1145,6 +1223,7 @@ function saveLoan(){
   const base = {
     name, financier:$('fFin').value.trim(),
     aChp:$('aChp').value.trim(), aCui:$('aCui').value.trim(), aNhp:$('aNhp').value.trim(), aNui:$('aNui').value.trim(),
+    aIexp:$('aIexp').value.trim(),
   };
   let L;
   if(modalMode==='terms'){
