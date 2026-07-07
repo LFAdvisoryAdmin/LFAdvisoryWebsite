@@ -163,7 +163,7 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
         <button class="btn btn-outline btn-sm" onclick="if(!currentClient){alert('Select a client first — facilities are stored per client.');}else{document.getElementById('wbFile').click();}">⬆ Import Workbook</button>
         <input type="file" id="wbFile" accept=".xlsx,.xls" style="display:none" onchange="importWorkbook(this.files[0])">
         <button class="btn btn-primary btn-sm" onclick="openAdd()">+ Add Facility</button>
-        <button class="btn btn-secondary btn-sm" onclick="persist(true)">💾 Save</button>
+        <button class="btn btn-accent btn-sm" onclick="exportXLSX()">📊 Export Workbook</button>
       </div>
     </div>
     <div class="ctrl-bar">
@@ -232,9 +232,6 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
         </table>
       </div>
     </div>
-    <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem">
-      <button class="btn btn-accent" onclick="exportXLSX()">📊 Export Full Workbook</button>
-    </div>
   </div>
 
   <!-- TAB: CONSOLIDATED -->
@@ -253,7 +250,6 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
     </div>
     <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem">
       <button class="btn btn-outline" onclick="exportSummaryPDF()">📄 Export PDF</button>
-      <button class="btn btn-accent" onclick="exportXLSX()">📊 Export Full Workbook</button>
     </div>
   </div>
 
