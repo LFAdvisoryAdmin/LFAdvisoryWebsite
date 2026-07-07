@@ -1057,7 +1057,8 @@ async function handlePdf(file){
     ok.textContent = `✅ Read ${n} payment rows from ${file.name}`
       + (data.principal && data.principal !== 'UNKNOWN' ? ` · amount financed ${data.principal}` : '')
       + (data.balloon && +data.balloon > 0 ? ` · balloon ${data.balloon} (should be inside the final row's payment — check it)` : '')
-      + '. Review the rows against the PDF, then Save Facility.';
+      + '. Review the rows against the PDF, then Save Facility.'
+      + (data.drift != null && Math.abs(data.drift) > 1 ? ` ⚠ The rows repay ${fmt$(Math.abs(data.drift))} ${data.drift > 0 ? 'less' : 'more'} than the amount financed — check the figures against the PDF before saving.` : '');
   }catch(e){
     err.style.display='block';
     err.textContent = '❌ ' + (e.message || e);

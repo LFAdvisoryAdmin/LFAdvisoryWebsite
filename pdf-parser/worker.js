@@ -20,17 +20,22 @@ Extract the repayment schedule and reply with EXACTLY this plain-text format and
 PRINCIPAL: <amount financed at day one, plain number, or UNKNOWN>
 BALLOON: <balloon/residual payable at the end of the term, plain number, or 0>
 ROWS:
-<one line per scheduled payment: date,payment,interest>
+<one line per scheduled payment: date,payment,interest  OR  date,payment,interest,fee,gst>
 
-Rules:
-- Dates as dd/mm/yyyy. If the schedule shows only month/year (e.g. 07/2026), use day 01 (01/07/2026).
-- Amounts as plain numbers with no currency symbols, commas, or spaces (e.g. 1816.51).
-- payment = the total instalment paid that period; interest = the interest charge for that period (0 if none shown).
-- SKIP settlement/drawdown rows where both payment and interest are zero.
-- Balloon / residual — the rows must fully repay the amount financed:
+Column mapping (layouts and names vary between financiers):
+- date: the repayment/due date, as dd/mm/yyyy. If only month/year is shown (e.g. 07/2026), use day 01.
+- payment: the TOTAL cash paid that period, INCLUDING any per-payment fee or GST shown for the row. The column may be named Repayment, Repayment Amount, Instalment, Payment Amount, etc. If the schedule shows no total column, or the shown total excludes the fee, output payment = principal + interest + fee (+ gst) instead of the shown figure.
+- interest: the interest / term charge for that period (0 if none shown).
+- fee: per-payment administration/account-keeping fees, if the schedule has such a column (e.g. Administration Fees). gst: per-payment GST credits if shown. Use the 5-column form only when the schedule has these columns.
+
+Verify before replying (fix the rows, do not explain):
+- Every row must satisfy: payment - fee - gst - interest = that row's principal reduction (it must match the movement in the balance column when one is shown).
+- PRINCIPAL: use the stated amount financed. If not stated, derive it from the schedule (e.g. the first row's closing balance plus that row's principal reduction). Use UNKNOWN only if it genuinely cannot be determined.
+- The rows must fully repay PRINCIPAL:
+  - SKIP settlement/drawdown rows where both payment and interest are zero.
   - If the balloon is shown as (or included in) the final scheduled payment, include it there.
-  - If the schedule instead ENDS with a remaining balance still owing (final balance column not zero), that remaining balance is the balloon: append one extra row dated the same as the final repayment, with payment = that remaining balance and interest = 0.
-- If the schedule has separate fee/account-keeping and GST columns, append them: date,payment,interest,fee,gst.
+  - If the schedule instead ENDS with a remaining balance still owing (a positive final balance), that balance is the balloon: append one extra row dated the same as the final repayment, with payment = that remaining balance and interest = 0. A trivial residual of a few cents (rounding) needs no extra row.
+- Amounts as plain numbers with no currency symbols, commas, or spaces (e.g. 1623.10).
 - Include every repayment row. Do not summarise, skip repayment rows, or add totals, headers, or commentary.
 - If the document is not an amortisation/repayment schedule (e.g. it is a loan contract or invoice), reply exactly: ERROR: not an amortisation schedule`;
 
@@ -100,10 +105,24 @@ export default {
     const rows = rowsIdx >= 0 ? text.slice(rowsIdx + 5).trim() : '';
     if (!rows) return json({ error: 'No schedule rows found in the document — check the PDF and try again.' }, 422, cors);
 
+    // arithmetic sanity: rows should repay the principal (payment - fee - gst - interest summed)
+    let drift = null;
+    const pNum = principalMatch ? +principalMatch[1] : NaN;
+    if (isFinite(pNum) && pNum > 0) {
+      let paid = 0;
+      for (const line of rows.split('\n')) {
+        const c = line.split(',').map(x => x.trim());
+        const pay = +c[1], int = +c[2], fee = c[3] !== undefined ? +c[3] : 0, gst = c[4] !== undefined ? +c[4] : 0;
+        if (isFinite(pay) && isFinite(int)) paid += pay - (isFinite(fee) ? fee : 0) - (isFinite(gst) ? gst : 0) - int;
+      }
+      drift = Math.round((pNum - paid) * 100) / 100;
+    }
+
     return json({
       principal: principalMatch ? principalMatch[1] : '',
       balloon: balloonMatch ? balloonMatch[1] : '',
       rows,
+      drift,
       usage: data.usage,
     }, 200, cors);
   },
