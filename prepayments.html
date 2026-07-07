@@ -440,10 +440,11 @@ function fillClientSel(){
   sel.value = currentClient || '';
   if(sel.value !== (currentClient||'')){ sel.value = ''; currentClient = ''; }
 }
-function defaultPeriod(){ const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}`; }
+// current period = the month just completed (in July you process June)
+function defaultPeriod(){ const t = new Date(), d = new Date(t.getFullYear(), t.getMonth()-1, 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
 function hydrateClient(){
   const d = (currentClient && store.clients[currentClient]) || null;
-  $('period').value = (d && d.period) || defaultPeriod();
+  $('period').value = defaultPeriod();   // every client opens at the last completed month; change it ad hoc if needed
   $('assetAcct').value = (d && d.assetAcct) || '5400';
   items = (d && d.items ? JSON.parse(JSON.stringify(d.items)) : []).map(calcItem);
 }

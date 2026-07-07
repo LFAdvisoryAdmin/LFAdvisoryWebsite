@@ -517,13 +517,14 @@ function fillClientSel(){
   sel.value = currentClient || '';
   if(sel.value !== (currentClient||'')){ sel.value = ''; currentClient = ''; }
 }
-function defaultPeriod(){ const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}`; }
+// reporting month-end = the month just completed (in July you report on June)
+function defaultPeriod(){ const t = new Date(), d = new Date(t.getFullYear(), t.getMonth()-1, 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
 function hydrateClient(){
   const d = (currentClient && store.clients[currentClient]) || null;
   loans = d && d.loans ? JSON.parse(JSON.stringify(d.loans)) : [];
   settings = d && d.settings ? {...d.settings} : {interestAcct:'', bankAcct:''};
   seq = d && d.seq ? d.seq : loans.reduce((m,L) => Math.max(m, parseInt(String(L.id).slice(1))||0), 0) + 1;
-  $('period').value = (d && d.period) || defaultPeriod();
+  $('period').value = defaultPeriod();   // every client opens at the last completed month; change it ad hoc if needed
   $('interestAcct').value = settings.interestAcct || '';
   $('bankAcct').value = settings.bankAcct || '';
 }
