@@ -6,7 +6,8 @@
 <title>Amortisation Schedule Builder — LF Advisory</title>
 <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;600;700;800&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- xlsx-js-style = SheetJS 0.18.5 + cell styling (bold/borders in exports) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <style>
 :root {
   --primary:#2d6670; --primary-dark:#1e4a52; --secondary:#5a7a3a;
@@ -1284,7 +1285,12 @@ function exportXLSX(){
   const s=v=>({v:v==null?'':v,t:'s'});
   const n=(v,z)=>({v:r2(v),t:'n',z:z||NUM});
   const dt=v=>({v:(v instanceof Date)?v:parseDate(v),t:'d',z:DATEF});
-  const f=(fo,z)=>({f:fo,t:'n',z:z||NUM});
+  // formula cells carry a cached value — the styled writer drops formula-only
+  // cells, and Excel shows the right figure even before a recalc
+  const f=(fo,z,v)=>({f:fo,t:'n',z:z||NUM,v:(typeof v==='number'&&isFinite(v))?r2(v):0});
+  // styling helpers (xlsx-js-style): bold headings + accounting borders
+  const setS=(ws,addr,st)=>{ if(ws[addr]) ws[addr].s=st; };
+  const BOLD={font:{bold:true}}, UNDER={border:{bottom:{style:'thin'}}}, HEAD={font:{bold:true},border:{bottom:{style:'thin'}}};
   const wb=XLSX.utils.book_new();
   const p=periodDate();
   const N=loans.length;
@@ -1299,20 +1305,22 @@ function exportXLSX(){
   cAoa.push(hdr1);
   mes.forEach(me=>{
     const row=['',dt(me)];
-    for(let i=0;i<N;i++){ const r=loanAtMonth(loans[i],me.getTime()); row.push(r?n(r.net):n(0)); }
-    row.push(n(0)); // placeholder total, set as formula below
-    for(let i=0;i<N;i++){ const r=loanAtMonth(loans[i],me.getTime()); row.push(r?n(r.interest):n(0)); }
-    row.push(n(0));
+    let tp=0, ti=0;
+    for(let i=0;i<N;i++){ const r=loanAtMonth(loans[i],me.getTime()); const v=r?r.net:0; tp+=v; row.push(n(v)); }
+    row.push(n(r2(tp)));
+    for(let i=0;i<N;i++){ const r=loanAtMonth(loans[i],me.getTime()); const v=r?r.interest:0; ti+=v; row.push(n(v)); }
+    row.push(n(r2(ti)));
     cAoa.push(row);
   });
   const cWs=XLSX.utils.aoa_to_sheet(cAoa);
-  // total formulas
+  // totals become live formulas, keeping the computed value as the cache
   for(let ri=1;ri<cAoa.length;ri++){
     const xlR=ri+1;
-    cWs[colL(payTotal)+xlR]=f(`SUM(${colL(payStart)}${xlR}:${colL(payTotal-1)}${xlR})`);
-    cWs[colL(intTotal)+xlR]=f(`SUM(${colL(intStart)}${xlR}:${colL(intTotal-1)}${xlR})`);
+    cWs[colL(payTotal)+xlR]=f(`SUM(${colL(payStart)}${xlR}:${colL(payTotal-1)}${xlR})`, NUM, cWs[colL(payTotal)+xlR].v);
+    cWs[colL(intTotal)+xlR]=f(`SUM(${colL(intStart)}${xlR}:${colL(intTotal-1)}${xlR})`, NUM, cWs[colL(intTotal)+xlR].v);
   }
   cWs['!cols']=[{wch:2},{wch:12}].concat(Array(N).fill({wch:15})).concat([{wch:13}]).concat(Array(N).fill({wch:15})).concat([{wch:13}]);
+  for(let ci=2;ci<=intTotal;ci++) setS(cWs,colL(ci)+'1',HEAD);
   XLSX.utils.book_append_sheet(wb,cWs,CON);
 
   // ── Summary — mirrors the manual workbook layout exactly:
@@ -1326,12 +1334,13 @@ function exportXLSX(){
   A.push([''].concat(loans.map(L=>L.name)).concat(['Total']));                         // r3
   A.push([]);                                                                          // r4
   const rowSUMIFS=(label,build)=>{ const row=[label]; for(let i=0;i<N;i++) row.push(build(i)); row.push(''); A.push(row); };
-  rowSUMIFS('Current HP Liability', i=>f(`SUMIFS('${CON}'!${colL(payStart+i)}:${colL(payStart+i)},${meCol},">"&$B$1,${meCol},"<="&EOMONTH($B$1,12))`,ACC));            // r5
-  rowSUMIFS('Current Unexpired Interest', i=>f(`-SUMIFS('${CON}'!${colL(intStart+i)}:${colL(intStart+i)},${meCol},">"&$B$1,${meCol},"<="&EOMONTH($B$1,12))`,ACC));     // r6
+  const posAll = loans.map(L=>positionAt(L._rows||[], p));   // cached values for the formula cells
+  rowSUMIFS('Current HP Liability', i=>f(`SUMIFS('${CON}'!${colL(payStart+i)}:${colL(payStart+i)},${meCol},">"&$B$1,${meCol},"<="&EOMONTH($B$1,12))`,ACC, posAll[i].curHP));            // r5
+  rowSUMIFS('Current Unexpired Interest', i=>f(`-SUMIFS('${CON}'!${colL(intStart+i)}:${colL(intStart+i)},${meCol},">"&$B$1,${meCol},"<="&EOMONTH($B$1,12))`,ACC, -posAll[i].curUI));    // r6
   A.push(['Current Liability'].concat(Array(N+1).fill('')));                           // r7 (formula below)
   A.push([]);                                                                          // r8
-  rowSUMIFS('Non-current HP Liability', i=>f(`SUMIFS('${CON}'!${colL(payStart+i)}:${colL(payStart+i)},${meCol},">"&EOMONTH($B$1,12))`,ACC));                           // r9
-  rowSUMIFS('Non-current Unexpired Interest', i=>f(`-SUMIFS('${CON}'!${colL(intStart+i)}:${colL(intStart+i)},${meCol},">"&EOMONTH($B$1,12))`,ACC));                    // r10
+  rowSUMIFS('Non-current HP Liability', i=>f(`SUMIFS('${CON}'!${colL(payStart+i)}:${colL(payStart+i)},${meCol},">"&EOMONTH($B$1,12))`,ACC, posAll[i].ncHP));                           // r9
+  rowSUMIFS('Non-current Unexpired Interest', i=>f(`-SUMIFS('${CON}'!${colL(intStart+i)}:${colL(intStart+i)},${meCol},">"&EOMONTH($B$1,12))`,ACC, -posAll[i].ncUI));                   // r10
   A.push(['Non-current Liability'].concat(Array(N+1).fill('')));                       // r11
   A.push([]);                                                                          // r12
   A.push(['Total Liabilities'].concat(Array(N+1).fill('')));                           // r13
@@ -1351,13 +1360,23 @@ function exportXLSX(){
   const sWs=XLSX.utils.aoa_to_sheet(A);
   // Columns: A(1)=label, B(2)=loan1 … (1+N)=loanN, (2+N)=Total. Fill computed rows + Total column.
   const firstDataCol=2, totalColIdx=2+N;
-  const setTotal=r=>{ sWs[colL(totalColIdx)+r]=f(`SUM(${colL(firstDataCol)}${r}:${colL(totalColIdx-1)}${r})`,ACC); };
-  const setLoanCalc=(r,a,b)=>{ for(let i=0;i<N;i++){ const c=colL(firstDataCol+i); sWs[c+r]=f(`${c}${a}+${c}${b}`,ACC);} };
+  const cv=(c,r)=>{ const cell=sWs[c+r]; return cell && typeof cell.v==='number' ? cell.v : 0; };
+  const setTotal=r=>{ let tv=0; for(let i=0;i<N;i++) tv+=cv(colL(firstDataCol+i),r); sWs[colL(totalColIdx)+r]=f(`SUM(${colL(firstDataCol)}${r}:${colL(totalColIdx-1)}${r})`,ACC, r2(tv)); };
+  const setLoanCalc=(r,a,b)=>{ for(let i=0;i<N;i++){ const c=colL(firstDataCol+i); sWs[c+r]=f(`${c}${a}+${c}${b}`,ACC, r2(cv(c,a)+cv(c,b)));} };
   [5,6,9,10].forEach(setTotal);        // the four SUMIFS rows
   setLoanCalc(7,5,6); setTotal(7);     // Current Liability      = HP + (−unexpired int)
   setLoanCalc(11,9,10); setTotal(11);  // Non-current Liability
   setLoanCalc(13,7,11); setTotal(13);  // Total Liabilities      = current + non-current
   sWs['!cols']=[{wch:38}].concat(Array(N).fill({wch:15})).concat([{wch:15}]);
+  // styling: bold headings + accounting underlines, like the manual pack
+  setS(sWs,'A1',BOLD); setS(sWs,'B1',BOLD);
+  for(let c=firstDataCol;c<=totalColIdx;c++) setS(sWs,colL(c)+'3',BOLD);                     // facility header
+  [6,10].forEach(r=>{ for(let c=firstDataCol;c<=totalColIdx;c++) setS(sWs,colL(c)+r,UNDER); });// line above each subtotal
+  setS(sWs,'A13',BOLD);
+  for(let c=firstDataCol;c<=totalColIdx;c++) setS(sWs,colL(c)+'13',{font:{bold:true},border:{top:{style:'thin'},bottom:{style:'double'}}});
+  ['A','B','C','D'].forEach(c=>setS(sWs,c+'16',HEAD));
+  const checkRow = 17 + jlines.length;
+  ['A','B','C','D'].forEach(c=>setS(sWs,c+checkRow,{font:{bold:true},border:{top:{style:'thin'}}}));
   XLSX.utils.book_append_sheet(wb,sWs,'Summary');
   // move Summary to front
   wb.SheetNames = ['Summary', CON].concat(wb.SheetNames.filter(x=>x!=='Summary'&&x!==CON));
@@ -1377,9 +1396,13 @@ function exportXLSX(){
       a.push([dt(r.date),dt(r.monthEnd),n(r.payment),n(r.exec),n(r.gst),n(r.net),n(r.interest),n(r.principal),n(r.clos),n(r.remaining)]);
     });
     const first=6, last=a.length;
-    a.push(['Totals','','','','',f(`SUM(F${first}:F${last})`),f(`SUM(G${first}:G${last})`),f(`SUM(H${first}:H${last})`),'','']);
+    let tN=0,tI=0,tP=0; (L._rows||[]).forEach(r=>{ tN+=r.net; tI+=r.interest; tP+=r.principal; });
+    a.push(['Totals','','','','',f(`SUM(F${first}:F${last})`,NUM,r2(tN)),f(`SUM(G${first}:G${last})`,NUM,r2(tI)),f(`SUM(H${first}:H${last})`,NUM,r2(tP)),'','']);
     const ws=XLSX.utils.aoa_to_sheet(a);
     ws['!cols']=[{wch:12},{wch:12},{wch:12},{wch:11},{wch:11},{wch:13},{wch:11},{wch:12},{wch:14},{wch:13}];
+    if(ws['A1']) ws['A1'].s={font:{bold:true,sz:12}};
+    for(let ci=1;ci<=10;ci++) setS(ws,colL(ci)+'4',HEAD);
+    for(let ci=1;ci<=10;ci++) setS(ws,colL(ci)+String(a.length),{font:{bold:true},border:{top:{style:'thin'}}});
     XLSX.utils.book_append_sheet(wb,ws,nm);
   });
 
