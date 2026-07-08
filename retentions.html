@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Retention Payables — LF Advisory</title>
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;600;700;800&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --primary:#2d6670; --primary-dark:#1e4a52; --secondary:#5a7a3a;
+  --accent:#c8a96e; --dark:#1a2332; --mid:#6b7c8d; --light:#f5f7f8;
+  --white:#fff; --danger:#c0392b; --warn:#e67e22; --ok:#27ae60;
+  --border:#dde3e8; --sans:'Lato',sans-serif; --head:'Raleway',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--light);color:var(--dark);font-size:14px}
+
+/* Top ribbon — matches payroll-reconciliation.html */
+nav{position:fixed;top:0;left:0;right:0;z-index:1000;display:flex;align-items:center;justify-content:space-between;padding:0 5vw;height:70px;background:rgba(240,243,239,0.96);backdrop-filter:blur(10px);border-bottom:1px solid #cdd4cc;transition:box-shadow .3s}
+nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
+.nav-logo{display:flex;align-items:center;text-decoration:none}
+.nav-logo img{height:44px;width:auto;display:block}
+.nav-links{display:flex;align-items:center;gap:2rem;list-style:none}
+.nav-links a{font-size:.8rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#5a6060;text-decoration:none;transition:color .2s}
+.nav-links a:hover{color:var(--primary)}
+@media(max-width:700px){.nav-links{gap:1rem}.nav-links a{font-size:.7rem}}
+
+.tool-head{margin-top:70px;background:#263d3f;color:#f0f3ef;padding:2.5rem 3rem;border-bottom:3px solid #6b7340;box-shadow:0 2px 20px rgba(0,0,0,.15)}
+.tool-head-content{display:flex;align-items:center;justify-content:space-between;max-width:1320px;margin:0 auto}
+.tool-head .subtitle{color:#8a9456;font-family:var(--head);font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;font-weight:600;margin-bottom:.6rem}
+.tool-head h1{font-family:var(--head);font-weight:300;font-size:clamp(1.4rem,2.5vw,2.2rem);color:#f0f3ef;letter-spacing:-.01em}
+.tool-head h1 strong{font-weight:700;color:#8a9456}
+.tool-head .head-logo img{height:52px;width:auto;opacity:.9}
+
+.container{max-width:1320px;margin:0 auto;padding:2rem 1.5rem}
+
+/* Tiles */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem}
+.tile{background:var(--white);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07);padding:1.2rem 1.5rem;border-left:4px solid var(--primary)}
+.tile.t2{border-left-color:var(--danger)}.tile.t3{border-left-color:var(--accent)}.tile.t4{border-left-color:var(--secondary)}
+.tile-lbl{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--mid);margin-bottom:.25rem}
+.tile-val{font-family:var(--head);font-size:1.55rem;font-weight:800;color:var(--dark)}
+.tile-sub{font-size:.72rem;color:var(--mid);margin-top:.15rem}
+
+/* Card */
+.card{background:var(--white);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07);padding:1.5rem;margin-bottom:1.5rem}
+.card-head{font-family:var(--head);font-weight:700;font-size:.85rem;text-transform:uppercase;letter-spacing:.08em;color:var(--primary);margin-bottom:1.2rem;padding-bottom:.7rem;border-bottom:2px solid var(--light);display:flex;align-items:center;justify-content:space-between}
+
+/* Controls */
+.ctrl-bar{display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap}
+.cg{display:flex;flex-direction:column;gap:.3rem}
+.cg label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mid)}
+.cg input,.cg select{border:1.5px solid var(--border);border-radius:6px;padding:.5rem .75rem;font-family:var(--sans);font-size:.9rem;color:var(--dark);background:var(--white);transition:border-color .2s}
+.cg input:focus,.cg select:focus{outline:none;border-color:var(--primary)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:.35rem;padding:.5rem 1rem;border-radius:6px;border:none;cursor:pointer;font-family:var(--head);font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;transition:all .2s;white-space:nowrap}
+.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:var(--primary-dark)}
+.btn-secondary{background:var(--secondary);color:#fff}.btn-secondary:hover{background:#496430}
+.btn-accent{background:var(--accent);color:var(--dark)}.btn-accent:hover{background:#b8953e}
+.btn-outline{background:transparent;color:var(--primary);border:1.5px solid var(--primary)}.btn-outline:hover{background:var(--primary);color:#fff}
+.btn-danger{background:var(--danger);color:#fff}.btn-danger:hover{background:#a93226}
+.btn-sm{padding:.33rem .7rem;font-size:.7rem}
+.btn-group{display:flex;gap:.5rem}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:1.5rem;flex-wrap:wrap}
+.tab{padding:.7rem 1.4rem;cursor:pointer;font-family:var(--head);font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mid);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab.on{color:var(--primary);border-bottom-color:var(--primary)}
+.tc{display:none}.tc.on{display:block}
+
+/* Table */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+thead th{background:var(--dark);color:#fff;font-family:var(--head);font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;padding:.7rem .75rem;text-align:left;white-space:nowrap}
+th.r,td.r{text-align:right}
+tbody tr{border-bottom:1px solid var(--border);transition:background .12s}
+tbody tr:hover{background:#f0f5f6}
+tbody td{padding:.6rem .75rem;vertical-align:middle}
+tfoot td{font-weight:700;font-family:var(--head);background:var(--light);border-top:2px solid var(--border);font-size:.8rem;padding:.6rem .75rem}
+.sup-row td{font-weight:700;background:#f4f7f8}
+.sup-row:hover td{background:#eef4f5}
+.job-row td{color:#4a5a6a;font-size:.8rem}
+.job-row td:first-child{padding-left:2rem}
+.month-row td{font-family:var(--head);font-weight:700;background:#eef2ee;color:var(--primary-dark);text-transform:uppercase;font-size:.72rem;letter-spacing:.06em}
+.neg{color:var(--danger);font-weight:700}
+.est{font-style:italic;color:var(--mid)}
+
+/* Badge */
+.badge{display:inline-block;padding:.15rem .5rem;border-radius:20px;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.b-ret{background:#d4edda;color:#155724}.b-rel{background:#cce5ff;color:#004085}
+.b-pc{background:#d4edda;color:#155724}.b-dlp{background:#e2d9f3;color:#4a3577}
+.b-est{background:#fff3cd;color:#856404}.b-tbc{background:#e2e3e5;color:#495057}
+.b-exact{background:#d4edda;color:#155724}.b-fuzzy{background:#fff3cd;color:#856404}.b-none{background:#f8d7da;color:#721c24}
+
+/* Modal */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;padding:2rem 1rem;overflow-y:auto}
+.modal.on{display:flex;align-items:flex-start;justify-content:center}
+.modal-box{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:640px;position:relative;margin:auto}
+.modal-ttl{font-family:var(--head);font-weight:700;font-size:1.1rem;color:var(--primary);margin-bottom:1.5rem}
+.modal-x{position:absolute;top:1rem;right:1rem;background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--mid)}
+.modal-x:hover{color:var(--danger)}
+.modal-sec-ttl{font-family:var(--head);font-weight:700;font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--primary);margin:1.2rem 0 .6rem}
+
+/* Drop zone */
+.drop{border:2px dashed var(--border);border-radius:10px;padding:1.6rem;text-align:center;cursor:pointer;transition:all .2s;color:var(--mid)}
+.drop:hover,.drop.over{border-color:var(--primary);background:#f0f8fa;color:var(--primary)}
+.drop-icon{font-size:1.8rem;margin-bottom:.4rem}
+.drop p{font-family:var(--head);font-weight:600}
+
+/* Alert */
+.alert{padding:.85rem 1.1rem;border-radius:8px;margin-bottom:1rem;font-size:.87rem}
+.a-info{background:#e8f4f8;border-left:4px solid var(--primary);color:var(--primary-dark)}
+.a-ok{background:#d4edda;border-left:4px solid var(--ok);color:#155724}
+.a-warn{background:#fff3cd;border-left:4px solid var(--warn);color:#7d5a00}
+
+code{font-family:monospace;background:var(--light);padding:.1rem .35rem;border-radius:3px;font-size:.85em}
+
+/* Projects tab inputs */
+.proj-inp{border:1.5px solid var(--border);border-radius:5px;padding:.3rem .5rem;font-family:var(--sans);font-size:.82rem;color:var(--dark)}
+.proj-inp:focus{outline:none;border-color:var(--primary)}
+
+footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-top:2rem;border-top:1px solid var(--border)}
+@media(max-width:900px){.tiles{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <a href="portal.html" class="nav-logo"><img src="data:image/png;base64,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" alt="LF Advisory"/></a>
+  <ul class="nav-links">
+    <li><a href="portal.html">Portal</a></li>
+    <li><a href="prepayments.html">Prepayments</a></li>
+    <li><a href="amortisation.html">Amortisation</a></li>
+    <li><a href="practice-register.html">Workflow</a></li>
+  </ul>
+</nav>
+
+<header class="tool-head">
+  <div class="tool-head-content">
+    <div>
+      <div class="subtitle">LF Advisory | Workpaper System</div>
+      <h1>Retention <strong>Payables</strong></h1>
+    </div>
+    <div class="head-logo"><img src="data:image/png;base64,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" alt="LF Advisory"/></div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- TILES -->
+  <div class="tiles">
+    <div class="tile"><div class="tile-lbl">Retention Held</div><div class="tile-val" id="tHeld">$0.00</div><div class="tile-sub">outstanding on B/S</div></div>
+    <div class="tile t2"><div class="tile-lbl">Due / Overdue Now</div><div class="tile-val" id="tDueNow">$0.00</div><div class="tile-sub" id="tAsAtLbl">as at today</div></div>
+    <div class="tile t3"><div class="tile-lbl">Due Next 3 Months</div><div class="tile-val" id="tDue3m">$0.00</div><div class="tile-sub">releases falling due</div></div>
+    <div class="tile t4"><div class="tile-lbl">Suppliers</div><div class="tile-val" id="tSuppliers">0</div><div class="tile-sub">holding retentions</div></div>
+  </div>
+
+  <!-- SETTINGS BAR -->
+  <div class="card">
+    <div class="card-head">
+      <span>Client, Report Date &amp; Data <span id="syncStatus" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--mid);margin-left:.8rem"></span></span>
+      <div class="btn-group">
+        <button class="btn btn-outline btn-sm" id="syncBtn" style="display:none" onclick="location.href='portal.html'">Sign in via Portal</button>
+        <button class="btn btn-primary btn-sm" onclick="openImport()">⬆ Upload GL / Contacts</button>
+        <button class="btn btn-secondary btn-sm" onclick="persist()">💾 Save</button>
+      </div>
+    </div>
+    <div class="ctrl-bar">
+      <div class="cg">
+        <label>Client</label>
+        <select id="clientSel" onchange="switchClient(this.value)" style="min-width:230px"></select>
+      </div>
+      <div class="cg">
+        <label>Report Date (as at)</label>
+        <input type="date" id="asAt" onchange="renderAll()">
+      </div>
+      <div class="cg">
+        <label>Default Due (months after retained)</label>
+        <input type="number" id="fbMonths" min="0" max="60" style="width:90px" onchange="changeFallback()" title="Used to estimate a due date for jobs with no practical completion date set. Blank/0 = show as No Date.">
+      </div>
+      <div class="cg" style="margin-left:auto;max-width:520px">
+        <label>Loaded Data</label>
+        <div id="dataMeta" style="font-size:.8rem;color:var(--mid);padding:.35rem 0">No GL data loaded — upload the Xero <strong>Account Transactions</strong> export for the retention payable account.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="alert a-warn" id="warnBox" style="display:none"></div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab on" data-tab="aged" onclick="switchTab(this)">Aged by Supplier</div>
+    <div class="tab" data-tab="schedule" onclick="switchTab(this)">Release Schedule</div>
+    <div class="tab" data-tab="projects" onclick="switchTab(this)">Projects &amp; Due Dates</div>
+    <div class="tab" data-tab="suppliers" onclick="switchTab(this)">Suppliers &amp; Contacts</div>
+    <div class="tab" data-tab="txns" onclick="switchTab(this)">Transactions</div>
+  </div>
+
+  <!-- TAB: AGED -->
+  <div class="tc on" id="tc-aged">
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Supplier / Job</th>
+            <th class="r">Retained</th><th class="r">Released</th><th class="r">Outstanding</th>
+            <th class="r">Due / Overdue</th><th class="r">&lt; 3 Months</th><th class="r">3–6 Months</th>
+            <th class="r">6–12 Months</th><th class="r">12+ Months</th><th class="r">No Date</th>
+          </tr></thead>
+          <tbody id="agedBody"><tr><td colspan="10" style="text-align:center;padding:2.5rem;color:var(--mid)">No data yet — select a client and upload the retention account GL export.</td></tr></tbody>
+          <tfoot id="agedFoot"></tfoot>
+        </table>
+      </div>
+    </div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-outline" onclick="exportPDF()">📄 Export PDF</button>
+      <button class="btn btn-accent" onclick="exportXLSX()">📊 Export Excel</button>
+    </div>
+  </div>
+
+  <!-- TAB: SCHEDULE -->
+  <div class="tc" id="tc-schedule">
+    <div class="alert a-info">Every remaining retention parcel with its release due date, in date order — the cash-flow view. Basis: <span class="badge b-pc">PC</span> due at practical completion, <span class="badge b-dlp">DLP</span> due at end of defects period, <span class="badge b-est">Est</span> estimated (retained date + default months — set the project's PC date to firm it up), <span class="badge b-tbc">TBC</span> no date available.</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Due Date</th><th>Supplier</th><th>Job</th><th>Basis</th><th class="r">Amount</th><th class="r">Cumulative</th></tr></thead>
+          <tbody id="schedBody"><tr><td colspan="6" style="text-align:center;padding:2.5rem;color:var(--mid)">No data yet.</td></tr></tbody>
+          <tfoot id="schedFoot"></tfoot>
+        </table>
+      </div>
+    </div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-outline" onclick="exportPDF()">📄 Export PDF</button>
+      <button class="btn btn-accent" onclick="exportXLSX()">📊 Export Excel</button>
+    </div>
+  </div>
+
+  <!-- TAB: PROJECTS -->
+  <div class="tc" id="tc-projects">
+    <div class="alert a-info">Jobs are detected from the GL reference column (e.g. <code>SC-2025021</code>). Set each job's <strong>practical completion date</strong>, <strong>defects liability period</strong> and the <strong>% released at PC</strong> — the report splits each supplier's retention into a PC release and a final release at the end of the defects period. Releases already paid are applied against the PC portion first. Jobs without a PC date fall back to the default months setting above.</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Job Code</th><th>Job Name</th><th class="r">Suppliers</th><th class="r">Retained</th><th class="r">Released</th><th class="r">Outstanding</th><th>Practical Completion</th><th class="r">Defects Period (mths)</th><th class="r">% at PC</th></tr></thead>
+          <tbody id="projBody"><tr><td colspan="9" style="text-align:center;padding:2.5rem;color:var(--mid)">No data yet.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: SUPPLIERS -->
+  <div class="tc" id="tc-suppliers">
+    <div class="alert a-info">Suppliers from the GL matched against the uploaded Xero contact list. <span class="badge b-exact">Matched</span> exact name match, <span class="badge b-fuzzy">Fuzzy</span> closest match (check it), <span class="badge b-none">No match</span> not found — upload a current contacts export.</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Supplier (per GL)</th><th class="r">Outstanding</th><th>Jobs</th><th>Match</th><th>Xero Contact</th><th>Email</th><th>Phone</th><th>ABN</th></tr></thead>
+          <tbody id="supBody"><tr><td colspan="8" style="text-align:center;padding:2.5rem;color:var(--mid)">No data yet.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: TRANSACTIONS -->
+  <div class="tc" id="tc-txns">
+    <div class="card" style="padding:1rem 1.5rem;display:flex;gap:1rem;align-items:center">
+      <div class="cg" style="flex:1"><label>Filter</label><input id="txnSearch" placeholder="Search supplier, job, reference…" oninput="renderTxns()"></div>
+      <div class="cg"><label>Type</label><select id="txnType" onchange="renderTxns()"><option value="all">All</option><option value="retained">Retained</option><option value="released">Released</option></select></div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Supplier</th><th>Type</th><th>Job</th><th>Reference</th><th class="r">Retained</th><th class="r">Released</th><th class="r">Gross (incl GST)</th></tr></thead>
+          <tbody id="txnBody"><tr><td colspan="8" style="text-align:center;padding:2.5rem;color:var(--mid)">No data yet.</td></tr></tbody>
+          <tfoot id="txnFoot"></tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- IMPORT MODAL -->
+<div class="modal" id="importModal">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeImport()">✕</button>
+    <div class="modal-ttl">Upload Data</div>
+
+    <div class="modal-sec-ttl">1 · Retention Account GL (.xlsx)</div>
+    <div class="alert a-info" style="margin-bottom:.6rem">Xero → the retention payable account → <strong>Account Transactions</strong> report → Export to Excel. Re-uploading replaces the transactions but keeps your job dates and settings.</div>
+    <div class="drop" id="glDrop" onclick="document.getElementById('glFile').click()">
+      <div class="drop-icon">📒</div>
+      <p>Click to browse or drag &amp; drop the GL export</p>
+      <small>.xlsx or .xls</small>
+    </div>
+    <input type="file" id="glFile" accept=".xlsx,.xls" style="display:none" onchange="handleGL(this.files[0])">
+    <div id="glPreview" style="display:none;margin-top:.8rem">
+      <div class="alert a-ok" id="glStatus" style="margin-bottom:.6rem"></div>
+      <div style="display:flex;gap:.6rem;justify-content:flex-end">
+        <button class="btn btn-primary btn-sm" onclick="confirmGL()">Load Transactions</button>
+      </div>
+    </div>
+    <div class="alert a-warn" id="glErr" style="display:none;margin-top:.8rem"></div>
+
+    <div class="modal-sec-ttl">2 · Xero Contacts (.csv) — optional</div>
+    <div class="alert a-info" style="margin-bottom:.6rem">Xero → Contacts → Export. Used to attach each supplier's email, phone and ABN to the report. Applies immediately.</div>
+    <div class="drop" id="ctDrop" onclick="document.getElementById('ctFile').click()">
+      <div class="drop-icon">👥</div>
+      <p>Click to browse or drag &amp; drop the contacts CSV</p>
+      <small>.csv</small>
+    </div>
+    <input type="file" id="ctFile" accept=".csv,.txt" style="display:none" onchange="handleContacts(this.files[0])">
+    <div class="alert a-ok" id="ctStatus" style="display:none;margin-top:.8rem"></div>
+    <div class="alert a-warn" id="ctErr" style="display:none;margin-top:.8rem"></div>
+  </div>
+</div>
+
+<footer>LF Advisory Retention Payables Reporter &nbsp;·&nbsp; <a href="portal.html" style="color:var(--mid)">Back to Portal</a></footer>
+
+<script>
+// ─── Auth ────────────────────────────────────────────────────────────────────
+// Gated on the portal's Microsoft sign-in (shared via localStorage).
+if (!localStorage.getItem('lfa_ms_user') && sessionStorage.getItem('portalAuth') !== 'true') location.href = 'portal.html';
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let store = { clients: {} };   // { clients: { "<name>": { txns, projects, contacts, settings, meta, updatedAt } } }
+let currentClient = '';
+let registerClients = [];
+let txns = [];                 // [{date,supplier,type,job,ref,amt(signed: +retained/−released),gross,gst}]
+let projects = {};             // { "<job>": {label,pcDate,dlpMonths,pcPct} }
+let contacts = [];             // [{name,email,phone,mobile,abn}]
+let settings = { fallbackMonths: 12 };
+let meta = {};                 // {account,org,period,uploadedAt}
+let stagedGL = null;
+let lastModel = null;
+let _matchCache = {};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt$ = v => v == null || isNaN(v) ? '—' : '$' + parseFloat(v).toLocaleString('en-AU', {minimumFractionDigits:2, maximumFractionDigits:2});
+const cell$ = v => Math.abs(v||0) < 0.005 ? '<span style="color:var(--border)">—</span>' : fmt$(v);
+const fmtDate = iso => { if (!iso) return '—'; const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; };
+const fmtISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const todayISO = () => fmtISO(new Date());
+function addMonths(iso, n){
+  const [y,m,d] = iso.split('-').map(Number);
+  const last = new Date(y, m - 1 + n + 1, 0).getDate();
+  return fmtISO(new Date(y, m - 1 + n, Math.min(d, last)));
+}
+function slug(v){ return String(v||'').replace(/[\\\/\?\*\[\]:()]/g,'').trim().replace(/\s+/g,'_'); }
+function monthLabel(iso){ const [y,m] = iso.split('-').map(Number); return new Date(y, m-1, 1).toLocaleString('en-AU', {month:'long', year:'numeric'}); }
+
+// ─── Microsoft Graph / SharePoint sync ───────────────────────────────────────
+// Same pattern as prepayments/amortisation: no own OAuth, portal's shared token,
+// own data file, per-client merge by updatedAt, offline falls back to localStorage.
+const GRAPH = 'https://graph.microsoft.com/v1.0';
+const SP_HOSTNAME = 'lfadvisoryptyltd.sharepoint.com';
+const FOLDER = 'LF Advisory Workpapers';
+const DATA_FILE = 'lf-advisory-retentions-data.json';
+const REGISTER_FILE = 'lf-advisory-register-data.json';
+const LS_KEY = 'lfa_retentions_v1';
+const LS_CLIENT_CACHE = 'lfa_register_clients_cache';
+let _siteId = sessionStorage.getItem('sp_site_id') || null;
+let _saveTimer = null;
+let _loaded = false;
+
+function setSync(state){
+  const map = {
+    loading:'· connecting…', connected:'· synced with team (SharePoint)',
+    saving:'· saving…', saved:'· saved to SharePoint',
+    offline:'· offline — saving on this device only', error:'· SharePoint unavailable — using local copy'
+  };
+  const el = $('syncStatus');
+  el.textContent = map[state] || '';
+  el.style.color = (state==='offline'||state==='error') ? 'var(--warn)' : 'var(--mid)';
+  $('syncBtn').style.display = (state==='offline') ? 'inline-flex' : 'none';
+}
+function getStoredToken(){
+  const t = localStorage.getItem('lfa_ms_token'), exp = parseInt(localStorage.getItem('lfa_ms_token_exp')||'0');
+  return (t && Date.now() < exp - 60000) ? t : null;
+}
+function _authFail(){ localStorage.removeItem('lfa_ms_token'); localStorage.removeItem('lfa_ms_token_exp'); }
+async function getSiteId(token){
+  if(_siteId) return _siteId;
+  const r = await fetch(`${GRAPH}/sites/${SP_HOSTNAME}`, {headers:{Authorization:'Bearer '+token}});
+  if(r.status===401||r.status===403) _authFail();
+  if(!r.ok) throw new Error('site lookup '+r.status);
+  _siteId = (await r.json()).id; sessionStorage.setItem('sp_site_id', _siteId);
+  return _siteId;
+}
+async function listFolder(token){
+  const siteId = await getSiteId(token);
+  const r = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encodeURIComponent(FOLDER)}:/children`, {headers:{Authorization:'Bearer '+token}});
+  if(r.status===401||r.status===403){ _authFail(); throw new Error('auth '+r.status); }
+  if(r.status===404) return [];
+  if(!r.ok) throw new Error('graph '+r.status);
+  return (await r.json()).value || [];
+}
+const downloadJson = async file => await (await fetch(file['@microsoft.graph.downloadUrl'])).json();
+
+async function odInit(){
+  const token = getStoredToken();
+  if(!token){ setSync('offline'); return; }
+  try{
+    setSync('loading');
+    const kids = await listFolder(token);
+    const reg = kids.find(f => f.name === REGISTER_FILE);
+    if(reg){
+      const d = await downloadJson(reg);
+      registerClients = (Array.isArray(d) ? [] : (d.clients||[])).map(c => c.name).filter(Boolean);
+      localStorage.setItem(LS_CLIENT_CACHE, JSON.stringify(registerClients));
+    }
+    const mine = kids.find(f => f.name === DATA_FILE);
+    const local = store.clients || {};
+    let dirty = false;
+    if(mine){
+      const server = await downloadJson(mine);
+      store = { clients: (server && server.clients) || {} };
+      Object.keys(local).forEach(n => {
+        const sv = store.clients[n];
+        if(!sv || (local[n].updatedAt||0) > (sv.updatedAt||0)){ store.clients[n] = local[n]; dirty = true; }
+      });
+    } else if(Object.keys(local).length){
+      dirty = true;
+    }
+    _loaded = true;
+    if(dirty) queueSave();
+    setSync('connected');
+  }catch(e){
+    console.error('[Sync] load error:', e);
+    setSync(getStoredToken() ? 'error' : 'offline');
+  }
+  fillClientSel();
+  hydrateClient();
+  renderAll();
+}
+function queueSave(){ if(!_loaded) return; clearTimeout(_saveTimer); _saveTimer = setTimeout(odSave, 1200); }
+async function odSave(){
+  const token = getStoredToken();
+  if(!token){ setSync('offline'); return; }
+  try{
+    const siteId = await getSiteId(token);
+    setSync('saving');
+    const r = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encodeURIComponent(FOLDER)}/${encodeURIComponent(DATA_FILE)}:/content`,
+      {method:'PUT', headers:{Authorization:'Bearer '+token, 'Content-Type':'application/json'}, body: JSON.stringify(store, null, 2)});
+    if(r.status===401||r.status===403){ _authFail(); setSync('offline'); return; }
+    if(!r.ok) throw new Error('save '+r.status);
+    setSync('saved');
+  }catch(e){ console.error('[Sync] save error:', e); setSync('error'); }
+}
+
+// ─── Client selection ────────────────────────────────────────────────────────
+function clientNames(){
+  const set = new Set(registerClients);
+  Object.keys(store.clients).forEach(n => { if((store.clients[n].txns||[]).length) set.add(n); });
+  return [...set].sort((a,b) => a.localeCompare(b));
+}
+function fillClientSel(){
+  const sel = $('clientSel');
+  sel.innerHTML = '<option value="">— Select client —</option>' + clientNames().map(n => {
+    const has = store.clients[n] && (store.clients[n].txns||[]).length;
+    return `<option value="${esc(n)}">${esc(n)}${has ? ' ●' : ''}</option>`;
+  }).join('');
+  sel.value = currentClient || '';
+  if(sel.value !== (currentClient||'')){ sel.value = ''; currentClient = ''; }
+}
+function hydrateClient(){
+  const d = (currentClient && store.clients[currentClient]) || null;
+  txns     = d && d.txns     ? JSON.parse(JSON.stringify(d.txns))     : [];
+  projects = d && d.projects ? JSON.parse(JSON.stringify(d.projects)) : {};
+  contacts = d && d.contacts ? JSON.parse(JSON.stringify(d.contacts)) : [];
+  settings = Object.assign({ fallbackMonths: 12 }, d && d.settings);
+  meta     = d && d.meta ? JSON.parse(JSON.stringify(d.meta)) : {};
+  _matchCache = {};
+  $('asAt').value = todayISO();
+  $('fbMonths').value = settings.fallbackMonths || '';
+}
+function switchClient(name){
+  saveCurrentIntoStore();
+  currentClient = name;
+  hydrateClient();
+  localStorage.setItem(LS_KEY, JSON.stringify({store, currentClient}));
+  renderAll();
+}
+function changeFallback(){
+  settings.fallbackMonths = parseInt($('fbMonths').value) || 0;
+  renderAll();
+  if(currentClient) persist();
+}
+
+// ─── Core computation ────────────────────────────────────────────────────────
+// Groups the ledger by supplier × job, applies releases FIFO against retained
+// parcels, and builds release milestones with due dates:
+//  · Job has a PC date → pcPct% of total retained due at PC (less releases
+//    already made), the rest due at PC + defects period.
+//  · No PC date → each remaining parcel due at its retained date + fallback
+//    months (estimated), or "no date" if the fallback is blank.
+function compute(){
+  const asAt = $('asAt').value || todayISO();
+  const map = {};
+  txns.forEach(t => {
+    const key = t.supplier + '||' + t.job;
+    if(!map[key]) map[key] = { supplier: t.supplier, job: t.job, parcels: [], retained: 0, released: 0 };
+    const g = map[key];
+    if(t.amt > 0){ g.parcels.push({date: t.date, amt: t.amt}); g.retained += t.amt; }
+    else g.released += -t.amt;
+  });
+  const groups = Object.values(map);
+  groups.forEach(g => {
+    g.out = g.retained - g.released;
+    g.milestones = [];
+    if(g.out <= 0.004) return;
+    const p = projects[g.job];
+    if(p && p.pcDate){
+      const pct = (p.pcPct == null || p.pcPct === '' ? 50 : parseFloat(p.pcPct)) / 100;
+      const dlp = (p.dlpMonths == null || p.dlpMonths === '' ? 12 : parseInt(p.dlpMonths));
+      let m1 = Math.min(Math.max(0, g.retained * pct - g.released), g.out);
+      const m2 = g.out - m1;
+      if(m1 > 0.004) g.milestones.push({due: p.pcDate, amt: m1, basis: 'PC'});
+      if(m2 > 0.004) g.milestones.push({due: addMonths(p.pcDate, dlp), amt: m2, basis: 'DLP'});
+    } else {
+      let rem = g.released;
+      const fb = settings.fallbackMonths || 0;
+      g.parcels.slice().sort((a,b) => a.date.localeCompare(b.date)).forEach(pc => {
+        const use = Math.min(pc.amt, rem); rem -= use;
+        const left = pc.amt - use;
+        if(left > 0.004) g.milestones.push({due: fb ? addMonths(pc.date, fb) : null, amt: left, basis: fb ? 'EST' : 'TBC'});
+      });
+    }
+  });
+  // bucket boundaries relative to as-at
+  const b3 = addMonths(asAt, 3), b6 = addMonths(asAt, 6), b12 = addMonths(asAt, 12);
+  const bucketOf = due => !due ? 5 : due <= asAt ? 0 : due <= b3 ? 1 : due <= b6 ? 2 : due <= b12 ? 3 : 4;
+  groups.forEach(g => {
+    g.buckets = [0,0,0,0,0,0];
+    g.milestones.forEach(m => { m.bucket = bucketOf(m.due); g.buckets[m.bucket] += m.amt; });
+  });
+  return { groups, asAt };
+}
+
+// ─── Contact matching ────────────────────────────────────────────────────────
+function normName(s){
+  return String(s||'').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,' ')
+    .replace(/\b(pty|ltd|limited|pl|tas|atf|aust|australia|the|co)\b/g,' ')
+    .replace(/\s+/g,' ').trim();
+}
+function matchContact(supplier){
+  if(supplier in _matchCache) return _matchCache[supplier];
+  const ns = normName(supplier);
+  let res = null;
+  if(ns){
+    for(const c of contacts){
+      if(normName(c.name) === ns){ res = {c, how: 'exact'}; break; }
+    }
+    if(!res && ns.length >= 5){
+      for(const c of contacts){
+        const nc = normName(c.name);
+        if(nc.length >= 5 && (nc.includes(ns) || ns.includes(nc))){ res = {c, how: 'fuzzy'}; break; }
+      }
+    }
+    if(!res){
+      const st = ns.split(' ').filter(w => w.length > 2);
+      let best = null, bestScore = 0;
+      for(const c of contacts){
+        const ct = new Set(normName(c.name).split(' ').filter(w => w.length > 2));
+        if(!st.length || !ct.size) continue;
+        const shared = st.filter(w => ct.has(w)).length;
+        const score = shared / Math.max(st.length, ct.size);
+        if(score > bestScore){ bestScore = score; best = c; }
+      }
+      if(best && bestScore >= 0.6) res = {c: best, how: 'fuzzy'};
+    }
+  }
+  _matchCache[supplier] = res;
+  return res;
+}
+
+// ─── Rendering ───────────────────────────────────────────────────────────────
+const BUCKET_LBLS = ['Due / Overdue','< 3 Months','3–6 Months','6–12 Months','12+ Months','No Date'];
+
+function renderAll(){
+  lastModel = compute();
+  renderTiles();
+  renderMeta();
+  renderWarnings();
+  renderAged();
+  renderSchedule();
+  renderProjects();
+  renderSuppliers();
+  renderTxns();
+}
+
+function renderTiles(){
+  const { groups, asAt } = lastModel;
+  let held = 0, dueNow = 0, due3m = 0;
+  const sups = new Set();
+  groups.forEach(g => {
+    held += g.out;
+    dueNow += g.buckets ? g.buckets[0] : 0;
+    due3m  += g.buckets ? g.buckets[1] : 0;
+    if(g.out > 0.004) sups.add(g.supplier);
+  });
+  $('tHeld').textContent = fmt$(held);
+  $('tDueNow').textContent = fmt$(dueNow);
+  $('tDue3m').textContent = fmt$(due3m);
+  $('tSuppliers').textContent = sups.size;
+  $('tAsAtLbl').textContent = 'as at ' + fmtDate(asAt);
+}
+
+function renderMeta(){
+  const el = $('dataMeta');
+  if(!txns.length){
+    el.innerHTML = currentClient
+      ? 'No GL data loaded — upload the Xero <strong>Account Transactions</strong> export for the retention payable account.'
+      : 'Select a <strong>client</strong>, then upload that client\'s retention account GL export.';
+    return;
+  }
+  el.innerHTML = `<strong>${esc(meta.account || 'Retention account')}</strong> · ${esc(meta.period || '')} · ${txns.length} transactions` +
+    (contacts.length ? ` · ${contacts.length} contacts` : ' · <span style="color:var(--warn)">no contacts uploaded</span>');
+}
+
+function renderWarnings(){
+  const over = lastModel.groups.filter(g => g.out < -0.004);
+  const box = $('warnBox');
+  if(!over.length){ box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.innerHTML = '<strong>⚠ Released more than retained</strong> (check for mispostings or missing retained entries): ' +
+    over.map(g => `${esc(g.supplier)} · ${esc(g.job)} (${fmt$(g.out)})`).join('; ');
+}
+
+function renderAged(){
+  const { groups } = lastModel;
+  const tbody = $('agedBody'), tfoot = $('agedFoot');
+  const live = groups.filter(g => Math.abs(g.out) > 0.004);
+  if(!live.length){
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2.5rem;color:var(--mid)">${txns.length ? 'Nothing outstanding — all retentions released.' : 'No data yet — select a client and upload the retention account GL export.'}</td></tr>`;
+    tfoot.innerHTML = '';
+    return;
+  }
+  const bySup = {};
+  live.forEach(g => {
+    if(!bySup[g.supplier]) bySup[g.supplier] = { jobs: [], retained: 0, released: 0, out: 0, buckets: [0,0,0,0,0,0] };
+    const s = bySup[g.supplier];
+    s.jobs.push(g);
+    s.retained += g.retained; s.released += g.released; s.out += g.out;
+    (g.buckets||[]).forEach((v,i) => s.buckets[i] += v);
+  });
+  const tot = { retained:0, released:0, out:0, buckets:[0,0,0,0,0,0] };
+  let html = '';
+  Object.keys(bySup).sort((a,b) => a.localeCompare(b)).forEach(name => {
+    const s = bySup[name];
+    tot.retained += s.retained; tot.released += s.released; tot.out += s.out;
+    s.buckets.forEach((v,i) => tot.buckets[i] += v);
+    const mc = matchContact(name);
+    const title = mc ? ` title="${esc(mc.c.name)}${mc.c.email ? ' · ' + mc.c.email : ''}"` : '';
+    html += `<tr class="sup-row"><td${title}>${esc(name)}</td>
+      <td class="r">${cell$(s.retained)}</td><td class="r">${cell$(s.released)}</td>
+      <td class="r ${s.out < -0.004 ? 'neg' : ''}">${fmt$(s.out)}</td>
+      ${s.buckets.map(v => `<td class="r">${cell$(v)}</td>`).join('')}</tr>`;
+    if(s.jobs.length > 1 || s.jobs[0].job !== '(No job)'){
+      s.jobs.sort((a,b) => a.job.localeCompare(b.job)).forEach(g => {
+        if(s.jobs.length === 1 && g.job === '(No job)') return;
+        const p = projects[g.job];
+        const jobLbl = p && p.label ? `${esc(g.job)} — ${esc(p.label)}` : esc(g.job);
+        html += `<tr class="job-row"><td>${jobLbl}</td>
+          <td class="r">${cell$(g.retained)}</td><td class="r">${cell$(g.released)}</td>
+          <td class="r ${g.out < -0.004 ? 'neg' : ''}">${fmt$(g.out)}</td>
+          ${(g.buckets||[0,0,0,0,0,0]).map(v => `<td class="r">${cell$(v)}</td>`).join('')}</tr>`;
+      });
+    }
+  });
+  tbody.innerHTML = html;
+  tfoot.innerHTML = `<tr><td>TOTAL</td>
+    <td class="r">${fmt$(tot.retained)}</td><td class="r">${fmt$(tot.released)}</td><td class="r">${fmt$(tot.out)}</td>
+    ${tot.buckets.map(v => `<td class="r">${fmt$(v)}</td>`).join('')}</tr>`;
+}
+
+function scheduleRows(){
+  const rows = [];
+  lastModel.groups.forEach(g => (g.milestones||[]).forEach(m => rows.push({
+    due: m.due, supplier: g.supplier, job: g.job, basis: m.basis, amt: m.amt
+  })));
+  rows.sort((a,b) => (a.due||'9999-12-31').localeCompare(b.due||'9999-12-31') || a.supplier.localeCompare(b.supplier));
+  return rows;
+}
+const basisBadge = b => ({PC:'<span class="badge b-pc">PC</span>', DLP:'<span class="badge b-dlp">DLP</span>', EST:'<span class="badge b-est">Est</span>', TBC:'<span class="badge b-tbc">TBC</span>'}[b] || b);
+const basisLong = b => ({PC:'Practical completion', DLP:'End of defects period', EST:'Estimated', TBC:'No date set'}[b] || b);
+
+function renderSchedule(){
+  const rows = scheduleRows();
+  const tbody = $('schedBody'), tfoot = $('schedFoot');
+  if(!rows.length){
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:2.5rem;color:var(--mid)">${txns.length ? 'Nothing outstanding.' : 'No data yet.'}</td></tr>`;
+    tfoot.innerHTML = '';
+    return;
+  }
+  let html = '', cum = 0, curMonth = null;
+  rows.forEach(r => {
+    const mk = r.due ? r.due.slice(0,7) : 'none';
+    if(mk !== curMonth){
+      curMonth = mk;
+      const mTotal = rows.filter(x => (x.due ? x.due.slice(0,7) : 'none') === mk).reduce((a,x) => a + x.amt, 0);
+      html += `<tr class="month-row"><td colspan="4">${r.due ? monthLabel(r.due) : 'No date set'}</td><td class="r">${fmt$(mTotal)}</td><td></td></tr>`;
+    }
+    cum += r.amt;
+    const p = projects[r.job];
+    const jobLbl = p && p.label ? `${esc(r.job)} — ${esc(p.label)}` : esc(r.job);
+    html += `<tr><td class="${r.basis==='EST' ? 'est' : ''}">${r.due ? fmtDate(r.due) : 'TBC'}</td>
+      <td>${esc(r.supplier)}</td><td>${jobLbl}</td><td>${basisBadge(r.basis)}</td>
+      <td class="r">${fmt$(r.amt)}</td><td class="r" style="color:var(--mid)">${fmt$(cum)}</td></tr>`;
+  });
+  tbody.innerHTML = html;
+  tfoot.innerHTML = `<tr><td colspan="4">TOTAL</td><td class="r">${fmt$(rows.reduce((a,r) => a + r.amt, 0))}</td><td></td></tr>`;
+}
+
+function renderProjects(){
+  const tbody = $('projBody');
+  const jobs = {};
+  lastModel.groups.forEach(g => {
+    if(!jobs[g.job]) jobs[g.job] = { sups: new Set(), retained: 0, released: 0, out: 0 };
+    jobs[g.job].sups.add(g.supplier);
+    jobs[g.job].retained += g.retained; jobs[g.job].released += g.released; jobs[g.job].out += g.out;
+  });
+  const keys = Object.keys(jobs).sort();
+  if(!keys.length){
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2.5rem;color:var(--mid)">No data yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = keys.map(job => {
+    const j = jobs[job];
+    const p = projects[job] || {};
+    const jq = job.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return `<tr>
+      <td><code>${esc(job)}</code></td>
+      <td><input class="proj-inp" style="width:170px" value="${esc(p.label||'')}" placeholder="e.g. Kepple fit-out" onchange="updateProject('${jq}','label',this.value)"></td>
+      <td class="r">${j.sups.size}</td>
+      <td class="r">${cell$(j.retained)}</td><td class="r">${cell$(j.released)}</td>
+      <td class="r ${j.out < -0.004 ? 'neg' : ''}">${fmt$(j.out)}</td>
+      <td><input class="proj-inp" type="date" value="${esc(p.pcDate||'')}" onchange="updateProject('${jq}','pcDate',this.value)"></td>
+      <td class="r"><input class="proj-inp" type="number" min="0" max="60" style="width:64px;text-align:right" value="${p.dlpMonths != null && p.dlpMonths !== '' ? p.dlpMonths : 12}" onchange="updateProject('${jq}','dlpMonths',this.value)"></td>
+      <td class="r"><input class="proj-inp" type="number" min="0" max="100" style="width:64px;text-align:right" value="${p.pcPct != null && p.pcPct !== '' ? p.pcPct : 50}" onchange="updateProject('${jq}','pcPct',this.value)"></td>
+    </tr>`;
+  }).join('');
+}
+function updateProject(job, field, value){
+  if(!projects[job]) projects[job] = { label:'', pcDate:'', dlpMonths:12, pcPct:50 };
+  projects[job][field] = value;
+  renderAll();
+  persist();
+}
+
+function renderSuppliers(){
+  const tbody = $('supBody');
+  const bySup = {};
+  lastModel.groups.forEach(g => {
+    if(!bySup[g.supplier]) bySup[g.supplier] = { out: 0, jobs: new Set() };
+    bySup[g.supplier].out += g.out;
+    bySup[g.supplier].jobs.add(g.job);
+  });
+  const names = Object.keys(bySup).sort((a,b) => a.localeCompare(b));
+  if(!names.length){
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2.5rem;color:var(--mid)">No data yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = names.map(n => {
+    const s = bySup[n];
+    const mc = matchContact(n);
+    const badge = mc ? (mc.how === 'exact' ? '<span class="badge b-exact">Matched</span>' : '<span class="badge b-fuzzy">Fuzzy</span>') : '<span class="badge b-none">No match</span>';
+    return `<tr>
+      <td>${esc(n)}</td>
+      <td class="r ${s.out < -0.004 ? 'neg' : ''}">${fmt$(s.out)}</td>
+      <td style="font-size:.78rem;color:var(--mid)">${[...s.jobs].sort().map(esc).join(', ')}</td>
+      <td>${badge}</td>
+      <td>${mc ? esc(mc.c.name) : '—'}</td>
+      <td>${mc && mc.c.email ? `<a href="mailto:${esc(mc.c.email)}">${esc(mc.c.email)}</a>` : '—'}</td>
+      <td>${mc ? esc(mc.c.phone || mc.c.mobile || '') || '—' : '—'}</td>
+      <td>${mc && mc.c.abn ? esc(mc.c.abn) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTxns(){
+  const tbody = $('txnBody'), tfoot = $('txnFoot');
+  if(!txns.length){
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2.5rem;color:var(--mid)">No data yet.</td></tr>';
+    tfoot.innerHTML = '';
+    return;
+  }
+  const q = ($('txnSearch').value || '').toLowerCase();
+  const ty = $('txnType').value;
+  const vis = txns.filter(t => {
+    if(ty !== 'all' && t.type !== ty) return false;
+    if(q && !(t.supplier + ' ' + t.job + ' ' + t.ref + ' ' + t.desc).toLowerCase().includes(q)) return false;
+    return true;
+  }).slice().sort((a,b) => a.date.localeCompare(b.date));
+  let ret = 0, rel = 0;
+  tbody.innerHTML = vis.map(t => {
+    const isRet = t.amt > 0;
+    if(isRet) ret += t.amt; else rel += -t.amt;
+    return `<tr>
+      <td>${fmtDate(t.date)}</td>
+      <td>${esc(t.supplier)}</td>
+      <td>${isRet ? '<span class="badge b-ret">Retained</span>' : '<span class="badge b-rel">Released</span>'}</td>
+      <td><code>${esc(t.job)}</code></td>
+      <td style="font-size:.78rem;color:var(--mid)">${esc(t.ref)}</td>
+      <td class="r">${isRet ? fmt$(t.amt) : ''}</td>
+      <td class="r">${!isRet ? fmt$(-t.amt) : ''}</td>
+      <td class="r" style="color:var(--mid)">${t.gross ? fmt$(Math.abs(t.gross)) : '—'}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--mid)">No transactions match the filter.</td></tr>';
+  tfoot.innerHTML = `<tr><td colspan="5">TOTALS (filtered)</td><td class="r">${fmt$(ret)}</td><td class="r">${fmt$(rel)}</td><td class="r">${fmt$(ret - rel)}</td></tr>`;
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+function switchTab(el){
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  document.querySelectorAll('.tc').forEach(t => t.classList.remove('on'));
+  el.classList.add('on');
+  $('tc-' + el.dataset.tab).classList.add('on');
+}
+
+// ─── GL upload ────────────────────────────────────────────────────────────────
+function openImport(){ if(!currentClient){ alert('Select a client first — retention data is stored per client.'); return; } $('importModal').classList.add('on'); }
+function closeImport(){
+  $('importModal').classList.remove('on');
+  ['glPreview','glErr','ctStatus','ctErr'].forEach(id => $(id).style.display = 'none');
+  $('glFile').value = ''; $('ctFile').value = '';
+  stagedGL = null;
+}
+
+function toISODate(v){
+  if(v == null || v === '') return null;
+  if(v instanceof Date && !isNaN(v)) return fmtISO(v);
+  if(typeof v === 'number' && v > 20000 && v < 60000)
+    return fmtISO(new Date(Math.round((v - 25569) * 86400000)));
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})[\/\-\s]([A-Za-z]{3,9}|\d{1,2})[\/\-\s](\d{2,4})$/);
+  if(m){
+    let [, d, mo, y] = m;
+    if(isNaN(mo)) mo = new Date(Date.parse(mo + ' 1, 2000')).getMonth() + 1;
+    y = y.length === 2 ? '20' + y : y;
+    const dt = new Date(+y, mo - 1, +d);
+    if(!isNaN(dt)) return fmtISO(dt);
+  }
+  const dt = new Date(s);
+  return isNaN(dt) ? null : fmtISO(dt);
+}
+const numOf = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g,'')); return isNaN(n) ? 0 : n; };
+
+function handleGL(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try{
+      const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true});
+      let hdr = -1;
+      for(let i = 0; i < Math.min(rows.length, 15); i++){
+        const low = (rows[i]||[]).map(c => String(c==null?'':c).toLowerCase().trim());
+        if(low.includes('date') && low.includes('debit') && low.includes('credit')){ hdr = i; break; }
+      }
+      if(hdr < 0) throw new Error('Cannot find the header row (Date / Debit / Credit). Is this a Xero Account Transactions export?');
+      const low = rows[hdr].map(c => String(c==null?'':c).toLowerCase().trim());
+      const ci = {
+        date: low.indexOf('date'), source: low.indexOf('source'),
+        desc: low.findIndex(h => h.startsWith('desc')), ref: low.findIndex(h => h.startsWith('ref')),
+        debit: low.indexOf('debit'), credit: low.indexOf('credit'),
+        gross: low.indexOf('gross'), gst: low.indexOf('gst'),
+      };
+      if(ci.desc < 0) throw new Error('No Description column found — the export needs the Description column to identify suppliers.');
+      const parsed = [];
+      let account = '', skipped = 0;
+      for(let i = hdr + 1; i < rows.length; i++){
+        const r = rows[i] || [];
+        const first = String(r[ci.date] == null ? '' : r[ci.date]).trim();
+        if(/^(opening balance|closing balance|total)/i.test(first)){ continue; }
+        const date = toISODate(r[ci.date]);
+        if(!date){
+          if(first && !account) account = first;   // section row = account name
+          continue;
+        }
+        const debit = numOf(r[ci.debit]), credit = numOf(r[ci.credit]);
+        if(!debit && !credit){ skipped++; continue; }
+        const desc = String(r[ci.desc] == null ? '' : r[ci.desc]).trim();
+        const ref = ci.ref >= 0 ? String(r[ci.ref] == null ? '' : r[ci.ref]).trim() : '';
+        const dm = desc.match(/^(.+?)\s*[-–—]\s*Retention\s+(Retained|Released)\b/i);
+        const supplier = dm ? dm[1].trim() : (desc || '(Unknown supplier)');
+        const type = dm ? dm[2].toLowerCase() : (credit >= debit ? 'retained' : 'released');
+        const jm = (ref + ' ' + desc).match(/\b(SC|PO)[-\s]?(\d{7})\b/i);
+        const job = jm ? `${jm[1].toUpperCase()}-${jm[2]}` : '(No job)';
+        parsed.push({
+          date, supplier, type, job, ref, desc,
+          amt: credit - debit,
+          gross: ci.gross >= 0 ? numOf(r[ci.gross]) : 0,
+          gst: ci.gst >= 0 ? numOf(r[ci.gst]) : 0,
+        });
+      }
+      if(!parsed.length) throw new Error('No transactions found below the header row.');
+      const held = parsed.reduce((a,t) => a + t.amt, 0);
+      const jobs = new Set(parsed.map(t => t.job));
+      const sups = new Set(parsed.map(t => t.supplier));
+      stagedGL = {
+        txns: parsed,
+        meta: {
+          account: account || String((rows[0]||[])[0] || '').replace(/\s*Transactions\s*$/i,'').trim() || 'Retention account',
+          org: String((rows[1]||[])[0] || '').trim(),
+          period: String((rows[2]||[])[0] || '').trim(),
+          uploadedAt: new Date().toISOString(),
+        },
+      };
+      $('glStatus').innerHTML = `✅ <strong>${stagedGL.meta.account}</strong>${stagedGL.meta.org ? ' — ' + esc(stagedGL.meta.org) : ''}<br>` +
+        `${esc(stagedGL.meta.period)}<br>` +
+        `${parsed.length} transactions · ${sups.size} suppliers · ${jobs.size} jobs · closing balance <strong>${fmt$(held)}</strong>` +
+        (skipped ? `<br>${skipped} zero-value rows skipped.` : '') +
+        `<br>This will <strong>replace</strong> the loaded transactions for ${esc(currentClient)} (job dates &amp; settings are kept).`;
+      $('glPreview').style.display = 'block';
+      $('glErr').style.display = 'none';
+    }catch(err){
+      $('glErr').textContent = '❌ ' + err.message;
+      $('glErr').style.display = 'block';
+      $('glPreview').style.display = 'none';
+      stagedGL = null;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function confirmGL(){
+  if(!stagedGL) return;
+  txns = stagedGL.txns;
+  meta = stagedGL.meta;
+  new Set(txns.map(t => t.job)).forEach(job => {
+    if(!projects[job]) projects[job] = { label:'', pcDate:'', dlpMonths:12, pcPct:50 };
+  });
+  stagedGL = null;
+  closeImport();
+  renderAll();
+  persist();
+}
+
+// ─── Contacts upload ──────────────────────────────────────────────────────────
+function parseCSV(text){
+  const rows = []; let row = [], field = '', inQ = false;
+  for(let i = 0; i < text.length; i++){
+    const c = text[i];
+    if(inQ){
+      if(c === '"'){ if(text[i+1] === '"'){ field += '"'; i++; } else inQ = false; }
+      else field += c;
+    } else if(c === '"') inQ = true;
+    else if(c === ','){ row.push(field); field = ''; }
+    else if(c === '\n' || c === '\r'){
+      if(c === '\r' && text[i+1] === '\n') i++;
+      row.push(field); field = '';
+      if(row.some(f => f !== '')) rows.push(row);
+      row = [];
+    }
+    else field += c;
+  }
+  row.push(field);
+  if(row.some(f => f !== '')) rows.push(row);
+  return rows;
+}
+
+function handleContacts(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try{
+      const rows = parseCSV(e.target.result);
+      if(!rows.length) throw new Error('Empty file.');
+      const low = rows[0].map(h => h.toLowerCase().replace(/^\*/,'').trim());
+      const ci = {
+        name: low.indexOf('contactname'), email: low.indexOf('emailaddress'),
+        phone: low.indexOf('phonenumber'), mobile: low.indexOf('mobilenumber'),
+        abn: low.indexOf('taxnumber'),
+      };
+      if(ci.name < 0) throw new Error('No ContactName column — is this a Xero contacts export?');
+      const parsed = [];
+      for(let i = 1; i < rows.length; i++){
+        const r = rows[i];
+        const name = (r[ci.name] || '').trim();
+        if(!name) continue;
+        parsed.push({
+          name,
+          email: ci.email >= 0 ? (r[ci.email]||'').trim() : '',
+          phone: ci.phone >= 0 ? (r[ci.phone]||'').trim() : '',
+          mobile: ci.mobile >= 0 ? (r[ci.mobile]||'').trim() : '',
+          abn: ci.abn >= 0 ? (r[ci.abn]||'').trim() : '',
+        });
+      }
+      if(!parsed.length) throw new Error('No contacts found.');
+      contacts = parsed;
+      _matchCache = {};
+      $('ctStatus').textContent = `✅ Loaded ${parsed.length} contacts for ${currentClient}.`;
+      $('ctStatus').style.display = 'block';
+      $('ctErr').style.display = 'none';
+      renderAll();
+      persist();
+    }catch(err){
+      $('ctErr').textContent = '❌ ' + err.message;
+      $('ctErr').style.display = 'block';
+      $('ctStatus').style.display = 'none';
+    }
+  };
+  reader.readAsText(file);
+}
+
+// Drag-drop for both zones
+[['glDrop', handleGL], ['ctDrop', handleContacts]].forEach(([id, fn]) => {
+  const dz = $(id);
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); const f = e.dataTransfer.files[0]; if(f) fn(f); });
+});
+
+// ─── Persist ──────────────────────────────────────────────────────────────────
+function saveCurrentIntoStore(){
+  if(!currentClient) return;
+  const prev = store.clients[currentClient];
+  if(!txns.length && !contacts.length && !prev) return;
+  const entry = { txns, projects, contacts, settings, meta };
+  const same = prev && JSON.stringify({a:prev.txns,b:prev.projects,c:prev.contacts,d:prev.settings,e:prev.meta}) ===
+                        JSON.stringify({a:entry.txns,b:entry.projects,c:entry.contacts,d:entry.settings,e:entry.meta});
+  entry.updatedAt = same ? (prev.updatedAt||0) : Date.now();
+  store.clients[currentClient] = JSON.parse(JSON.stringify(entry));
+}
+function persist(){
+  saveCurrentIntoStore();
+  localStorage.setItem(LS_KEY, JSON.stringify({ store, currentClient }));
+  queueSave();
+}
+
+// ─── Excel export ─────────────────────────────────────────────────────────────
+function exportXLSX(){
+  const { groups, asAt } = lastModel;
+  const NUM = '#,##0.00';
+  const wb = XLSX.utils.book_new();
+  const s = v => ({v: v == null ? '' : String(v), t:'s'});
+  const n = v => ({v: parseFloat(v)||0, t:'n', z:NUM});
+  const nz = v => Math.abs(v||0) < 0.005 ? s('') : n(v);
+  const ff = f => ({f, t:'n', z:NUM});
+  const hdrMeta = `${meta.account || 'Retention account'} · ${meta.period || ''} · As at ${fmtDate(asAt)}`;
+
+  // ── Aged Summary ────────────────────────────────────────────────────────────
+  const live = groups.filter(g => Math.abs(g.out) > 0.004).sort((a,b) => a.supplier.localeCompare(b.supplier) || a.job.localeCompare(b.job));
+  const aRows = [
+    [`${currentClient ? currentClient + ' — ' : ''}Aged Retention Payables`],
+    [hdrMeta],
+    [],
+    ['Supplier','Job','Retained','Released','Outstanding', ...BUCKET_LBLS],
+  ];
+  const S = 5;
+  live.forEach((g, i) => {
+    const r = S + i;
+    aRows.push([
+      s(g.supplier), s(g.job === '(No job)' ? '' : g.job + (projects[g.job] && projects[g.job].label ? ' — ' + projects[g.job].label : '')),
+      n(g.retained), n(g.released), ff(`C${r}-D${r}`),
+      ...(g.buckets || [0,0,0,0,0,0]).map(nz),
+    ]);
+  });
+  const E = S + live.length - 1;
+  aRows.push([]);
+  aRows.push([s('TOTAL'), '', ff(`SUM(C${S}:C${E})`), ff(`SUM(D${S}:D${E})`), ff(`SUM(E${S}:E${E})`),
+    ...['F','G','H','I','J','K'].map(col => ff(`SUM(${col}${S}:${col}${E})`))]);
+  const ws1 = XLSX.utils.aoa_to_sheet(aRows);
+  ws1['!cols'] = [34,30,14,14,14,14,14,14,14,14,12].map(w => ({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws1, 'Aged Summary');
+
+  // ── Release Schedule ────────────────────────────────────────────────────────
+  const sched = scheduleRows();
+  const sRows = [
+    [`${currentClient ? currentClient + ' — ' : ''}Retention Release Schedule`],
+    [hdrMeta],
+    [],
+    ['Due Date','Supplier','Job','Basis','Amount','Cumulative'],
+  ];
+  const S2 = 5;
+  sched.forEach((r, i) => {
+    const row = S2 + i;
+    sRows.push([
+      s(r.due ? fmtDate(r.due) : 'TBC'), s(r.supplier),
+      s(r.job === '(No job)' ? '' : r.job + (projects[r.job] && projects[r.job].label ? ' — ' + projects[r.job].label : '')),
+      s(basisLong(r.basis)), n(r.amt),
+      i === 0 ? ff(`E${row}`) : ff(`F${row-1}+E${row}`),
+    ]);
+  });
+  sRows.push([]);
+  sRows.push([s('TOTAL'), '', '', '', ff(`SUM(E${S2}:E${S2 + sched.length - 1})`), '']);
+  const ws2 = XLSX.utils.aoa_to_sheet(sRows);
+  ws2['!cols'] = [12,34,30,22,14,14].map(w => ({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws2, 'Release Schedule');
+
+  // ── Suppliers & Contacts ────────────────────────────────────────────────────
+  const bySup = {};
+  groups.forEach(g => {
+    if(!bySup[g.supplier]) bySup[g.supplier] = { out: 0, jobs: new Set() };
+    bySup[g.supplier].out += g.out; bySup[g.supplier].jobs.add(g.job);
+  });
+  const cRows = [
+    [`${currentClient ? currentClient + ' — ' : ''}Retention Suppliers & Contacts`],
+    [hdrMeta],
+    [],
+    ['Supplier (per GL)','Outstanding','Jobs','Xero Contact','Email','Phone','ABN'],
+  ];
+  Object.keys(bySup).sort((a,b) => a.localeCompare(b)).forEach(name => {
+    const mc = matchContact(name);
+    cRows.push([s(name), n(bySup[name].out), s([...bySup[name].jobs].sort().join(', ')),
+      s(mc ? mc.c.name : ''), s(mc ? mc.c.email : ''), s(mc ? (mc.c.phone || mc.c.mobile) : ''), s(mc ? mc.c.abn : '')]);
+  });
+  const ws3 = XLSX.utils.aoa_to_sheet(cRows);
+  ws3['!cols'] = [34,14,26,34,30,16,16].map(w => ({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws3, 'Suppliers');
+
+  // ── Transactions ────────────────────────────────────────────────────────────
+  const tRows = [
+    [`${currentClient ? currentClient + ' — ' : ''}Retention Account Transactions`],
+    [hdrMeta],
+    [],
+    ['Date','Supplier','Type','Job','Reference','Retained','Released','Gross (incl GST)','GST'],
+  ];
+  const S4 = 5;
+  const sorted = txns.slice().sort((a,b) => a.date.localeCompare(b.date));
+  sorted.forEach(t => {
+    tRows.push([s(fmtDate(t.date)), s(t.supplier), s(t.amt > 0 ? 'Retained' : 'Released'), s(t.job), s(t.ref),
+      t.amt > 0 ? n(t.amt) : s(''), t.amt <= 0 ? n(-t.amt) : s(''), t.gross ? n(Math.abs(t.gross)) : s(''), t.gst ? n(Math.abs(t.gst)) : s('')]);
+  });
+  const E4 = S4 + sorted.length - 1;
+  tRows.push([]);
+  tRows.push([s('TOTAL'), '', '', '', '', ff(`SUM(F${S4}:F${E4})`), ff(`SUM(G${S4}:G${E4})`), '', '']);
+  tRows.push([s('CLOSING BALANCE (Retained − Released)'), '', '', '', '', '', ff(`F${E4+2}-G${E4+2}`), '', '']);
+  const ws4 = XLSX.utils.aoa_to_sheet(tRows);
+  ws4['!cols'] = [12,34,11,14,44,13,13,15,11].map(w => ({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws4, 'Transactions');
+
+  XLSX.writeFile(wb, `Retentions_${slug(currentClient) ? slug(currentClient) + '_' : ''}${asAt}.xlsx`);
+}
+
+// ─── PDF export ───────────────────────────────────────────────────────────────
+function exportPDF(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'landscape' });
+  const { groups, asAt } = lastModel;
+  const today = new Date();
+  const ds = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+
+  const band = title => {
+    doc.setFillColor(29,66,82); doc.rect(0,0,297,28,'F');
+    doc.setTextColor(255,255,255);
+    doc.setFont(undefined,'bold'); doc.setFontSize(15);
+    doc.text(title, 148.5, 11, {align:'center'});
+    doc.setFont(undefined,'normal'); doc.setFontSize(9);
+    doc.text(`${currentClient ? currentClient + '  ·  ' : ''}${meta.account || 'Retention account'}  ·  As at ${fmtDate(asAt)}  ·  Generated: ${ds}`, 148.5, 20, {align:'center'});
+    doc.setTextColor(0,0,0);
+  };
+
+  // ── Page 1: Aged summary by supplier ───────────────────────────────────────
+  band('AGED RETENTION PAYABLES');
+  const bySup = {};
+  groups.filter(g => Math.abs(g.out) > 0.004).forEach(g => {
+    if(!bySup[g.supplier]) bySup[g.supplier] = { retained:0, released:0, out:0, buckets:[0,0,0,0,0,0] };
+    const sagg = bySup[g.supplier];
+    sagg.retained += g.retained; sagg.released += g.released; sagg.out += g.out;
+    (g.buckets||[]).forEach((v,i) => sagg.buckets[i] += v);
+  });
+  let held = 0, dueNow = 0;
+  Object.values(bySup).forEach(sagg => { held += sagg.out; dueNow += sagg.buckets[0]; });
+
+  let y = 34;
+  doc.setFontSize(8.5); doc.setFont(undefined,'bold');
+  doc.text(`Retention held: ${fmt$(held)}`, 14, y);
+  doc.text(`Due / overdue now: ${fmt$(dueNow)}`, 90, y);
+  y += 9;
+
+  const cx = [12, 78, 100, 122, 146, 168, 190, 212, 234, 258];
+  const chd = ['Supplier','Retained','Released','Outstanding', ...BUCKET_LBLS];
+  const hdrRow = yy => {
+    doc.setFillColor(29,66,82); doc.rect(10, yy-5, 277, 8, 'F');
+    doc.setTextColor(255,255,255); doc.setFontSize(7); doc.setFont(undefined,'bold');
+    chd.forEach((h,i) => i === 0 ? doc.text(h, cx[i], yy) : doc.text(h, cx[i] + 18, yy, {align:'right'}));
+    doc.setTextColor(0,0,0); doc.setFont(undefined,'normal');
+  };
+  hdrRow(y); y += 7;
+
+  const names = Object.keys(bySup).sort((a,b) => a.localeCompare(b));
+  const pv = v => Math.abs(v||0) < 0.005 ? '–' : fmt$(v);
+  names.forEach((name, idx) => {
+    if(y > 188){ doc.addPage(); y = 14; hdrRow(y); y += 7; }
+    const sagg = bySup[name];
+    doc.setFillColor(idx % 2 ? 255 : 250, idx % 2 ? 255 : 252, idx % 2 ? 255 : 252);
+    doc.rect(10, y-5, 277, 7, 'F');
+    doc.setFontSize(6.5);
+    doc.text(name.substring(0,40), cx[0], y);
+    [sagg.retained, sagg.released, sagg.out, ...sagg.buckets].forEach((v,i) => doc.text(pv(v), cx[i+1] + 18, y, {align:'right'}));
+    y += 7;
+    doc.setDrawColor(220,220,220); doc.line(10, y-3.5, 287, y-3.5);
+  });
+  y += 2;
+  doc.setFont(undefined,'bold'); doc.setFontSize(7);
+  const tots = names.reduce((a,nm) => {
+    const sagg = bySup[nm];
+    a[0] += sagg.retained; a[1] += sagg.released; a[2] += sagg.out;
+    sagg.buckets.forEach((v,i) => a[3+i] += v);
+    return a;
+  }, [0,0,0,0,0,0,0,0,0]);
+  doc.text('TOTAL', cx[0], y);
+  tots.forEach((v,i) => doc.text(fmt$(v), cx[i+1] + 18, y, {align:'right'}));
+
+  // ── Page 2+: Release schedule ──────────────────────────────────────────────
+  doc.addPage();
+  band('RETENTION RELEASE SCHEDULE');
+  y = 36;
+  const sx = [12, 42, 110, 168, 210, 250];
+  const shd = ['Due Date','Supplier','Job','Basis','Amount','Cumulative'];
+  const sHdr = yy => {
+    doc.setFillColor(29,66,82); doc.rect(10, yy-5, 277, 8, 'F');
+    doc.setTextColor(255,255,255); doc.setFontSize(7); doc.setFont(undefined,'bold');
+    shd.forEach((h,i) => i >= 4 ? doc.text(h, sx[i] + 22, yy, {align:'right'}) : doc.text(h, sx[i], yy));
+    doc.setTextColor(0,0,0); doc.setFont(undefined,'normal');
+  };
+  sHdr(y); y += 7;
+  let cum = 0;
+  scheduleRows().forEach((r, idx) => {
+    if(y > 188){ doc.addPage(); y = 14; sHdr(y); y += 7; }
+    cum += r.amt;
+    doc.setFillColor(idx % 2 ? 255 : 250, idx % 2 ? 255 : 252, idx % 2 ? 255 : 252);
+    doc.rect(10, y-5, 277, 7, 'F');
+    doc.setFontSize(6.5);
+    const p = projects[r.job];
+    doc.text(r.due ? fmtDate(r.due) : 'TBC', sx[0], y);
+    doc.text(r.supplier.substring(0,42), sx[1], y);
+    doc.text((r.job === '(No job)' ? '' : r.job + (p && p.label ? ' — ' + p.label : '')).substring(0,36), sx[2], y);
+    doc.text(basisLong(r.basis), sx[3], y);
+    doc.text(fmt$(r.amt), sx[4] + 22, y, {align:'right'});
+    doc.text(fmt$(cum), sx[5] + 22, y, {align:'right'});
+    y += 7;
+    doc.setDrawColor(220,220,220); doc.line(10, y-3.5, 287, y-3.5);
+  });
+  y += 2;
+  doc.setFont(undefined,'bold'); doc.setFontSize(7);
+  doc.text('TOTAL', sx[0], y);
+  doc.text(fmt$(cum), sx[4] + 22, y, {align:'right'});
+
+  doc.save(`Retentions_${slug(currentClient) ? slug(currentClient) + '_' : ''}${asAt}.pdf`);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+window.addEventListener('scroll', () => document.getElementById('nav').classList.toggle('scrolled', window.scrollY > 20));
+(function(){
+  try{
+    const saved = localStorage.getItem(LS_KEY);
+    if(saved){
+      const d = JSON.parse(saved);
+      store = d.store || {clients:{}};
+      currentClient = d.currentClient || '';
+    }
+  }catch(e){ console.warn('Could not load saved data:', e); }
+  try{ registerClients = JSON.parse(localStorage.getItem(LS_CLIENT_CACHE)||'[]'); }catch(e){}
+  fillClientSel();
+  hydrateClient();
+  renderAll();
+  odInit();
+})();
+</script>
+</body>
+</html>
