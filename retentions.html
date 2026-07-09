@@ -188,6 +188,7 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
     </div>
   </div>
 
+  <div class="alert" id="reconBox" style="display:none"></div>
   <div class="alert a-warn" id="warnBox" style="display:none"></div>
 
   <!-- TABS -->
@@ -291,7 +292,7 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
     <div class="modal-ttl">Upload Data</div>
 
     <div class="modal-sec-ttl">1 · Retention Account GL (.xlsx)</div>
-    <div class="alert a-info" style="margin-bottom:.6rem">Xero → the retention payable account → <strong>Account Transactions</strong> report → Export to Excel. Re-uploading replaces the transactions but keeps your job dates and settings.</div>
+    <div class="alert a-info" style="margin-bottom:.6rem">Xero → the retention payable account → <strong>Account Transactions</strong> report → Export to Excel. Export the full history to start, then <strong>just the latest month</strong> each period — it rolls forward into the loaded data and reconciles against Xero's opening &amp; closing balances. Job dates and settings are always kept.</div>
     <div class="drop" id="glDrop" onclick="document.getElementById('glFile').click()">
       <div class="drop-icon">📒</div>
       <p>Click to browse or drag &amp; drop the GL export</p>
@@ -300,6 +301,10 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
     <input type="file" id="glFile" accept=".xlsx,.xls" style="display:none" onchange="handleGL(this.files[0])">
     <div id="glPreview" style="display:none;margin-top:.8rem">
       <div class="alert a-ok" id="glStatus" style="margin-bottom:.6rem"></div>
+      <div id="glMode" style="display:none;margin:.6rem 0 1rem;padding:.7rem 1rem;background:var(--light);border-radius:8px">
+        <label style="display:block;font-size:.85rem;margin-bottom:.4rem;cursor:pointer"><input type="radio" name="glModeR" value="roll" checked> <strong>Roll forward</strong> — replace only this export's period (<span id="glModePeriod"></span>) and keep the rest</label>
+        <label style="display:block;font-size:.85rem;cursor:pointer"><input type="radio" name="glModeR" value="replace"> <strong>Replace all</strong> — start over with just this export</label>
+      </div>
       <div style="display:flex;gap:.6rem;justify-content:flex-end">
         <button class="btn btn-primary btn-sm" onclick="confirmGL()">Load Transactions</button>
       </div>
@@ -511,7 +516,16 @@ function compute(){
     else g.released += -t.amt;
   });
   const groups = Object.values(map);
+  // Opening balance carried forward with no supplier detail — kept as its own
+  // line so the total ties to Xero. No due date can be derived for it.
+  const ob = r2(meta.openingBalance || 0);
+  if(Math.abs(ob) > 0.004){
+    groups.unshift({ supplier:'(Opening balance b/f)', job:'(No job)', parcels:[],
+      retained: ob > 0 ? ob : 0, released: ob < 0 ? -ob : 0, out: ob,
+      milestones: ob > 0.004 ? [{due: null, amt: ob, basis: 'TBC'}] : [], _opening: true });
+  }
   groups.forEach(g => {
+    if(g._opening) return;
     g.out = g.retained - g.released;
     g.milestones = [];
     if(g.out <= 0.004) return;
@@ -587,6 +601,7 @@ function renderAll(){
   lastModel = compute();
   renderTiles();
   renderMeta();
+  renderRecon();
   renderWarnings();
   renderAged();
   renderSchedule();
@@ -620,8 +635,38 @@ function renderMeta(){
       : 'Select a <strong>client</strong>, then upload that client\'s retention account GL export.';
     return;
   }
-  el.innerHTML = `<strong>${esc(meta.account || 'Retention account')}</strong> · ${esc(meta.period || '')} · ${txns.length} transactions` +
+  const dates = txns.map(t => t.date).sort();
+  const from = meta.loadedFrom || dates[0], to = meta.loadedTo || dates[dates.length - 1];
+  el.innerHTML = `<strong>${esc(meta.account || 'Retention account')}</strong> · loaded ${fmtDate(from)} – ${fmtDate(to)} · ${txns.length} transactions` +
     (contacts.length ? ` · ${contacts.length} contacts` : ' · <span style="color:var(--warn)">no contacts uploaded</span>');
+}
+
+// Reconciliation banner — result of the last upload's opening/closing check
+// against the balances printed on the Xero export. Persisted in meta.recon.
+function renderRecon(){
+  const box = $('reconBox');
+  const rc = meta.recon;
+  if(!rc){ box.style.display = 'none'; return; }
+  const opDiff = rc.xeroOpening == null ? 0 : r2(rc.appOpening - rc.xeroOpening);
+  const clDiff = rc.xeroClosing == null ? 0 : r2(rc.appClosing - rc.xeroClosing);
+  const ok = Math.abs(opDiff) < 0.005 && Math.abs(clDiff) < 0.005;
+  const lines = [];
+  lines.push(`<strong>${ok ? '✓ Reconciled to Xero' : '⚠ Does not reconcile to Xero'}</strong> — last upload ${fmtDate(rc.from)} – ${fmtDate(rc.to)} (${rc.mode === 'roll' ? 'rolled forward' : 'full replace'}, ${rc.added} txns loaded${rc.replaced ? `, ${rc.replaced} replaced` : ''}).`);
+  if(rc.xeroOpening != null){
+    lines.push(Math.abs(opDiff) < 0.005
+      ? `Opening balance: Xero ${fmt$(rc.xeroOpening)} · app ${fmt$(rc.appOpening)} ✓`
+      : `<strong>Opening balance difference of ${fmt$(opDiff)}</strong>: Xero shows ${fmt$(rc.xeroOpening)} at ${fmtDate(rc.from)} but the loaded transactions total ${fmt$(rc.appOpening)}. A prior-period transaction has likely been added, edited or deleted in Xero — or a month was skipped. Re-export the full period and use "Replace all" to true-up.`);
+  }
+  if(rc.xeroClosing != null){
+    lines.push(Math.abs(clDiff) < 0.005
+      ? `Closing balance: Xero ${fmt$(rc.xeroClosing)} · app ${fmt$(rc.appClosing)} ✓`
+      : `<strong>Closing balance difference of ${fmt$(clDiff)}</strong>: Xero shows ${fmt$(rc.xeroClosing)} at ${fmtDate(rc.to)} but the app total is ${fmt$(rc.appClosing)}.`);
+  }
+  if(Math.abs(r2(meta.openingBalance || 0)) > 0.004)
+    lines.push(`An opening balance of ${fmt$(meta.openingBalance)} is carried forward without supplier detail (shown as "(Opening balance b/f)") — export from further back to break it down.`);
+  box.className = 'alert ' + (ok ? 'a-ok' : 'a-warn');
+  box.innerHTML = lines.join('<br>');
+  box.style.display = 'block';
 }
 
 function renderWarnings(){
@@ -758,6 +803,7 @@ function renderSuppliers(){
   const tbody = $('supBody');
   const bySup = {};
   lastModel.groups.forEach(g => {
+    if(g._opening) return;
     if(!bySup[g.supplier]) bySup[g.supplier] = { out: 0, jobs: new Set() };
     bySup[g.supplier].out += g.out;
     bySup[g.supplier].jobs.add(g.job);
@@ -851,6 +897,22 @@ function toISODate(v){
   return isNaN(dt) ? null : fmtISO(dt);
 }
 const numOf = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g,'')); return isNaN(n) ? 0 : n; };
+const r2 = v => Math.round((v || 0) * 100) / 100;
+
+function parseLongDate(s){
+  const m = String(s||'').match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
+  if(!m) return null;
+  const mo = new Date(Date.parse(m[2] + ' 1, 2000')).getMonth();
+  if(isNaN(mo)) return null;
+  return fmtISO(new Date(+m[3], mo, +m[1]));
+}
+// "For the period 1 June 2026 to 30 June 2026" → {from, to}
+function parsePeriod(str){
+  const m = String(str||'').match(/period\s+(.+?)\s+to\s+(.+)$/i);
+  if(!m) return null;
+  const from = parseLongDate(m[1]), to = parseLongDate(m[2]);
+  return from && to ? {from, to} : null;
+}
 
 function handleGL(file){
   if(!file) return;
@@ -875,11 +937,13 @@ function handleGL(file){
       };
       if(ci.desc < 0) throw new Error('No Description column found — the export needs the Description column to identify suppliers.');
       const parsed = [];
-      let account = '', skipped = 0;
+      let account = '', skipped = 0, opening = null, closing = null;
       for(let i = hdr + 1; i < rows.length; i++){
         const r = rows[i] || [];
         const first = String(r[ci.date] == null ? '' : r[ci.date]).trim();
-        if(/^(opening balance|closing balance|total)/i.test(first)){ continue; }
+        if(/^opening balance/i.test(first)){ opening = numOf(r[ci.credit]) - numOf(r[ci.debit]); continue; }
+        if(/^closing balance/i.test(first)){ closing = numOf(r[ci.credit]) - numOf(r[ci.debit]); continue; }
+        if(/^total/i.test(first)){ continue; }
         const date = toISODate(r[ci.date]);
         if(!date){
           if(first && !account) account = first;   // section row = account name
@@ -902,23 +966,39 @@ function handleGL(file){
         });
       }
       if(!parsed.length) throw new Error('No transactions found below the header row.');
-      const held = parsed.reduce((a,t) => a + t.amt, 0);
+      const net = parsed.reduce((a,t) => a + t.amt, 0);
       const jobs = new Set(parsed.map(t => t.job));
       const sups = new Set(parsed.map(t => t.supplier));
+      const periodStr = String((rows[2]||[])[0] || '').trim();
+      const dates = parsed.map(t => t.date).sort();
+      const pd = parsePeriod(periodStr) || { from: dates[0], to: dates[dates.length - 1] };
       stagedGL = {
         txns: parsed,
+        opening, closing,
+        from: pd.from, to: pd.to,
         meta: {
           account: account || String((rows[0]||[])[0] || '').replace(/\s*Transactions\s*$/i,'').trim() || 'Retention account',
           org: String((rows[1]||[])[0] || '').trim(),
-          period: String((rows[2]||[])[0] || '').trim(),
+          period: periodStr,
           uploadedAt: new Date().toISOString(),
         },
       };
-      $('glStatus').innerHTML = `✅ <strong>${stagedGL.meta.account}</strong>${stagedGL.meta.org ? ' — ' + esc(stagedGL.meta.org) : ''}<br>` +
-        `${esc(stagedGL.meta.period)}<br>` +
-        `${parsed.length} transactions · ${sups.size} suppliers · ${jobs.size} jobs · closing balance <strong>${fmt$(held)}</strong>` +
-        (skipped ? `<br>${skipped} zero-value rows skipped.` : '') +
-        `<br>This will <strong>replace</strong> the loaded transactions for ${esc(currentClient)} (job dates &amp; settings are kept).`;
+      let msg = `✅ <strong>${esc(stagedGL.meta.account)}</strong>${stagedGL.meta.org ? ' — ' + esc(stagedGL.meta.org) : ''}<br>` +
+        `${esc(periodStr) || fmtDate(pd.from) + ' – ' + fmtDate(pd.to)}<br>` +
+        `${parsed.length} transactions · ${sups.size} suppliers · ${jobs.size} jobs · movement <strong>${fmt$(net)}</strong>` +
+        `<br>Xero opening balance <strong>${opening == null ? 'n/a' : fmt$(opening)}</strong> · Xero closing balance <strong>${closing == null ? 'n/a' : fmt$(closing)}</strong>` +
+        (skipped ? `<br>${skipped} zero-value rows skipped.` : '');
+      if(meta.account && stagedGL.meta.account && meta.account !== stagedGL.meta.account)
+        msg += `<br>⚠ This export is for <strong>${esc(stagedGL.meta.account)}</strong> but the loaded data is <strong>${esc(meta.account)}</strong> — check it's the same account.`;
+      $('glStatus').innerHTML = msg;
+      // Roll-forward choice only when there's already data loaded
+      if(txns.length){
+        $('glMode').style.display = 'block';
+        $('glModePeriod').textContent = `${fmtDate(pd.from)} – ${fmtDate(pd.to)}`;
+        document.querySelector('input[name="glModeR"][value="roll"]').checked = true;
+      } else {
+        $('glMode').style.display = 'none';
+      }
       $('glPreview').style.display = 'block';
       $('glErr').style.display = 'none';
     }catch(err){
@@ -931,10 +1011,44 @@ function handleGL(file){
   reader.readAsArrayBuffer(file);
 }
 
+// Loads the staged export. "Replace" takes the export as the new truth
+// (including its opening balance). "Roll forward" swaps out only the export's
+// period and reconciles the app's running balance against the Xero opening and
+// closing balances printed on the export — an opening difference means
+// prior-period data changed in Xero (or a month was skipped).
 function confirmGL(){
   if(!stagedGL) return;
-  txns = stagedGL.txns;
-  meta = stagedGL.meta;
+  const sg = stagedGL;
+  const modeEl = document.querySelector('input[name="glModeR"]:checked');
+  const mode = (txns.length && modeEl && modeEl.value === 'roll') ? 'roll' : 'replace';
+  let recon;
+  if(mode === 'replace'){
+    txns = sg.txns;
+    meta = sg.meta;
+    meta.openingBalance = sg.opening || 0;
+    meta.openingDate = sg.from;
+    meta.loadedFrom = sg.from;
+    meta.loadedTo = sg.to;
+    const appClosing = r2((meta.openingBalance || 0) + txns.reduce((a,t) => a + t.amt, 0));
+    recon = { mode, from: sg.from, to: sg.to, replaced: 0, added: sg.txns.length,
+      xeroOpening: sg.opening, appOpening: sg.opening == null ? null : r2(sg.opening),
+      xeroClosing: sg.closing, appClosing, uploadedAt: sg.meta.uploadedAt };
+  } else {
+    const keep = txns.filter(t => t.date < sg.from || t.date > sg.to);
+    const replaced = txns.length - keep.length;
+    txns = keep.concat(sg.txns);
+    const ob = meta.openingBalance || 0;
+    const appOpening = r2(ob + txns.filter(t => t.date < sg.from).reduce((a,t) => a + t.amt, 0));
+    const appClosing = r2(ob + txns.filter(t => t.date <= sg.to).reduce((a,t) => a + t.amt, 0));
+    if(!meta.loadedFrom || sg.from < meta.loadedFrom) meta.loadedFrom = sg.from;
+    if(!meta.loadedTo || sg.to > meta.loadedTo) meta.loadedTo = sg.to;
+    meta.uploadedAt = sg.meta.uploadedAt;
+    if(!meta.account) meta.account = sg.meta.account;
+    recon = { mode, from: sg.from, to: sg.to, replaced, added: sg.txns.length,
+      xeroOpening: sg.opening, appOpening,
+      xeroClosing: sg.closing, appClosing, uploadedAt: sg.meta.uploadedAt };
+  }
+  meta.recon = recon;
   new Set(txns.map(t => t.job)).forEach(job => {
     if(!projects[job]) projects[job] = { label:'', pcDate:'', dlpMonths:12, pcPct:50 };
   });
@@ -1099,6 +1213,7 @@ function exportXLSX(){
   // ── Suppliers & Contacts ────────────────────────────────────────────────────
   const bySup = {};
   groups.forEach(g => {
+    if(g._opening) return;
     if(!bySup[g.supplier]) bySup[g.supplier] = { out: 0, jobs: new Set() };
     bySup[g.supplier].out += g.out; bySup[g.supplier].jobs.add(g.job);
   });
