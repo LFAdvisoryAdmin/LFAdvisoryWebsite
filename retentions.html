@@ -6,7 +6,8 @@
 <title>Retention Payables — LF Advisory</title>
 <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;600;700;800&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- xlsx-js-style = SheetJS 0.18.5 + cell styling (Arial/bold/borders in exports) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <style>
 :root {
   --primary:#2d6670; --primary-dark:#1e4a52; --secondary:#5a7a3a;
@@ -359,6 +360,11 @@ function addMonths(iso, n){
 }
 function slug(v){ return String(v||'').replace(/[\\\/\?\*\[\]:()]/g,'').trim().replace(/\s+/g,'_'); }
 function monthLabel(iso){ const [y,m] = iso.split('-').map(Number); return new Date(y, m-1, 1).toLocaleString('en-AU', {month:'long', year:'numeric'}); }
+const M3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MF = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+// Xero report date styles: "25 Jun 2026" (rows) and "30 June 2026" (As at line)
+const fmtXD = iso => { if(!iso) return ''; const [y,m,d] = iso.split('-').map(Number); return `${d} ${M3[m-1]} ${y}`; };
+const fmtLongD = iso => { if(!iso) return ''; const [y,m,d] = iso.split('-').map(Number); return `${d} ${MF[m-1]} ${y}`; };
 
 // ─── Microsoft Graph / SharePoint sync ───────────────────────────────────────
 // Same pattern as prepayments/amortisation: no own OAuth, portal's shared token,
@@ -526,24 +532,30 @@ function compute(){
   }
   groups.forEach(g => {
     if(g._opening) return;
-    g.out = g.retained - g.released;
+    // milestone amounts are rounded to the cent with the residual folded into
+    // the final milestone, so bucket totals always tie to the GL exactly
+    g.out = r2(g.retained - g.released);
     g.milestones = [];
     if(g.out <= 0.004) return;
     const p = projects[g.job];
     if(p && p.pcDate){
       const pct = (p.pcPct == null || p.pcPct === '' ? 50 : parseFloat(p.pcPct)) / 100;
       const dlp = (p.dlpMonths == null || p.dlpMonths === '' ? 12 : parseInt(p.dlpMonths));
-      let m1 = Math.min(Math.max(0, g.retained * pct - g.released), g.out);
-      const m2 = g.out - m1;
+      const m1 = r2(Math.min(Math.max(0, g.retained * pct - g.released), g.out));
+      const m2 = r2(g.out - m1);
       if(m1 > 0.004) g.milestones.push({due: p.pcDate, amt: m1, basis: 'PC'});
       if(m2 > 0.004) g.milestones.push({due: addMonths(p.pcDate, dlp), amt: m2, basis: 'DLP'});
     } else {
-      let rem = g.released;
+      let rem = g.released, alloc = 0;
       const fb = settings.fallbackMonths || 0;
-      g.parcels.slice().sort((a,b) => a.date.localeCompare(b.date)).forEach(pc => {
+      const open = g.parcels.slice().sort((a,b) => a.date.localeCompare(b.date)).map(pc => {
         const use = Math.min(pc.amt, rem); rem -= use;
-        const left = pc.amt - use;
-        if(left > 0.004) g.milestones.push({due: fb ? addMonths(pc.date, fb) : null, amt: left, basis: fb ? 'EST' : 'TBC'});
+        return { date: pc.date, left: pc.amt - use };
+      }).filter(pc => pc.left > 0.004);
+      open.forEach((pc, i) => {
+        const amt = i === open.length - 1 ? r2(g.out - alloc) : r2(pc.left);
+        alloc = r2(alloc + amt);
+        if(amt > 0.004) g.milestones.push({due: fb ? addMonths(pc.date, fb) : null, amt, basis: fb ? 'EST' : 'TBC'});
       });
     }
   });
@@ -1150,41 +1162,163 @@ function persist(){
   queueSave();
 }
 
+// ─── Xero-format aged report model ────────────────────────────────────────────
+// Mirrors Xero's Aged Payables reports ("Ageing by due date"): Current = not
+// yet due (or no date), then buckets by whole months overdue. Detail rows are
+// jobs (one row per supplier × job × release milestone), not invoices.
+const XB_LBLS = ['Current','< 1 Month','1 Month','2 Months','3 Months','Older'];
+function xeroBucketOf(due, asAt){
+  if(!due || due > asAt) return 0;
+  if(due > addMonths(asAt, -1)) return 1;
+  if(due > addMonths(asAt, -2)) return 2;
+  if(due > addMonths(asAt, -3)) return 3;
+  if(due > addMonths(asAt, -4)) return 4;
+  return 5;
+}
+const basisNote = b => ({PC:' — practical completion', DLP:' — final release', EST:' — estimated', TBC:''}[b] || '');
+function agedReportModel(){
+  const { groups, asAt } = lastModel;
+  const bySup = {};
+  groups.filter(g => Math.abs(g.out) > 0.004).forEach(g => {
+    if(!bySup[g.supplier]) bySup[g.supplier] = { rows: [], buckets: [0,0,0,0,0,0], total: 0 };
+    const sup = bySup[g.supplier];
+    const lastRet = g.parcels.length ? g.parcels.map(p => p.date).sort().pop() : null;
+    const p = projects[g.job];
+    const jobLbl = g._opening ? 'Opening balance b/f'
+      : g.job === '(No job)' ? 'No job reference'
+      : g.job + (p && p.label ? ' — ' + p.label : '');
+    const push = (due, basis, amt) => {
+      const bucket = xeroBucketOf(due, asAt);
+      sup.rows.push({ lastRet, due, jobLbl, basis, amt, bucket });
+      sup.buckets[bucket] = r2(sup.buckets[bucket] + amt);
+      sup.total = r2(sup.total + amt);
+    };
+    if(g.out < 0){
+      push(null, 'TBC', r2(g.out));   // over-released credit — not yet due
+    } else {
+      const merged = {};
+      (g.milestones||[]).forEach(m => {
+        const k = (m.due || 'TBC') + '|' + m.basis;
+        if(!merged[k]) merged[k] = { due: m.due, basis: m.basis, amt: 0 };
+        merged[k].amt = r2(merged[k].amt + m.amt);
+      });
+      Object.values(merged).sort((a,b) => (a.due||'9999-12-31').localeCompare(b.due||'9999-12-31')).forEach(m => push(m.due, m.basis, m.amt));
+    }
+  });
+  Object.values(bySup).forEach(s => s.rows.sort((a,b) => a.jobLbl.localeCompare(b.jobLbl) || (a.due||'9999-12-31').localeCompare(b.due||'9999-12-31')));
+  const names = Object.keys(bySup).sort((a,b) =>
+    a === '(Opening balance b/f)' ? -1 : b === '(Opening balance b/f)' ? 1 : a.localeCompare(b));
+  const tot = { buckets: [0,0,0,0,0,0], total: 0 };
+  names.forEach(nm => {
+    bySup[nm].buckets.forEach((v,i) => tot.buckets[i] = r2(tot.buckets[i] + v));
+    tot.total = r2(tot.total + bySup[nm].total);
+  });
+  return { bySup, names, tot, asAt };
+}
+
 // ─── Excel export ─────────────────────────────────────────────────────────────
 function exportXLSX(){
   const { groups, asAt } = lastModel;
-  const NUM = '#,##0.00';
+  const NUM = '#,##0.00;(#,##0.00)';   // Xero's format — negatives in parentheses
   const wb = XLSX.utils.book_new();
   const s = v => ({v: v == null ? '' : String(v), t:'s'});
-  const n = v => ({v: parseFloat(v)||0, t:'n', z:NUM});
-  const nz = v => Math.abs(v||0) < 0.005 ? s('') : n(v);
-  const ff = f => ({f, t:'n', z:NUM});
+  const n = v => ({v: r2(parseFloat(v)||0), t:'n', z:NUM});
+  // formula cells carry a cached value — the styled writer drops formula-only
+  // cells, and Excel shows the right figure even before a recalc
+  const ff = (f, cached) => ({f, t:'n', z:NUM, v: r2(cached)});
+  const pf = (f, frac) => ({f, t:'n', z:'0.0%', v: Math.round((frac||0)*10000)/10000});
   const hdrMeta = `${meta.account || 'Retention account'} · ${meta.period || ''} · As at ${fmtDate(asAt)}`;
+  const rm = agedReportModel();
+  const gt = rm.tot.total || 0;
+  const acct = meta.account || 'Retention payable';
 
-  // ── Aged Summary ────────────────────────────────────────────────────────────
-  const live = groups.filter(g => Math.abs(g.out) > 0.004).sort((a,b) => a.supplier.localeCompare(b.supplier) || a.job.localeCompare(b.job));
-  const aRows = [
-    [`${currentClient ? currentClient + ' — ' : ''}Aged Retention Payables`],
-    [hdrMeta],
-    [],
-    ['Supplier','Job','Retained','Released','Outstanding', ...BUCKET_LBLS],
-  ];
-  const S = 5;
-  live.forEach((g, i) => {
-    const r = S + i;
-    aRows.push([
-      s(g.supplier), s(g.job === '(No job)' ? '' : g.job + (projects[g.job] && projects[g.job].label ? ' — ' + projects[g.job].label : '')),
-      n(g.retained), n(g.released), ff(`C${r}-D${r}`),
-      ...(g.buckets || [0,0,0,0,0,0]).map(nz),
-    ]);
+  // Xero report cell styles (Arial, matching Xero's own exports)
+  const F_TITLE = {font:{name:'Arial', sz:14, bold:true}};
+  const F_SUB   = {font:{name:'Arial', sz:12}};
+  const F_HDR   = {font:{name:'Arial', sz:10, bold:true}, border:{bottom:{style:'thin'}}};
+  const F_HDR_R = {font:{name:'Arial', sz:10, bold:true}, border:{bottom:{style:'thin'}}, alignment:{horizontal:'right'}};
+  const F_BODY  = {font:{name:'Arial', sz:9}};
+  const F_SEC   = {font:{name:'Arial', sz:9, bold:true}};
+  const F_TOT   = {font:{name:'Arial', sz:9, bold:true}, border:{top:{style:'thin'}}};
+  const setS = (ws, r, c, st) => { const a = XLSX.utils.encode_cell({r, c}); if(ws[a]) ws[a].s = st; };
+  const styleRow = (ws, r, nCols, st) => { for(let c = 0; c < nCols; c++) setS(ws, r, c, st); };
+  const titleBlock = name => ([[s(name)], [s(currentClient || meta.org || '')], [s(`As at ${fmtLongD(asAt)}`)], [s('Ageing by due date')], []]);
+  const styleTitle = ws => { styleRow(ws,0,1,F_TITLE); styleRow(ws,1,1,F_SUB); styleRow(ws,2,1,F_SUB); styleRow(ws,3,1,F_SUB); };
+
+  // ── Aged Summary (Xero Aged Payables Summary format) ────────────────────────
+  const aoa1 = titleBlock('Aged Retention Payables Summary');
+  aoa1.push(['Contact', ...XB_LBLS, 'Total']);   // Excel row 6
+  aoa1.push([s(acct)]);                          // Excel row 7 — section
+  const SB = ['B','C','D','E','F','G','H'];
+  rm.names.forEach((nm, i) => {
+    const r = 8 + i;
+    aoa1.push([s(nm), ...rm.bySup[nm].buckets.map(n), ff(`SUM(B${r}:G${r})`, rm.bySup[nm].total)]);
   });
-  const E = S + live.length - 1;
-  aRows.push([]);
-  aRows.push([s('TOTAL'), '', ff(`SUM(C${S}:C${E})`), ff(`SUM(D${S}:D${E})`), ff(`SUM(E${S}:E${E})`),
-    ...['F','G','H','I','J','K'].map(col => ff(`SUM(${col}${S}:${col}${E})`))]);
-  const ws1 = XLSX.utils.aoa_to_sheet(aRows);
-  ws1['!cols'] = [34,30,14,14,14,14,14,14,14,14,12].map(w => ({wch:w}));
+  const E1 = 7 + rm.names.length;                // last supplier row
+  const T1 = E1 + 1;                             // Total <acct> row
+  aoa1.push([s(`Total ${acct}`), ...SB.map((c,i) => ff(rm.names.length ? `SUM(${c}8:${c}${E1})` : '0', i < 6 ? rm.tot.buckets[i] : rm.tot.total))]);
+  aoa1.push([]);
+  const T2 = T1 + 2;                             // Total row
+  aoa1.push([s('Total'), ...SB.map((c,i) => ff(`${c}${T1}`, i < 6 ? rm.tot.buckets[i] : rm.tot.total))]);
+  aoa1.push([s('Percentage of total'), ...SB.map((c,i) => {
+    const v = i < 6 ? rm.tot.buckets[i] : rm.tot.total;
+    return gt ? pf(`${c}${T2}/$H$${T2}`, v/gt) : {v:0, t:'n', z:'0.0%'};
+  })]);
+  const ws1 = XLSX.utils.aoa_to_sheet(aoa1);
+  ws1['!cols'] = [48,11,11,11,11,11,9,12].map(w => ({wch:w}));
+  styleTitle(ws1);
+  setS(ws1, 5, 0, F_HDR); for(let c = 1; c < 8; c++) setS(ws1, 5, c, F_HDR_R);
+  styleRow(ws1, 6, 1, F_SEC);
+  rm.names.forEach((nm, i) => styleRow(ws1, 7 + i, 8, F_BODY));
+  styleRow(ws1, T1 - 1, 8, F_TOT);
+  styleRow(ws1, T2 - 1, 8, F_SEC);
+  styleRow(ws1, T2, 8, F_BODY);
   XLSX.utils.book_append_sheet(wb, ws1, 'Aged Summary');
+
+  // ── Aged Detail (Xero Aged Payables Detail format, rows = jobs) ─────────────
+  const aoa2 = titleBlock('Aged Retention Payables Detail');
+  aoa2.push(['Last Retained','Due Date','Job', ...XB_LBLS, 'Total']);   // Excel row 6, cols A–J
+  const DB = ['D','E','F','G','H','I','J'];
+  const secIdx = [], totIdx = [], bodyIdx = [];
+  rm.names.forEach(nm => {
+    const sup = rm.bySup[nm];
+    secIdx.push(aoa2.length);
+    aoa2.push([s(nm)]);
+    const first = aoa2.length + 1;   // Excel row of first job row
+    sup.rows.forEach(rw => {
+      bodyIdx.push(aoa2.length);
+      const r = aoa2.length + 1;
+      aoa2.push([
+        s(rw.lastRet ? fmtXD(rw.lastRet) : ''), s(rw.due ? fmtXD(rw.due) : 'TBC'), s(rw.jobLbl + basisNote(rw.basis)),
+        ...[0,1,2,3,4,5].map(bi => n(bi === rw.bucket ? rw.amt : 0)),
+        ff(`SUM(D${r}:I${r})`, rw.amt),
+      ]);
+    });
+    const last = aoa2.length;        // Excel row of last job row
+    totIdx.push(aoa2.length);
+    aoa2.push([s(`Total ${nm}`), '', '', ...DB.map((c,i) => ff(`SUM(${c}${first}:${c}${last})`, i < 6 ? sup.buckets[i] : sup.total))]);
+  });
+  aoa2.push([]);
+  const TD = aoa2.length + 1;        // Excel row of grand Total
+  aoa2.push([s('Total'), '', '', ...DB.map((c,i) => {
+    const v = i < 6 ? rm.tot.buckets[i] : rm.tot.total;
+    return totIdx.length ? ff(totIdx.map(ti => `${c}${ti + 1}`).join('+'), v) : n(0);
+  })]);
+  aoa2.push([s('Percentage of total'), '', '', ...DB.map((c,i) => {
+    const v = i < 6 ? rm.tot.buckets[i] : rm.tot.total;
+    return gt ? pf(`${c}${TD}/$J$${TD}`, v/gt) : {v:0, t:'n', z:'0.0%'};
+  })]);
+  const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
+  ws2['!cols'] = [13,13,46,11,11,11,11,11,9,12].map(w => ({wch:w}));
+  styleTitle(ws2);
+  for(let c = 0; c < 3; c++) setS(ws2, 5, c, F_HDR);
+  for(let c = 3; c < 10; c++) setS(ws2, 5, c, F_HDR_R);
+  secIdx.forEach(ri => styleRow(ws2, ri, 1, F_SEC));
+  bodyIdx.forEach(ri => styleRow(ws2, ri, 10, F_BODY));
+  totIdx.forEach(ri => styleRow(ws2, ri, 10, F_TOT));
+  styleRow(ws2, TD - 1, 10, F_SEC);
+  styleRow(ws2, TD, 10, F_BODY);
+  XLSX.utils.book_append_sheet(wb, ws2, 'Aged Detail');
 
   // ── Release Schedule ────────────────────────────────────────────────────────
   const sched = scheduleRows();
@@ -1195,20 +1329,22 @@ function exportXLSX(){
     ['Due Date','Supplier','Job','Basis','Amount','Cumulative'],
   ];
   const S2 = 5;
+  let scum = 0;
   sched.forEach((r, i) => {
     const row = S2 + i;
+    scum = r2(scum + r.amt);
     sRows.push([
       s(r.due ? fmtDate(r.due) : 'TBC'), s(r.supplier),
       s(r.job === '(No job)' ? '' : r.job + (projects[r.job] && projects[r.job].label ? ' — ' + projects[r.job].label : '')),
       s(basisLong(r.basis)), n(r.amt),
-      i === 0 ? ff(`E${row}`) : ff(`F${row-1}+E${row}`),
+      i === 0 ? ff(`E${row}`, scum) : ff(`F${row-1}+E${row}`, scum),
     ]);
   });
   sRows.push([]);
-  sRows.push([s('TOTAL'), '', '', '', ff(`SUM(E${S2}:E${S2 + sched.length - 1})`), '']);
-  const ws2 = XLSX.utils.aoa_to_sheet(sRows);
-  ws2['!cols'] = [12,34,30,22,14,14].map(w => ({wch:w}));
-  XLSX.utils.book_append_sheet(wb, ws2, 'Release Schedule');
+  sRows.push([s('TOTAL'), '', '', '', ff(`SUM(E${S2}:E${S2 + sched.length - 1})`, scum), '']);
+  const wsRS = XLSX.utils.aoa_to_sheet(sRows);
+  wsRS['!cols'] = [12,34,30,22,14,14].map(w => ({wch:w}));
+  XLSX.utils.book_append_sheet(wb, wsRS, 'Release Schedule');
 
   // ── Suppliers & Contacts ────────────────────────────────────────────────────
   const bySup = {};
@@ -1228,9 +1364,9 @@ function exportXLSX(){
     cRows.push([s(name), n(bySup[name].out), s([...bySup[name].jobs].sort().join(', ')),
       s(mc ? mc.c.name : ''), s(mc ? mc.c.email : ''), s(mc ? (mc.c.phone || mc.c.mobile) : ''), s(mc ? mc.c.abn : '')]);
   });
-  const ws3 = XLSX.utils.aoa_to_sheet(cRows);
-  ws3['!cols'] = [34,14,26,34,30,16,16].map(w => ({wch:w}));
-  XLSX.utils.book_append_sheet(wb, ws3, 'Suppliers');
+  const wsSU = XLSX.utils.aoa_to_sheet(cRows);
+  wsSU['!cols'] = [34,14,26,34,30,16,16].map(w => ({wch:w}));
+  XLSX.utils.book_append_sheet(wb, wsSU, 'Suppliers');
 
   // ── Transactions ────────────────────────────────────────────────────────────
   const tRows = [
@@ -1241,125 +1377,133 @@ function exportXLSX(){
   ];
   const S4 = 5;
   const sorted = txns.slice().sort((a,b) => a.date.localeCompare(b.date));
+  let retTot = 0, relTot = 0;
   sorted.forEach(t => {
+    if(t.amt > 0) retTot = r2(retTot + t.amt); else relTot = r2(relTot - t.amt);
     tRows.push([s(fmtDate(t.date)), s(t.supplier), s(t.amt > 0 ? 'Retained' : 'Released'), s(t.job), s(t.ref),
       t.amt > 0 ? n(t.amt) : s(''), t.amt <= 0 ? n(-t.amt) : s(''), t.gross ? n(Math.abs(t.gross)) : s(''), t.gst ? n(Math.abs(t.gst)) : s('')]);
   });
   const E4 = S4 + sorted.length - 1;
   tRows.push([]);
-  tRows.push([s('TOTAL'), '', '', '', '', ff(`SUM(F${S4}:F${E4})`), ff(`SUM(G${S4}:G${E4})`), '', '']);
-  tRows.push([s('CLOSING BALANCE (Retained − Released)'), '', '', '', '', '', ff(`F${E4+2}-G${E4+2}`), '', '']);
-  const ws4 = XLSX.utils.aoa_to_sheet(tRows);
-  ws4['!cols'] = [12,34,11,14,44,13,13,15,11].map(w => ({wch:w}));
-  XLSX.utils.book_append_sheet(wb, ws4, 'Transactions');
+  tRows.push([s('TOTAL'), '', '', '', '', ff(`SUM(F${S4}:F${E4})`, retTot), ff(`SUM(G${S4}:G${E4})`, relTot), '', '']);
+  tRows.push([s('CLOSING BALANCE (Retained − Released)'), '', '', '', '', '', ff(`F${E4+2}-G${E4+2}`, r2(retTot - relTot)), '', '']);
+  const wsTX = XLSX.utils.aoa_to_sheet(tRows);
+  wsTX['!cols'] = [12,34,11,14,44,13,13,15,11].map(w => ({wch:w}));
+  XLSX.utils.book_append_sheet(wb, wsTX, 'Transactions');
 
   XLSX.writeFile(wb, `Retentions_${slug(currentClient) ? slug(currentClient) + '_' : ''}${asAt}.xlsx`);
 }
 
 // ─── PDF export ───────────────────────────────────────────────────────────────
+// Plain Xero report look (portrait, Arial-style, "Ageing by due date"):
+// page 1 = Aged Retention Payables Summary, page 2+ = Detail by job.
 function exportPDF(){
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation:'landscape' });
-  const { groups, asAt } = lastModel;
-  const today = new Date();
-  const ds = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+  const doc = new jsPDF();   // portrait A4
+  const rm = agedReportModel();
+  const asAt = rm.asAt;
+  const acct = meta.account || 'Retention payable';
+  const gt = rm.tot.total || 0;
+  // Xero cells are plain 2dp numbers, negatives in parentheses
+  const pn = v => { const a = Math.abs(v||0).toLocaleString('en-AU',{minimumFractionDigits:2, maximumFractionDigits:2}); return v < -0.004 ? `(${a})` : a; };
+  const pp = v => (gt ? (v/gt*100) : 0).toFixed(1) + '%';
+  let y;
 
-  const band = title => {
-    doc.setFillColor(29,66,82); doc.rect(0,0,297,28,'F');
-    doc.setTextColor(255,255,255);
-    doc.setFont(undefined,'bold'); doc.setFontSize(15);
-    doc.text(title, 148.5, 11, {align:'center'});
-    doc.setFont(undefined,'normal'); doc.setFontSize(9);
-    doc.text(`${currentClient ? currentClient + '  ·  ' : ''}${meta.account || 'Retention account'}  ·  As at ${fmtDate(asAt)}  ·  Generated: ${ds}`, 148.5, 20, {align:'center'});
+  const titleBlock = name => {
     doc.setTextColor(0,0,0);
+    doc.setFont('helvetica','bold'); doc.setFontSize(14);
+    doc.text(name, 14, 18);
+    doc.setFont('helvetica','normal'); doc.setFontSize(11);
+    doc.text(currentClient || meta.org || '', 14, 25);
+    doc.setFontSize(10);
+    doc.text(`As at ${fmtLongD(asAt)}`, 14, 31);
+    doc.setFontSize(9); doc.setTextColor(110,110,110);
+    doc.text('Ageing by due date', 14, 37);
+    doc.setTextColor(0,0,0);
+    y = 47;
   };
+  const rule = yy => { doc.setDrawColor(120,120,120); doc.setLineWidth(0.25); doc.line(14, yy, 196, yy); };
 
-  // ── Page 1: Aged summary by supplier ───────────────────────────────────────
-  band('AGED RETENTION PAYABLES');
-  const bySup = {};
-  groups.filter(g => Math.abs(g.out) > 0.004).forEach(g => {
-    if(!bySup[g.supplier]) bySup[g.supplier] = { retained:0, released:0, out:0, buckets:[0,0,0,0,0,0] };
-    const sagg = bySup[g.supplier];
-    sagg.retained += g.retained; sagg.released += g.released; sagg.out += g.out;
-    (g.buckets||[]).forEach((v,i) => sagg.buckets[i] += v);
-  });
-  let held = 0, dueNow = 0;
-  Object.values(bySup).forEach(sagg => { held += sagg.out; dueNow += sagg.buckets[0]; });
-
-  let y = 34;
-  doc.setFontSize(8.5); doc.setFont(undefined,'bold');
-  doc.text(`Retention held: ${fmt$(held)}`, 14, y);
-  doc.text(`Due / overdue now: ${fmt$(dueNow)}`, 90, y);
-  y += 9;
-
-  const cx = [12, 78, 100, 122, 146, 168, 190, 212, 234, 258];
-  const chd = ['Supplier','Retained','Released','Outstanding', ...BUCKET_LBLS];
-  const hdrRow = yy => {
-    doc.setFillColor(29,66,82); doc.rect(10, yy-5, 277, 8, 'F');
-    doc.setTextColor(255,255,255); doc.setFontSize(7); doc.setFont(undefined,'bold');
-    chd.forEach((h,i) => i === 0 ? doc.text(h, cx[i], yy) : doc.text(h, cx[i] + 18, yy, {align:'right'}));
-    doc.setTextColor(0,0,0); doc.setFont(undefined,'normal');
+  // ── Page 1: Summary ──────────────────────────────────────────────────────────
+  titleBlock('Aged Retention Payables Summary');
+  const SX = [100, 115, 130, 145, 160, 175, 196];   // right edges: buckets + Total
+  const sumHdr = () => {
+    doc.setFont('helvetica','bold'); doc.setFontSize(8);
+    doc.text('Contact', 14, y);
+    [...XB_LBLS, 'Total'].forEach((h,i) => doc.text(h, SX[i], y, {align:'right'}));
+    rule(y + 1.6);
+    doc.setFont('helvetica','normal');
+    y += 6.5;
   };
-  hdrRow(y); y += 7;
-
-  const names = Object.keys(bySup).sort((a,b) => a.localeCompare(b));
-  const pv = v => Math.abs(v||0) < 0.005 ? '–' : fmt$(v);
-  names.forEach((name, idx) => {
-    if(y > 188){ doc.addPage(); y = 14; hdrRow(y); y += 7; }
-    const sagg = bySup[name];
-    doc.setFillColor(idx % 2 ? 255 : 250, idx % 2 ? 255 : 252, idx % 2 ? 255 : 252);
-    doc.rect(10, y-5, 277, 7, 'F');
-    doc.setFontSize(6.5);
-    doc.text(name.substring(0,40), cx[0], y);
-    [sagg.retained, sagg.released, sagg.out, ...sagg.buckets].forEach((v,i) => doc.text(pv(v), cx[i+1] + 18, y, {align:'right'}));
-    y += 7;
-    doc.setDrawColor(220,220,220); doc.line(10, y-3.5, 287, y-3.5);
+  sumHdr();
+  doc.setFont('helvetica','bold'); doc.setFontSize(8);
+  doc.text(acct, 14, y); y += 5.5;
+  doc.setFont('helvetica','normal');
+  rm.names.forEach(nm => {
+    if(y > 275){ doc.addPage(); y = 18; sumHdr(); }
+    const sup = rm.bySup[nm];
+    doc.setFontSize(7.5);
+    doc.text(nm.substring(0, 48), 14, y);
+    [...sup.buckets, sup.total].forEach((v,i) => doc.text(pn(v), SX[i], y, {align:'right'}));
+    y += 5;
   });
-  y += 2;
-  doc.setFont(undefined,'bold'); doc.setFontSize(7);
-  const tots = names.reduce((a,nm) => {
-    const sagg = bySup[nm];
-    a[0] += sagg.retained; a[1] += sagg.released; a[2] += sagg.out;
-    sagg.buckets.forEach((v,i) => a[3+i] += v);
-    return a;
-  }, [0,0,0,0,0,0,0,0,0]);
-  doc.text('TOTAL', cx[0], y);
-  tots.forEach((v,i) => doc.text(fmt$(v), cx[i+1] + 18, y, {align:'right'}));
+  rule(y - 3.4);
+  doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+  doc.text(`Total ${acct}`, 14, y);
+  [...rm.tot.buckets, rm.tot.total].forEach((v,i) => doc.text(pn(v), SX[i], y, {align:'right'}));
+  y += 8;
+  doc.text('Total', 14, y);
+  [...rm.tot.buckets, rm.tot.total].forEach((v,i) => doc.text(pn(v), SX[i], y, {align:'right'}));
+  y += 5;
+  doc.setFont('helvetica','normal');
+  doc.text('Percentage of total', 14, y);
+  [...rm.tot.buckets, rm.tot.total].forEach((v,i) => doc.text(pp(v), SX[i], y, {align:'right'}));
 
-  // ── Page 2+: Release schedule ──────────────────────────────────────────────
+  // ── Page 2+: Detail (rows = jobs) ────────────────────────────────────────────
   doc.addPage();
-  band('RETENTION RELEASE SCHEDULE');
-  y = 36;
-  const sx = [12, 42, 110, 168, 210, 250];
-  const shd = ['Due Date','Supplier','Job','Basis','Amount','Cumulative'];
-  const sHdr = yy => {
-    doc.setFillColor(29,66,82); doc.rect(10, yy-5, 277, 8, 'F');
-    doc.setTextColor(255,255,255); doc.setFontSize(7); doc.setFont(undefined,'bold');
-    shd.forEach((h,i) => i >= 4 ? doc.text(h, sx[i] + 22, yy, {align:'right'}) : doc.text(h, sx[i], yy));
-    doc.setTextColor(0,0,0); doc.setFont(undefined,'normal');
+  titleBlock('Aged Retention Payables Detail');
+  const DX = [122, 135, 148, 160, 172, 184, 196];   // right edges: buckets + Total
+  const detHdr = () => {
+    doc.setFont('helvetica','bold'); doc.setFontSize(7);
+    doc.text('Last Retained', 14, y);
+    doc.text('Due Date', 36, y);
+    doc.text('Job', 57, y);
+    [...XB_LBLS, 'Total'].forEach((h,i) => doc.text(h, DX[i], y, {align:'right'}));
+    rule(y + 1.6);
+    doc.setFont('helvetica','normal');
+    y += 6;
   };
-  sHdr(y); y += 7;
-  let cum = 0;
-  scheduleRows().forEach((r, idx) => {
-    if(y > 188){ doc.addPage(); y = 14; sHdr(y); y += 7; }
-    cum += r.amt;
-    doc.setFillColor(idx % 2 ? 255 : 250, idx % 2 ? 255 : 252, idx % 2 ? 255 : 252);
-    doc.rect(10, y-5, 277, 7, 'F');
-    doc.setFontSize(6.5);
-    const p = projects[r.job];
-    doc.text(r.due ? fmtDate(r.due) : 'TBC', sx[0], y);
-    doc.text(r.supplier.substring(0,42), sx[1], y);
-    doc.text((r.job === '(No job)' ? '' : r.job + (p && p.label ? ' — ' + p.label : '')).substring(0,36), sx[2], y);
-    doc.text(basisLong(r.basis), sx[3], y);
-    doc.text(fmt$(r.amt), sx[4] + 22, y, {align:'right'});
-    doc.text(fmt$(cum), sx[5] + 22, y, {align:'right'});
+  detHdr();
+  rm.names.forEach(nm => {
+    const sup = rm.bySup[nm];
+    if(y > 265){ doc.addPage(); y = 18; detHdr(); }
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+    doc.text(nm.substring(0, 60), 14, y); y += 4.8;
+    doc.setFont('helvetica','normal'); doc.setFontSize(7);
+    sup.rows.forEach(rw => {
+      if(y > 275){ doc.addPage(); y = 18; detHdr(); }
+      doc.text(rw.lastRet ? fmtXD(rw.lastRet) : '', 14, y);
+      doc.text(rw.due ? fmtXD(rw.due) : 'TBC', 36, y);
+      doc.text((rw.jobLbl + basisNote(rw.basis)).substring(0, 34), 57, y);
+      [0,1,2,3,4,5].forEach(bi => doc.text(pn(bi === rw.bucket ? rw.amt : 0), DX[bi], y, {align:'right'}));
+      doc.text(pn(rw.amt), DX[6], y, {align:'right'});
+      y += 4.6;
+    });
+    rule(y - 3.2);
+    doc.setFont('helvetica','bold'); doc.setFontSize(7);
+    doc.text(`Total ${nm}`.substring(0, 44), 14, y);
+    [...sup.buckets, sup.total].forEach((v,i) => doc.text(pn(v), DX[i], y, {align:'right'}));
+    doc.setFont('helvetica','normal');
     y += 7;
-    doc.setDrawColor(220,220,220); doc.line(10, y-3.5, 287, y-3.5);
   });
-  y += 2;
-  doc.setFont(undefined,'bold'); doc.setFontSize(7);
-  doc.text('TOTAL', sx[0], y);
-  doc.text(fmt$(cum), sx[4] + 22, y, {align:'right'});
+  if(y > 270){ doc.addPage(); y = 18; }
+  doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+  doc.text('Total', 14, y);
+  [...rm.tot.buckets, rm.tot.total].forEach((v,i) => doc.text(pn(v), DX[i], y, {align:'right'}));
+  y += 5;
+  doc.setFont('helvetica','normal');
+  doc.text('Percentage of total', 14, y);
+  [...rm.tot.buckets, rm.tot.total].forEach((v,i) => doc.text(pp(v), DX[i], y, {align:'right'}));
 
   doc.save(`Retentions_${slug(currentClient) ? slug(currentClient) + '_' : ''}${asAt}.pdf`);
 }
