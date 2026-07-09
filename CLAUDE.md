@@ -73,7 +73,7 @@ Jobs render as **cards in a 3-column grid** (white cards, soft shadow). Group/so
 ## Daily task email — `register-mailer/`
 Cloudflare **Worker** (separate from the Pages site), **already deployed and live**.
 - URL: `https://lf-register-mailer.liam-5b0.workers.dev` (Cloudflare account id `5b0bc9785e0843df52c01a627f3ce3da`).
-- **Schedule:** cron `0 17 * * 1,2,3,4,7` = 17:00 UTC Sun–Thu = **3am Brisbane, Mon–Fri**. (Brisbane = UTC+10 no DST; 3am is the prior UTC day. **Cloudflare cron rejects `0` for Sunday — use `7`.**)
+- **Schedule:** cron `0 17 * * 1,2,3,4,5` = 17:00 UTC Sun–Thu = **3am Brisbane, Mon–Fri**. (Brisbane = UTC+10 no DST; 3am is the prior UTC day. **Cloudflare cron day-of-week is 1=Sunday..7=Saturday — so UTC Sun–Thu = 1,2,3,4,5. Using 7 = Saturday was a bug that skipped Fridays.**)
 - **Behaviour:** reads the register from SharePoint via Graph **app-only** auth (client credentials, `CLIENT_SECRET`), groups active jobs (excludes completed/not-ready) by **preparer**, emails each person **Overdue + Due today** (priority, top) then **Due this week** (below), each task with a right-aligned "Go to job" link (`?client=&job=`). **Liam CC'd** on all. Sends via Graph `sendMail` from `liam@lfadvisory.com.au`. Failures/undeliverables alert Liam (bounces also return to his inbox). Weekend guard in code.
 - Config in `wrangler.toml` `[vars]`; secrets `CLIENT_SECRET` + `TRIGGER_KEY`. `PEOPLE` maps preparer names → emails (**verify Hazel's; Jennifer's account not yet active — jennifer@lfadvisory.com.au**). Names must match exactly what's typed in the Preparer field.
 - Endpoints (guarded by `?key=TRIGGER_KEY`): `/run` sends the real daily emails now; `/test` sends ONE verification email to Liam (auth + SharePoint read + send).
@@ -82,7 +82,7 @@ Cloudflare **Worker** (separate from the Pages site), **already deployed and liv
 **Wrangler CANNOT run on this machine — it's Windows ARM64 and `workerd` has no build.** Deploy via the Cloudflare REST API instead:
 1. User creates a Cloudflare API token (template "Edit Cloudflare Workers", their account) and pastes it (then deletes it after — it's deploy-only; the running Worker doesn't need it).
 2. `PUT https://api.cloudflare.com/client/v4/accounts/5b0bc9785e0843df52c01a627f3ce3da/workers/scripts/lf-register-mailer` — multipart: a `metadata` part (JSON: `{main_module:"worker.js", compatibility_date, bindings:[...]}` where bindings are `plain_text` for vars and `secret_text` for CLIENT_SECRET/TRIGGER_KEY) + a `worker.js` module part. **Re-uploading replaces all bindings, so always include every var + both secrets.**
-3. Cron: `PUT .../schedules` body `[{"cron":"0 17 * * 1,2,3,4,7"}]`.
+3. Cron: `PUT .../schedules` body `[{"cron":"0 17 * * 1,2,3,4,5"}]` (Cloudflare DOW is 1=Sun..7=Sat).
 4. Enable public URL: `POST .../subdomain {"enabled":true}` (subdomain is `liam-5b0`).
 
 ## Gotchas / conventions
