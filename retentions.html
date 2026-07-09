@@ -1180,6 +1180,7 @@ const basisNote = b => ({PC:' — practical completion', DLP:' — final release
 function agedReportModel(){
   const { groups, asAt } = lastModel;
   const bySup = {};
+  const byJob = {};   // same milestones grouped the other way: sections = jobs, rows = suppliers
   groups.filter(g => Math.abs(g.out) > 0.004).forEach(g => {
     if(!bySup[g.supplier]) bySup[g.supplier] = { rows: [], buckets: [0,0,0,0,0,0], total: 0 };
     const sup = bySup[g.supplier];
@@ -1188,11 +1189,16 @@ function agedReportModel(){
     const jobLbl = g._opening ? 'Opening balance b/f'
       : g.job === '(No job)' ? 'No job reference'
       : g.job + (p && p.label ? ' — ' + p.label : '');
+    if(!byJob[jobLbl]) byJob[jobLbl] = { rows: [], buckets: [0,0,0,0,0,0], total: 0 };
+    const job = byJob[jobLbl];
     const push = (due, basis, amt) => {
       const bucket = bucketOf(due, asAt);
       sup.rows.push({ lastRet, due, jobLbl, basis, amt, bucket });
       sup.buckets[bucket] = r2(sup.buckets[bucket] + amt);
       sup.total = r2(sup.total + amt);
+      job.rows.push({ lastRet, due, supplier: g.supplier, basis, amt, bucket });
+      job.buckets[bucket] = r2(job.buckets[bucket] + amt);
+      job.total = r2(job.total + amt);
     };
     if(g.out < 0){
       push(null, 'TBC', r2(g.out));   // over-released credit — not yet due
@@ -1209,12 +1215,15 @@ function agedReportModel(){
   Object.values(bySup).forEach(s => s.rows.sort((a,b) => a.jobLbl.localeCompare(b.jobLbl) || (a.due||'9999-12-31').localeCompare(b.due||'9999-12-31')));
   const names = Object.keys(bySup).sort((a,b) =>
     a === '(Opening balance b/f)' ? -1 : b === '(Opening balance b/f)' ? 1 : a.localeCompare(b));
+  Object.values(byJob).forEach(j => j.rows.sort((a,b) => a.supplier.localeCompare(b.supplier) || (a.due||'9999-12-31').localeCompare(b.due||'9999-12-31')));
+  const jobRank = x => x === 'Opening balance b/f' ? 0 : x === 'No job reference' ? 2 : 1;
+  const jobNames = Object.keys(byJob).sort((a,b) => jobRank(a) - jobRank(b) || a.localeCompare(b));
   const tot = { buckets: [0,0,0,0,0,0], total: 0 };
   names.forEach(nm => {
     bySup[nm].buckets.forEach((v,i) => tot.buckets[i] = r2(tot.buckets[i] + v));
     tot.total = r2(tot.total + bySup[nm].total);
   });
-  return { bySup, names, tot, asAt };
+  return { bySup, names, byJob, jobNames, tot, asAt };
 }
 
 // ─── Excel export ─────────────────────────────────────────────────────────────
@@ -1276,50 +1285,63 @@ function exportXLSX(){
   styleRow(ws1, T2, 8, F_BODY);
   XLSX.utils.book_append_sheet(wb, ws1, 'Aged Summary');
 
-  // ── Aged Detail (Xero Aged Payables Detail format, rows = jobs) ─────────────
-  const aoa2 = titleBlock('Aged Retention Payables Detail');
-  aoa2.push(['Last Retained','Due Date','Job', ...BUCKET_LBLS, 'Total']);   // Excel row 6, cols A–J
+  // ── Aged Detail sheets (Xero Aged Payables Detail format) ───────────────────
+  // Same layout twice: by supplier (rows = jobs) and by job (rows = suppliers).
+  // sections = [{name, rows:[{lastRet, due, text, amt, bucket}], buckets, total}]
   const DB = ['D','E','F','G','H','I','J'];
-  const secIdx = [], totIdx = [], bodyIdx = [];
-  rm.names.forEach(nm => {
-    const sup = rm.bySup[nm];
-    secIdx.push(aoa2.length);
-    aoa2.push([s(nm)]);
-    const first = aoa2.length + 1;   // Excel row of first job row
-    sup.rows.forEach(rw => {
-      bodyIdx.push(aoa2.length);
-      const r = aoa2.length + 1;
-      aoa2.push([
-        s(rw.lastRet ? fmtXD(rw.lastRet) : ''), s(rw.due ? fmtXD(rw.due) : 'TBC'), s(rw.jobLbl + basisNote(rw.basis)),
-        ...[0,1,2,3,4,5].map(bi => n(bi === rw.bucket ? rw.amt : 0)),
-        ff(`SUM(D${r}:I${r})`, rw.amt),
-      ]);
+  const detailSheet = (title, col3Hdr, sections) => {
+    const aoa = titleBlock(title);
+    aoa.push(['Last Retained','Due Date', col3Hdr, ...BUCKET_LBLS, 'Total']);   // Excel row 6, cols A–J
+    const secIdx = [], totIdx = [], bodyIdx = [];
+    sections.forEach(sec => {
+      secIdx.push(aoa.length);
+      aoa.push([s(sec.name)]);
+      const first = aoa.length + 1;   // Excel row of first detail row
+      sec.rows.forEach(rw => {
+        bodyIdx.push(aoa.length);
+        const r = aoa.length + 1;
+        aoa.push([
+          s(rw.lastRet ? fmtXD(rw.lastRet) : ''), s(rw.due ? fmtXD(rw.due) : 'TBC'), s(rw.text),
+          ...[0,1,2,3,4,5].map(bi => n(bi === rw.bucket ? rw.amt : 0)),
+          ff(`SUM(D${r}:I${r})`, rw.amt),
+        ]);
+      });
+      const last = aoa.length;        // Excel row of last detail row
+      totIdx.push(aoa.length);
+      aoa.push([s(`Total ${sec.name}`), '', '', ...DB.map((c,i) => ff(`SUM(${c}${first}:${c}${last})`, i < 6 ? sec.buckets[i] : sec.total))]);
     });
-    const last = aoa2.length;        // Excel row of last job row
-    totIdx.push(aoa2.length);
-    aoa2.push([s(`Total ${nm}`), '', '', ...DB.map((c,i) => ff(`SUM(${c}${first}:${c}${last})`, i < 6 ? sup.buckets[i] : sup.total))]);
-  });
-  aoa2.push([]);
-  const TD = aoa2.length + 1;        // Excel row of grand Total
-  aoa2.push([s('Total'), '', '', ...DB.map((c,i) => {
-    const v = i < 6 ? rm.tot.buckets[i] : rm.tot.total;
-    return totIdx.length ? ff(totIdx.map(ti => `${c}${ti + 1}`).join('+'), v) : n(0);
-  })]);
-  aoa2.push([s('Percentage of total'), '', '', ...DB.map((c,i) => {
-    const v = i < 6 ? rm.tot.buckets[i] : rm.tot.total;
-    return gt ? pf(`${c}${TD}/$J$${TD}`, v/gt) : {v:0, t:'n', z:'0.0%'};
-  })]);
-  const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
-  ws2['!cols'] = [13,13,46,11,11,11,11,11,9,12].map(w => ({wch:w}));
-  styleTitle(ws2);
-  for(let c = 0; c < 3; c++) setS(ws2, 5, c, F_HDR);
-  for(let c = 3; c < 10; c++) setS(ws2, 5, c, F_HDR_R);
-  secIdx.forEach(ri => styleRow(ws2, ri, 1, F_SEC));
-  bodyIdx.forEach(ri => styleRow(ws2, ri, 10, F_BODY));
-  totIdx.forEach(ri => styleRow(ws2, ri, 10, F_TOT));
-  styleRow(ws2, TD - 1, 10, F_SEC);
-  styleRow(ws2, TD, 10, F_BODY);
+    aoa.push([]);
+    const TD = aoa.length + 1;        // Excel row of grand Total
+    aoa.push([s('Total'), '', '', ...DB.map((c,i) => {
+      const v = i < 6 ? rm.tot.buckets[i] : rm.tot.total;
+      return totIdx.length ? ff(totIdx.map(ti => `${c}${ti + 1}`).join('+'), v) : n(0);
+    })]);
+    aoa.push([s('Percentage of total'), '', '', ...DB.map((c,i) => {
+      const v = i < 6 ? rm.tot.buckets[i] : rm.tot.total;
+      return gt ? pf(`${c}${TD}/$J$${TD}`, v/gt) : {v:0, t:'n', z:'0.0%'};
+    })]);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [13,13,46,11,11,11,11,11,9,12].map(w => ({wch:w}));
+    styleTitle(ws);
+    for(let c = 0; c < 3; c++) setS(ws, 5, c, F_HDR);
+    for(let c = 3; c < 10; c++) setS(ws, 5, c, F_HDR_R);
+    secIdx.forEach(ri => styleRow(ws, ri, 1, F_SEC));
+    bodyIdx.forEach(ri => styleRow(ws, ri, 10, F_BODY));
+    totIdx.forEach(ri => styleRow(ws, ri, 10, F_TOT));
+    styleRow(ws, TD - 1, 10, F_SEC);
+    styleRow(ws, TD, 10, F_BODY);
+    return ws;
+  };
+  const ws2 = detailSheet('Aged Retention Payables Detail', 'Job', rm.names.map(nm => ({
+    name: nm, buckets: rm.bySup[nm].buckets, total: rm.bySup[nm].total,
+    rows: rm.bySup[nm].rows.map(rw => ({ ...rw, text: rw.jobLbl + basisNote(rw.basis) })),
+  })));
   XLSX.utils.book_append_sheet(wb, ws2, 'Aged Detail');
+  const ws2j = detailSheet('Aged Retention Payables Detail by Job', 'Contact', rm.jobNames.map(jn => ({
+    name: jn, buckets: rm.byJob[jn].buckets, total: rm.byJob[jn].total,
+    rows: rm.byJob[jn].rows.map(rw => ({ ...rw, text: rw.supplier + basisNote(rw.basis) })),
+  })));
+  XLSX.utils.book_append_sheet(wb, ws2j, 'Aged Detail by Job');
 
   // ── Release Schedule ────────────────────────────────────────────────────────
   const sched = scheduleRows();
