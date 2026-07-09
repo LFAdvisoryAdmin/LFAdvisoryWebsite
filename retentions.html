@@ -154,7 +154,7 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
   <!-- TILES -->
   <div class="tiles">
     <div class="tile"><div class="tile-lbl">Retention Held</div><div class="tile-val" id="tHeld">$0.00</div><div class="tile-sub">outstanding on B/S</div></div>
-    <div class="tile t2"><div class="tile-lbl">Due / Overdue Now</div><div class="tile-val" id="tDueNow">$0.00</div><div class="tile-sub" id="tAsAtLbl">as at today</div></div>
+    <div class="tile t2"><div class="tile-lbl">Overdue Releases</div><div class="tile-val" id="tDueNow">$0.00</div><div class="tile-sub" id="tAsAtLbl">as at prior month end</div></div>
     <div class="tile t3"><div class="tile-lbl">Due Next 3 Months</div><div class="tile-val" id="tDue3m">$0.00</div><div class="tile-sub">releases falling due</div></div>
     <div class="tile t4"><div class="tile-lbl">Suppliers</div><div class="tile-val" id="tSuppliers">0</div><div class="tile-sub">holding retentions</div></div>
   </div>
@@ -209,8 +209,8 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
           <thead><tr>
             <th>Supplier / Job</th>
             <th class="r">Retained</th><th class="r">Released</th><th class="r">Outstanding</th>
-            <th class="r">Due / Overdue</th><th class="r">&lt; 3 Months</th><th class="r">3–6 Months</th>
-            <th class="r">6–12 Months</th><th class="r">12+ Months</th><th class="r">No Date</th>
+            <th class="r">0–3 Months</th><th class="r">3–6 Months</th><th class="r">6–9 Months</th>
+            <th class="r">9–12 Months</th><th class="r">12+ / No Date</th><th class="r">Overdue</th>
           </tr></thead>
           <tbody id="agedBody"><tr><td colspan="10" style="text-align:center;padding:2.5rem;color:var(--mid)">No data yet — select a client and upload the retention account GL export.</td></tr></tbody>
           <tfoot id="agedFoot"></tfoot>
@@ -353,6 +353,8 @@ const cell$ = v => Math.abs(v||0) < 0.005 ? '<span style="color:var(--border)">�
 const fmtDate = iso => { if (!iso) return '—'; const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; };
 const fmtISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const todayISO = () => fmtISO(new Date());
+// report date defaults to the last completed month end (in July you report 30 June)
+const priorMonthEnd = () => { const t = new Date(); return fmtISO(new Date(t.getFullYear(), t.getMonth(), 0)); };
 function addMonths(iso, n){
   const [y,m,d] = iso.split('-').map(Number);
   const last = new Date(y, m - 1 + n + 1, 0).getDate();
@@ -488,7 +490,7 @@ function hydrateClient(){
   settings = Object.assign({ fallbackMonths: 12 }, d && d.settings);
   meta     = d && d.meta ? JSON.parse(JSON.stringify(d.meta)) : {};
   _matchCache = {};
-  $('asAt').value = todayISO();
+  $('asAt').value = priorMonthEnd();
   $('fbMonths').value = settings.fallbackMonths || '';
 }
 function switchClient(name){
@@ -512,7 +514,7 @@ function changeFallback(){
 //  · No PC date → each remaining parcel due at its retained date + fallback
 //    months (estimated), or "no date" if the fallback is blank.
 function compute(){
-  const asAt = $('asAt').value || todayISO();
+  const asAt = $('asAt').value || priorMonthEnd();
   const map = {};
   txns.forEach(t => {
     const key = t.supplier + '||' + t.job;
@@ -559,14 +561,24 @@ function compute(){
       });
     }
   });
-  // bucket boundaries relative to as-at
-  const b3 = addMonths(asAt, 3), b6 = addMonths(asAt, 6), b12 = addMonths(asAt, 12);
-  const bucketOf = due => !due ? 5 : due <= asAt ? 0 : due <= b3 ? 1 : due <= b6 ? 2 : due <= b12 ? 3 : 4;
   groups.forEach(g => {
     g.buckets = [0,0,0,0,0,0];
-    g.milestones.forEach(m => { m.bucket = bucketOf(m.due); g.buckets[m.bucket] += m.amt; });
+    g.milestones.forEach(m => { m.bucket = bucketOf(m.due, asAt); g.buckets[m.bucket] = r2(g.buckets[m.bucket] + m.amt); });
   });
   return { groups, asAt };
+}
+
+// ─── Ageing buckets (by due date, relative to the report date) ────────────────
+// 0–3 / 3–6 / 6–9 / 9–12 months until due, 12+ (incl. no due date), Overdue.
+const BUCKET_LBLS = ['0–3 Months','3–6 Months','6–9 Months','9–12 Months','12+ / No Date','Overdue'];
+function bucketOf(due, asAt){
+  if(!due) return 4;                       // no due date → 12+ / No Date
+  if(due <= asAt) return 5;                // due on or before the report date → overdue
+  if(due <= addMonths(asAt, 3)) return 0;
+  if(due <= addMonths(asAt, 6)) return 1;
+  if(due <= addMonths(asAt, 9)) return 2;
+  if(due <= addMonths(asAt, 12)) return 3;
+  return 4;
 }
 
 // ─── Contact matching ────────────────────────────────────────────────────────
@@ -607,8 +619,6 @@ function matchContact(supplier){
 }
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
-const BUCKET_LBLS = ['Due / Overdue','< 3 Months','3–6 Months','6–12 Months','12+ Months','No Date'];
-
 function renderAll(){
   lastModel = compute();
   renderTiles();
@@ -628,8 +638,8 @@ function renderTiles(){
   const sups = new Set();
   groups.forEach(g => {
     held += g.out;
-    dueNow += g.buckets ? g.buckets[0] : 0;
-    due3m  += g.buckets ? g.buckets[1] : 0;
+    dueNow += g.buckets ? g.buckets[5] : 0;   // Overdue bucket
+    due3m  += g.buckets ? g.buckets[0] : 0;   // 0–3 Months bucket
     if(g.out > 0.004) sups.add(g.supplier);
   });
   $('tHeld').textContent = fmt$(held);
@@ -1162,19 +1172,10 @@ function persist(){
   queueSave();
 }
 
-// ─── Xero-format aged report model ────────────────────────────────────────────
-// Mirrors Xero's Aged Payables reports ("Ageing by due date"): Current = not
-// yet due (or no date), then buckets by whole months overdue. Detail rows are
-// jobs (one row per supplier × job × release milestone), not invoices.
-const XB_LBLS = ['Current','< 1 Month','1 Month','2 Months','3 Months','Older'];
-function xeroBucketOf(due, asAt){
-  if(!due || due > asAt) return 0;
-  if(due > addMonths(asAt, -1)) return 1;
-  if(due > addMonths(asAt, -2)) return 2;
-  if(due > addMonths(asAt, -3)) return 3;
-  if(due > addMonths(asAt, -4)) return 4;
-  return 5;
-}
+// ─── Aged report model (Xero Aged Payables layout) ────────────────────────────
+// Same visual format as Xero's Aged Payables reports, but aged by months UNTIL
+// due (0–3/3–6/6–9/9–12/12+/Overdue — see bucketOf). Detail rows are jobs
+// (one row per supplier × job × release milestone), not invoices.
 const basisNote = b => ({PC:' — practical completion', DLP:' — final release', EST:' — estimated', TBC:''}[b] || '');
 function agedReportModel(){
   const { groups, asAt } = lastModel;
@@ -1188,7 +1189,7 @@ function agedReportModel(){
       : g.job === '(No job)' ? 'No job reference'
       : g.job + (p && p.label ? ' — ' + p.label : '');
     const push = (due, basis, amt) => {
-      const bucket = xeroBucketOf(due, asAt);
+      const bucket = bucketOf(due, asAt);
       sup.rows.push({ lastRet, due, jobLbl, basis, amt, bucket });
       sup.buckets[bucket] = r2(sup.buckets[bucket] + amt);
       sup.total = r2(sup.total + amt);
@@ -1247,7 +1248,7 @@ function exportXLSX(){
 
   // ── Aged Summary (Xero Aged Payables Summary format) ────────────────────────
   const aoa1 = titleBlock('Aged Retention Payables Summary');
-  aoa1.push(['Contact', ...XB_LBLS, 'Total']);   // Excel row 6
+  aoa1.push(['Contact', ...BUCKET_LBLS, 'Total']);   // Excel row 6
   aoa1.push([s(acct)]);                          // Excel row 7 — section
   const SB = ['B','C','D','E','F','G','H'];
   rm.names.forEach((nm, i) => {
@@ -1277,7 +1278,7 @@ function exportXLSX(){
 
   // ── Aged Detail (Xero Aged Payables Detail format, rows = jobs) ─────────────
   const aoa2 = titleBlock('Aged Retention Payables Detail');
-  aoa2.push(['Last Retained','Due Date','Job', ...XB_LBLS, 'Total']);   // Excel row 6, cols A–J
+  aoa2.push(['Last Retained','Due Date','Job', ...BUCKET_LBLS, 'Total']);   // Excel row 6, cols A–J
   const DB = ['D','E','F','G','H','I','J'];
   const secIdx = [], totIdx = [], bodyIdx = [];
   rm.names.forEach(nm => {
@@ -1428,9 +1429,9 @@ function exportPDF(){
   titleBlock('Aged Retention Payables Summary');
   const SX = [100, 115, 130, 145, 160, 175, 196];   // right edges: buckets + Total
   const sumHdr = () => {
-    doc.setFont('helvetica','bold'); doc.setFontSize(8);
+    doc.setFont('helvetica','bold'); doc.setFontSize(7);
     doc.text('Contact', 14, y);
-    [...XB_LBLS, 'Total'].forEach((h,i) => doc.text(h, SX[i], y, {align:'right'}));
+    [...BUCKET_LBLS, 'Total'].forEach((h,i) => doc.text(h, SX[i], y, {align:'right'}));
     rule(y + 1.6);
     doc.setFont('helvetica','normal');
     y += 6.5;
@@ -1464,11 +1465,11 @@ function exportPDF(){
   titleBlock('Aged Retention Payables Detail');
   const DX = [122, 135, 148, 160, 172, 184, 196];   // right edges: buckets + Total
   const detHdr = () => {
-    doc.setFont('helvetica','bold'); doc.setFontSize(7);
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5);
     doc.text('Last Retained', 14, y);
     doc.text('Due Date', 36, y);
     doc.text('Job', 57, y);
-    [...XB_LBLS, 'Total'].forEach((h,i) => doc.text(h, DX[i], y, {align:'right'}));
+    [...BUCKET_LBLS, 'Total'].forEach((h,i) => doc.text(h, DX[i], y, {align:'right'}));
     rule(y + 1.6);
     doc.setFont('helvetica','normal');
     y += 6;
