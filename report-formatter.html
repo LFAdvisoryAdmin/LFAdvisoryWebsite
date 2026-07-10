@@ -187,9 +187,95 @@ const GEOMETRY = {
 };
 const HEADER_ROW = 5;
 
+/* ── formula evaluation ───────────────────────────────────────────────────
+   In Xero's exports every computed row (totals, Gross Profit, EBIT, Net
+   Assets, percentages) is a live formula; real accounts are literals. We
+   evaluate Xero's own formulas against the grid — no client label lists. */
+const TOKEN_RX = /\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?|\d+(?:\.\d+)?|[A-Za-z_]+|[()+\-*/,]/g;
+const REF_RX = /^\$?([A-Za-z]{1,3})\$?(\d+)(?::\$?([A-Za-z]{1,3})\$?(\d+))?$/;
+
+function colLettersIdx(letters){
+  let n = 0;
+  for (const ch of letters.toUpperCase()) n = n*26 + ch.charCodeAt(0) - 64;
+  return n - 1;
+}
+
+class FormulaEvaluator {
+  constructor(grid){ this.grid = grid; this.memo = new Map(); this.busy = new Set(); }
+  cellValue(r, c){
+    const key = r + ':' + c;
+    if (this.memo.has(key)) return this.memo.get(key);
+    if (this.busy.has(key)) return 0;
+    const row = this.grid[r] || [];
+    const v = row[c];
+    let val = 0;
+    if (typeof v === 'string' && v.startsWith('=')) {
+      this.busy.add(key);
+      try { val = this.evaluate(v.slice(1)); } catch(e) { val = 0; }
+      this.busy.delete(key);
+    } else if (typeof v === 'number') val = v;
+    this.memo.set(key, val);
+    return val;
+  }
+  evaluate(formula){
+    const tokens = formula.match(TOKEN_RX) || [];
+    let pos = 0;
+    const peek = () => pos < tokens.length ? tokens[pos] : null;
+    const take = () => tokens[pos++];
+    const rangeSum = m => {
+      const c1 = colLettersIdx(m[1]), r1 = +m[2]-1, c2 = colLettersIdx(m[3]), r2 = +m[4]-1;
+      let t = 0;
+      for (let r = Math.min(r1,r2); r <= Math.max(r1,r2); r++)
+        for (let c = Math.min(c1,c2); c <= Math.max(c1,c2); c++) t += this.cellValue(r,c);
+      return t;
+    };
+    const expr = () => {
+      let v = term();
+      while (peek() === '+' || peek() === '-') v = take() === '+' ? v + term() : v - term();
+      return v;
+    };
+    const term = () => {
+      let v = unary();
+      while (peek() === '*' || peek() === '/') {
+        if (take() === '*') v *= unary();
+        else { const d = unary(); v = d ? v/d : 0; }
+      }
+      return v;
+    };
+    const unary = () => {
+      if (peek() === '-') { take(); return -unary(); }
+      if (peek() === '+') { take(); return unary(); }
+      return primary();
+    };
+    const primary = () => {
+      const t = take();
+      if (t === '(') { const v = expr(); if (peek() === ')') take(); return v; }
+      const m = REF_RX.exec(t || '');
+      if (m) return m[3] ? rangeSum(m) : this.cellValue(+m[2]-1, colLettersIdx(m[1]));
+      if (t && /^\d+(?:\.\d+)?$/.test(t)) return +t;
+      if (t && /^[A-Za-z_]+$/.test(t)) {        // function call
+        const name = t.toUpperCase(); const args = [];
+        if (peek() === '(') {
+          take();
+          while (peek() !== ')' && peek() !== null) {
+            const a = peek(), mr = REF_RX.exec(a || '');
+            if (mr && mr[3]) { take(); args.push(rangeSum(mr)); }
+            else args.push(expr());
+            if (peek() === ',') take();
+          }
+          if (peek() === ')') take();
+        }
+        return name === 'SUM' ? args.reduce((x,y)=>x+y, 0) : 0;
+      }
+      return 0;
+    };
+    return expr();
+  }
+}
+
 /* ── parse: raw Xero export → normalized rows (xero_parse.py) ─────────── */
 const SHEET_MATCHERS = {
-  summary:/profit and loss.*summary/i, detail:/profit and loss.*detail/i, balance:/balance sheet/i,
+  summary:/profit and loss.*summary|summary.*p.?&?.?l/i, detail:/profit and loss.*detail/i, balance:/balance sheet/i,
 };
 const MONTHISH = /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s-]*\d{2,4}/i;
 
@@ -197,12 +283,9 @@ function cellVal(v){
   if (v == null) return null;
   if (typeof v === 'object') {
     if (v.richText) return v.richText.map(t=>t.text).join('');
-    if (v.formula !== undefined || v.sharedFormula !== undefined) {
-      // Xero's computed rows are live formulas; ExcelJS drops a cached result
-      // of 0. Every formula row is recomputed by the transform anyway, so a
-      // missing/error result reads as 0 (matching openpyxl's cached values).
+    if (v.formula !== undefined) return '=' + v.formula;
+    if (v.sharedFormula !== undefined)   // no formula text on shared children
       return (typeof v.result === 'number') ? v.result : 0;
-    }
     if (v.result !== undefined) return v.result;
     if (v.text !== undefined) return v.text;
     return null;
@@ -225,7 +308,7 @@ function findHeader(grid, sheetName){
     const cells = grid[i];
     for (let j = 0; j < cells.length; j++) {
       if (typeof cells[j] === 'string' && cells[j].trim() === 'Account') {
-        const labels = cells.slice(j+1).filter(x=>typeof x==='string' && x.trim());
+        const labels = cells.slice(j+1).filter(x=>typeof x==='string' && x.trim() && !x.startsWith('='));
         if (labels.length && labels.some(x=>MONTHISH.test(x))) return [i, j];
       }
     }
@@ -235,6 +318,7 @@ function findHeader(grid, sheetName){
 
 function parseSheet(ws){
   const grid = sheetGrid(ws);
+  const ev = new FormulaEvaluator(grid);
   const title = String(grid[0] && grid[0][0] || '').trim();
   const orgName = String(grid[1] && grid[1][0] || '').trim();
   const periodLine = String(grid[2] && grid[2][0] || '').trim();
@@ -245,32 +329,49 @@ function parseSheet(ws){
     if (typeof header[j] === 'string' && header[j].trim()) dataCols.push(j);
   const columns = dataCols.map(j=>String(header[j]).trim());
 
+  // A row is "computed" (standalone formula row) only if its PERIOD columns
+  // are formulas — line items can carry formula cells in derived columns
+  // (some layouts write YTD as a formula on every line).
+  let nPeriod = 0;
+  for (const label of columns) { if (MONTHISH.test(label)) nPeriod++; else break; }
+  const periodPositions = new Set(
+    nPeriod ? Array.from({length:nPeriod},(_,k)=>k) : columns.map((_,k)=>k));
+
   const rows = [], openGroups = [];
   for (let i = hIdx+1; i < grid.length; i++) {
     const cells = grid[i];
     let label = null, labelCol = 0;
     for (let j = 0; j <= accountCol; j++) {
       const v = cells[j];
-      if (typeof v === 'string' && v.trim()) { label = v.trim(); labelCol = j; break; }
+      if (typeof v === 'string' && v.trim() && !v.startsWith('=')) { label = v.trim(); labelCol = j; break; }
     }
-    const values = dataCols.map(j => typeof cells[j] === 'number' ? cells[j] : null);
-    const anyValue = values.some(v=>v!==null);
+    const values = []; let anyValue = false, computed = false, formula = null;
+    dataCols.forEach((j, pos) => {
+      const v = cells[j];
+      if (typeof v === 'string' && v.startsWith('=')) {
+        if (periodPositions.has(pos)) computed = true;
+        if (formula === null) formula = v;
+        values.push(Math.round(ev.cellValue(i, j) * 1e6) / 1e6);
+        anyValue = true;
+      } else if (typeof v === 'number') { values.push(v); anyValue = true; }
+      else values.push(null);
+    });
 
-    if (label === null && !anyValue) { rows.push({kind:'blank', label:null, values:null, col:0}); continue; }
+    if (label === null && !anyValue) { rows.push({kind:'blank', label:null, values:null, col:0, computed:false, formula:null}); continue; }
     if (label && label.toLowerCase().startsWith('total ')) {
       const target = label.slice(6).trim().toLowerCase();
       if (openGroups.some(g=>g.toLowerCase()===target)) {
         while (openGroups.length && openGroups[openGroups.length-1].toLowerCase()!==target) openGroups.pop();
         openGroups.pop();
-        rows.push({kind:'group_total', label, values: anyValue?values:null, col:labelCol});
+        rows.push({kind:'group_total', label, values: anyValue?values:null, col:labelCol, computed, formula});
         continue;
       }
     }
     if (!anyValue) {
-      rows.push({kind:'group_open', label, values:null, col:labelCol});
+      rows.push({kind:'group_open', label, values:null, col:labelCol, computed:false, formula:null});
       if (label) openGroups.push(label);
     } else {
-      rows.push({kind:'account', label, values, col:labelCol});
+      rows.push({kind:'account', label, values, col:labelCol, computed, formula});
     }
   }
   return { orgName, title, periodLine, columns, rows };
@@ -288,94 +389,153 @@ function parseManagementPack(wb){
 }
 
 /* ── transform: raw rows → house structure (transform.py) ────────────── */
-const SUMMARY_RENAMES = {
-  'Indirect costs':'Overheads', 'Total Indirect costs':'Total Overheads',
-  'Other Income/Expenses':'Other Income / Expenses',
-  'Profit/(Loss) before Taxation':'NET PROFIT BEFORE TAX',
-  'Income Tax Expense':'TAX',
-  'Net Profit After Tax':'NET PROFIT AFTER TAX',
-  'Net Profit After Distributions/Dividends Paid':'NET PROFIT AFTER DIVIDENDS',
-};
-const SUMMARY_DROP_SECTIONS = new Set(['income tax expense']);
-const SUMMARY_BLANK_BEFORE = new Set(['tax']);
+const BS_GRAND_TOTALS = new Set(['total assets','total liabilities','total equity']);
 const GRAND_LABELS = new Set(['gross profit','operating profit','ebit',
   'profit/(loss) before taxation','net profit before tax','net profit after tax',
   'net profit after distributions/dividends paid','net profit after dividends']);
-const BS_GRAND_TOTALS = new Set(['total assets','total liabilities','total equity']);
 const MONTH_ABBR = {january:'Jan',february:'Feb',march:'Mar',april:'Apr',may:'May',june:'Jun',
   july:'Jul',august:'Aug',september:'Sept',october:'Oct',november:'Nov',december:'Dec'};
+const MONTH_NUM = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sept:9,Oct:10,Nov:11,Dec:12};
 const MONTH_LABEL_RX = /^([A-Za-z]+)\s+(\d{4})$/;
-const SUMMARY_COL_WIDTHS = {'This month forecast':8.42,'YTD':9.42,'YTD Forecast':9,
-  'YTD LY':9.42,'Rolling 12 months':11,'Last FY':11};
+const QUARTER_LABEL_RX = /^([A-Za-z]+)\s*[-–]\s*([A-Za-z]+)\s+(\d{4})$/;
+const SUMMARY_COL_WIDTHS = {'this month forecast':8.42,'ytd':9.42,'ytd forecast':9,
+  'ytd ly':9.42,'rolling 12 months':11,'last fy':11,'full year last year':11,
+  'this quarter forecast':8.42};
 
+function monthAbbrOf(name){
+  const low = String(name||'').toLowerCase();
+  for (const [full, a] of Object.entries(MONTH_ABBR))
+    if (full.startsWith(low) || a.toLowerCase() === low) return a;
+  return null;
+}
 function monthLabel(label){
   const m = MONTH_LABEL_RX.exec(String(label||'').trim());
   if (!m) return null;
-  let abbr = MONTH_ABBR[m[1].toLowerCase()];
-  if (!abbr) for (const [full,a] of Object.entries(MONTH_ABBR))
-    if (full.startsWith(m[1].toLowerCase())) { abbr = a; break; }
-  return abbr ? abbr + ' ' + m[2] : null;
+  const a = monthAbbrOf(m[1]);
+  return a ? a + ' ' + m[2] : null;
+}
+function periodInfo(label){
+  const ml = monthLabel(label);
+  if (ml) {
+    const n = MONTH_NUM[ml.split(' ')[0]];
+    return {label:ml, start:n, end:n, year:+ml.split(' ')[1], quarter:false};
+  }
+  const q = QUARTER_LABEL_RX.exec(String(label||'').trim());
+  if (q) {
+    const a1 = monthAbbrOf(q[1]), a2 = monthAbbrOf(q[2]);
+    if (a1 && a2) return {label:a1+'-'+a2+' '+q[3], start:MONTH_NUM[a1],
+                          end:MONTH_NUM[a2], year:+q[3], quarter:true};
+  }
+  return null;
+}
+function currentPeriodEnd(periodLine){
+  const m = /ended\s+\d{1,2}\s+([A-Za-z]+)\s+(\d{4})/.exec(periodLine||'');
+  if (!m) return null;
+  const a = monthAbbrOf(m[1]);
+  return a ? [MONTH_NUM[a], +m[2]] : null;
 }
 function currentMonthLabel(periodLine){
-  const m = /ended\s+\d{1,2}\s+([A-Za-z]+)\s+(\d{4})/.exec(periodLine||'');
-  return m ? monthLabel(m[1]+' '+m[2]) : null;
+  const end = currentPeriodEnd(periodLine);
+  if (!end) return null;
+  const inv = Object.fromEntries(Object.entries(MONTH_NUM).map(([k,v])=>[v,k]));
+  return inv[end[0]] + ' ' + end[1];
 }
-const round2 = v => Math.round(v*100)/100;
+const round2 = v => Math.round((v||0)*100)/100;
 const rounded = vals => vals.map(round2);
 
 class Totals {
-  constructor(n){ this.n=n; this.stack=[]; this.cumulative=new Array(n).fill(0); this.byName={}; }
-  openGroup(name){ this.stack.push([name, new Array(this.n).fill(0)]); }
+  // stack entries know whether their group will be closed by a Total row
+  // ("real") or is a banner-only heading — computed rows inside real groups
+  // are formula line items; under banner-only headings they're grand rows.
+  constructor(n){ this.n = n; this.stack = []; }
+  openGroup(name, real){ this.stack.push([name, new Array(this.n).fill(0), !!real]); }
   addAccount(values){
-    for (let i=0;i<Math.min(values.length,this.n);i++){ const v=values[i];
-      if (v!==null && v!==undefined){ for (const [,acc] of this.stack) acc[i]+=v; this.cumulative[i]+=v; } }
+    for (let i=0;i<Math.min((values||[]).length,this.n);i++){
+      const v = values[i];
+      if (v !== null && v !== undefined) for (const [,acc] of this.stack) acc[i] += v;
+    }
   }
   closeGroup(totalLabel){
     const target = totalLabel.slice(6).trim().toLowerCase();
     while (this.stack.length && this.stack[this.stack.length-1][0].toLowerCase()!==target) this.stack.pop();
-    const total = this.stack.length ? this.stack.pop()[1] : new Array(this.n).fill(0);
-    this.byName[totalLabel.trim().toLowerCase()] = total.slice();
-    return total.slice();
+    return this.stack.length ? this.stack.pop()[1].slice() : new Array(this.n).fill(0);
   }
+  openCount(name){ return this.stack.filter(([g])=>g.toLowerCase()===name.toLowerCase()).length; }
+  get inRealGroup(){ return this.stack.some(([,,real])=>real); }
+}
+
+function closingOpens(rawRows){
+  const stack = [], closed = new Set();
+  for (const rr of rawRows) {
+    if (rr.kind === 'group_open' && rr.label) stack.push([rr.label, rr]);
+    else if (rr.kind === 'group_total' && rr.label) {
+      const target = rr.label.slice(6).trim().toLowerCase();
+      while (stack.length && stack[stack.length-1][0].toLowerCase() !== target) stack.pop();
+      if (stack.length) closed.add(stack.pop()[1]);
+    }
+  }
+  return closed;
+}
+
+function isPercent(label){
+  const low = String(label||'').toLowerCase();
+  return low.includes('%') || low.includes('margin');
+}
+function percentValues(rr){
+  const scale = rr.formula && rr.formula.includes('100') ? 100 : 1;
+  return rr.values.map(v=>(v||0)/scale);
+}
+
+function buildColumns(raw, kind){
+  const cur = currentPeriodEnd(raw.periodLine);
+  const cols = [];
+  let inRun = true;
+  for (const label of raw.columns) {
+    const p = periodInfo(label);
+    if (p === null) inRun = false;
+    if (kind === 'detail') { cols.push({label: p?p.label:label, width:9, highlight:false}); continue; }
+    if (p) {
+      const width = inRun ? (p.quarter ? 9 : 8) : 9;
+      const highlight = inRun && cur !== null && p.end === cur[0] && p.year === cur[1];
+      cols.push({label:p.label, width, highlight});
+    } else {
+      cols.push({label, width: SUMMARY_COL_WIDTHS[label.toLowerCase()] || 9,
+                 highlight: label.toUpperCase() === 'YTD'});
+    }
+  }
+  return cols;
 }
 
 function transformSummary(raw, cfg){
-  const renames = Object.assign({}, SUMMARY_RENAMES, cfg.summary_renames||{});
-  const curMonth = currentMonthLabel(raw.periodLine);
-  const columns = raw.columns.map(label => {
-    const ml = monthLabel(label);
-    return { label: ml||label, width: ml?8:(SUMMARY_COL_WIDTHS[label]||9),
-             highlight: (ml||label)===curMonth || label==='YTD' };
-  });
-  let seenNonMonth = false;
-  for (const c of columns) {
-    if (!monthLabel(c.label||'')) seenNonMonth = true;
-    else if (seenNonMonth) { c.width = 9; c.highlight = false; }
-  }
+  const renames = cfg.summary_renames || {};
+  const dropSections = new Set((cfg.summary_drop_sections||[]).map(s=>s.toLowerCase()));
+  const blankBefore = new Set((cfg.summary_blank_before||[]).map(s=>s.toLowerCase()));
+  const columns = buildColumns(raw, 'summary');
   const eng = new Totals(raw.columns.length);
-  const rows = []; let salesTotal = null, lastGrand = null;
+  const closing = closingOpens(raw.rows);
+  const rows = [];
   for (const rr of raw.rows) {
     if (rr.kind === 'blank') continue;
     const label = rr.label || '';
     const renamed = renames[label] !== undefined ? renames[label] : label;
     if (rr.kind === 'group_open') {
-      eng.openGroup(label);
-      if (!SUMMARY_DROP_SECTIONS.has(label.toLowerCase()))
+      const dup = eng.openCount(label) > 0;   // Revenue-within-Revenue collapse
+      eng.openGroup(label, closing.has(rr));
+      if (!dup && !dropSections.has(label.toLowerCase()))
         rows.push({kind:'section', label:renamed.toUpperCase(), values:null});
     } else if (rr.kind === 'group_total') {
       const total = eng.closeGroup(label);
-      if (salesTotal === null) salesTotal = total;
-      rows.push({kind:'total', label:renamed, values:rounded(total)});
-    } else if (label.includes('%') || label.toLowerCase().includes('margin')) {
-      const num = lastGrand || new Array(eng.n).fill(0);
-      const den = salesTotal || new Array(eng.n).fill(0);
-      rows.push({kind:'percent', label:renamed, values: num.map((n,i)=>den[i]?n/den[i]:0)});
-    } else if (GRAND_LABELS.has(label.toLowerCase()) || GRAND_LABELS.has(renamed.toLowerCase())) {
-      lastGrand = eng.cumulative.slice();
-      rows.push({kind:'grand', label:renamed, values:rounded(lastGrand)});
+      if (eng.openCount(label.slice(6).trim()) > 0) continue;  // inner dup total
+      rows.push({kind:'total', label:renamed, values:rounded(total),
+                 xeroValues: rr.computed ? rounded(rr.values) : null});
+    } else if (rr.computed && isPercent(label)) {
+      rows.push({kind:'percent', label:renamed, values:percentValues(rr), computed:true});
+    } else if (rr.computed && !eng.inRealGroup) {
+      rows.push({kind:'grand', label:renamed, values:rounded(rr.values), computed:true});
     } else {
+      // literal account, or a formula LINE ITEM inside a real group
       eng.addAccount(rr.values || []);
-      if (SUMMARY_BLANK_BEFORE.has(renamed.toLowerCase())) rows.push({kind:'blank', label:null, values:null});
+      if (blankBefore.has(renamed.toLowerCase())) rows.push({kind:'blank', label:null, values:null});
       rows.push({kind:'account', label:renamed, values:rr.values});
     }
   }
@@ -384,24 +544,26 @@ function transformSummary(raw, cfg){
 }
 
 function transformDetail(raw){
-  const columns = raw.columns.map(l => ({label: monthLabel(l)||l, width:9, highlight:false}));
+  const columns = buildColumns(raw, 'detail');
   const eng = new Totals(raw.columns.length);
+  const closing = closingOpens(raw.rows);
   const rows = [];
   for (const rr of raw.rows) {
     if (rr.kind === 'blank') continue;
     const label = rr.label || '';
     if (rr.kind === 'group_open') {
-      eng.openGroup(label);
+      eng.openGroup(label, closing.has(rr));
       if (rr.col === 0) rows.push({kind:'section', label:label.toUpperCase(), values:null});
       else if (rr.col === 1) rows.push({kind:'header', label, values:null});
       else rows.push({kind:'account', label, values:null});
     } else if (rr.kind === 'group_total') {
       const total = rounded(eng.closeGroup(label));
+      const xv = rr.computed ? rounded(rr.values) : null;
       if (rr.col === 0) rows.push({kind:'section', label:label.toUpperCase(), values:null});
-      else if (rr.col === 1) rows.push({kind:'total', label, values:total});
-      else rows.push({kind:'account', label, values:total});
-    } else if (GRAND_LABELS.has(label.toLowerCase())) {
-      rows.push({kind:'account', label, values:rounded(eng.cumulative)});
+      else if (rr.col === 1) rows.push({kind:'total', label, values:total, xeroValues:xv});
+      else rows.push({kind:'account', label, values:total, xeroValues:xv});
+    } else if (rr.computed && !eng.inRealGroup) {
+      rows.push({kind:'account', label, values:rounded(rr.values), computed:true});
     } else {
       eng.addAccount(rr.values || []);
       rows.push({kind:'account', label, values:rr.values});
@@ -418,26 +580,26 @@ function transformBalance(raw, cfg){
     columns.splice(columns.length-nComp, 0, {label:null, width:13, highlight:false});
   if (columns.length) columns[0].highlight = true;
   const eng = new Totals(raw.columns.length);
+  const closing = closingOpens(raw.rows);
   const rows = [];
   for (const rr of raw.rows) {
     if (rr.kind === 'blank') continue;
     const label = rr.label || '';
     if (rr.kind === 'group_open') {
-      eng.openGroup(label);
+      eng.openGroup(label, closing.has(rr));
       if (rr.col === 0) rows.push({kind:'section', label:label.toUpperCase(), values:null});
       else if (rr.col === 1) rows.push({kind:'header', label, values:null});
       else rows.push({kind:'account', label, values:null});
     } else if (rr.kind === 'group_total') {
       const total = rounded(eng.closeGroup(label));
+      const xv = rr.computed ? rounded(rr.values) : null;
       if (rr.col === 0) {
-        if (BS_GRAND_TOTALS.has(label.toLowerCase())) rows.push({kind:'grand', label, values:total});
+        if (BS_GRAND_TOTALS.has(label.toLowerCase())) rows.push({kind:'grand', label, values:total, xeroValues:xv});
         else rows.push({kind:'section', label:label.toUpperCase(), values:null});
-      } else if (rr.col === 1) rows.push({kind:'total', label, values:total});
-      else rows.push({kind:'account', label, values:total});
-    } else if (label.toLowerCase() === 'net assets') {
-      const a = eng.byName['total assets'] || new Array(eng.n).fill(0);
-      const l = eng.byName['total liabilities'] || new Array(eng.n).fill(0);
-      rows.push({kind:'account', label, values:rounded(a.map((x,i)=>x-l[i]))});
+      } else if (rr.col === 1) rows.push({kind:'total', label, values:total, xeroValues:xv});
+      else rows.push({kind:'account', label, values:total, xeroValues:xv});
+    } else if (rr.computed && !eng.inRealGroup) {  // e.g. Net Assets
+      rows.push({kind:'account', label, values:rounded(rr.values), computed:true});
     } else {
       eng.addAccount(rr.values || []);
       rows.push({kind:'account', label, values:rr.values});
@@ -460,7 +622,6 @@ function transformPack(reports, cfg){
 
 /* ── deterministic balance checks (checks.py) ─────────────────────────── */
 const TOL = 0.02, MAX_PER_ROW = 4, FY_START_MONTH = 7;
-const MONTH_NUM = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sept:9,Oct:10,Nov:11,Dec:12};
 const dataColumns = sheet => sheet.columns.filter(c=>c.label!=null);
 const fmt$ = v => v.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
 
@@ -470,11 +631,14 @@ function rowsByLabel(sheet){
   for (const r of sheet.rows) if (r.label && r.values) out[r.label.toLowerCase()] = r.values;
   return out;
 }
-function monthRun(sheet){
-  const idxs = [];
+function periodRun(sheet){
+  const out = [];
   const cols = dataColumns(sheet);
-  for (let i=0;i<cols.length;i++){ if (cols[i].label && monthLabel(cols[i].label)) idxs.push(i); else break; }
-  return idxs;
+  for (let i=0;i<cols.length;i++){
+    const p = periodInfo(cols[i].label || '');
+    if (p) out.push([i, p]); else break;
+  }
+  return out;
 }
 function colIdx(sheet, label){
   const cols = dataColumns(sheet);
@@ -487,8 +651,8 @@ function sectionsOf(sheet, memberKinds){
     if (r.kind === 'section') {
       if (r.label.startsWith('TOTAL')) current = null;
       else { current = [r.label, []]; out.push(current); }
-    } else if (r.kind === 'grand' || (r.label && GRAND_LABELS.has(r.label.toLowerCase()))) {
-      current = null;
+    } else if (r.kind === 'grand' || r.computed || (r.label && GRAND_LABELS.has(r.label.toLowerCase()))) {
+      current = null;  // grand/computed rows end the section
     } else if (memberKinds.has(r.kind) && r.values && current) {
       current[1].push([r.label, r.values]);
     }
@@ -497,23 +661,44 @@ function sectionsOf(sheet, memberKinds){
 }
 
 function checkYtdFooting(sheet, name, fails){
-  const months = monthRun(sheet), ytd = colIdx(sheet,'YTD');
-  if (!months.length || ytd === null) return;
-  const cols = dataColumns(sheet);
+  let run = periodRun(sheet);
+  const ytd = colIdx(sheet,'YTD');
+  if (!run.length || ytd === null) return;
+  // trim at the current reporting period (PY comparatives can adjoin the run)
+  const cur = currentPeriodEnd(sheet.periodLine);
+  if (cur !== null) {
+    const k = run.findIndex(([,p]) => p.end === cur[0] && p.year === cur[1]);
+    if (k < 0) return;  // current period not displayed — can't anchor
+    run = run.slice(0, k+1);
+  }
   const fyMonths = [];
   let found = false;
-  for (let k=months.length-1;k>=0;k--){
-    fyMonths.unshift(months[k]);
-    const abbr = String(cols[months[k]].label||'').split(' ')[0];
-    if (MONTH_NUM[abbr] === FY_START_MONTH) { found = true; break; }
+  for (let k=run.length-1;k>=0;k--){
+    fyMonths.unshift(run[k][0]);
+    if (run[k][1].start === FY_START_MONTH) { found = true; break; }
   }
   if (!found) return;
+  const n = fyMonths.length;
   for (const r of sheet.rows) {
     if (!r.values || r.kind==='percent' || r.kind==='blank') continue;
     const s = fyMonths.reduce((a,i)=>a+(r.values[i]||0),0);
     const y = ytd < r.values.length ? (r.values[ytd]||0) : 0;
     if (Math.abs(s-y) > TOL)
-      fails.push(`${name}: '${r.label}' YTD ${fmt$(y)} != sum of the ${fyMonths.length} FY months ${fmt$(s)} (diff ${fmt$(s-y)})`);
+      fails.push(`${name}: '${r.label}' YTD ${fmt$(y)} != sum of the ${n} FY periods ${fmt$(s)} (diff ${fmt$(s-y)})`);
+  }
+}
+
+function checkXeroTotalFormulas(sheet, name, fails){
+  const cols = dataColumns(sheet).map(c=>c.label);
+  for (const r of sheet.rows) {
+    if (!r.xeroValues || !r.values) continue;
+    for (let i=0;i<Math.min(r.values.length,r.xeroValues.length);i++){
+      const ours = r.values[i]||0, xero = r.xeroValues[i]||0;
+      if (Math.abs(ours-xero) > TOL) {
+        fails.push(`${name}: Xero's layout formula for '${r.label}' gives ${fmt$(xero)} at ${cols[i]} but its accounts sum to ${fmt$(ours)} — the layout formula may exclude a row`);
+        break;
+      }
+    }
   }
 }
 
@@ -522,10 +707,22 @@ function checkSummaryVsDetail(summary, detail, fails){
   const shared = [];
   dataColumns(summary).forEach((c,i)=>{ if (c.label in dIdx) shared.push([c.label,i,dIdx[c.label]]); });
   if (!shared.length) { fails.push('summary/detail: no shared column labels'); return; }
+
   const sSecs = sectionsOf(summary, new Set(['account']));
   const dSecs = sectionsOf(detail, new Set(['total']));
-  for (let k=0;k<Math.min(sSecs.length,dSecs.length);k++){
-    const [sName,sRows] = sSecs[k], [dName,dRows] = dSecs[k];
+  const pairs = [], sLeft = sSecs.slice(), dLeft = dSecs.slice();
+  for (const sec of sLeft.slice()) {   // match by name first
+    const m = dLeft.find(d => d[0].toUpperCase() === sec[0].toUpperCase());
+    if (m) { pairs.push([sec, m]); sLeft.splice(sLeft.indexOf(sec),1); dLeft.splice(dLeft.indexOf(m),1); }
+  }
+  const nPair = Math.min(sLeft.length, dLeft.length);
+  for (let k=0;k<nPair;k++) pairs.push([sLeft[k], dLeft[k]]);  // leftovers in order
+  for (const sec of sLeft.slice(nPair))
+    fails.push(`WARN: Summary section '${sec[0]}' has no Detail counterpart — cross-check skipped`);
+  for (const m of dLeft.slice(nPair))
+    fails.push(`WARN: Detail section '${m[0]}' has no Summary counterpart — cross-check skipped`);
+
+  for (const [[sName,sRows],[dName,dRows]] of pairs) {
     if (sRows.length !== dRows.length) {
       const diffs = [];
       for (const [label,si,di] of shared) {
@@ -549,17 +746,25 @@ function checkSummaryVsDetail(summary, detail, fails){
       }
     }
   }
+
   const sGrands = summary.rows.filter(r=>r.kind==='grand').map(r=>[r.label,r.values]);
-  const dGrands = detail.rows.filter(r=>r.kind==='account'&&r.label&&GRAND_LABELS.has(r.label.toLowerCase())&&r.values).map(r=>[r.label,r.values]);
-  for (let k=0;k<Math.min(sGrands.length,dGrands.length);k++){
-    const [sl,sv]=sGrands[k],[dl,dv]=dGrands[k];
+  const dGrands = detail.rows.filter(r=>r.kind==='account' && r.label && r.values
+      && !r.xeroValues && (r.computed || GRAND_LABELS.has(r.label.toLowerCase())))
+    .map(r=>[r.label,r.values]);
+  const dByName = Object.fromEntries(dGrands.map(([l,v])=>[l.toLowerCase(),v]));
+  const unmatched = [];
+  for (const [sl,sv] of sGrands) {
+    const dv = dByName[sl.toLowerCase()];
+    if (!dv) { unmatched.push(sl); continue; }
     for (const [label,si,di] of shared) {
       if (Math.abs((sv[si]||0)-(dv[di]||0)) > TOL) {
-        fails.push(`grand '${sl}' vs '${dl}' at ${label}: ${fmt$(sv[si])} != ${fmt$(dv[di])}`);
+        fails.push(`grand '${sl}' at ${label}: Summary ${fmt$(sv[si])} != Detail ${fmt$(dv[di])}`);
         break;
       }
     }
   }
+  if (unmatched.length)
+    fails.push("WARN: Summary computed rows with no same-named Detail row (cross-check skipped): " + unmatched.map(u=>`'${u}'`).join(', '));
 }
 
 function checkBalanceSheet(balance, summary, fails){
@@ -573,17 +778,17 @@ function checkBalanceSheet(balance, summary, fails){
     if (Math.abs(a-(l+e))>TOL) fails.push(`BS ${label}: Assets ${fmt$(a)} != Liabilities ${fmt$(l)} + Equity ${fmt$(e)}`);
     if (Math.abs(n-e)>TOL) fails.push(`BS ${label}: Net Assets ${fmt$(n)} != Total Equity ${fmt$(e)}`);
   });
-  // HP schedule tie
+  // HP schedule tie (face lines matched by name containing "hire purchase")
   const faceHp=[], hpTotals=[]; let inHp=false;
   for (const r of balance.rows) {
     if (r.kind==='section') inHp = (r.label||'').includes('HIRE PURCHASE');
     if (!r.values) continue;
-    if (!inHp && r.label && r.label.toLowerCase()==='hire purchase liabilities') faceHp.push(r.values);
+    if (!inHp && r.kind==='account' && r.label && r.label.toLowerCase().includes('hire purchase')) faceHp.push(r.values);
     if (inHp && r.kind==='total') hpTotals.push([r.label, r.values]);
   }
   if (hpTotals.length) {
     if (faceHp.length !== hpTotals.length) {
-      fails.push(`BS: ${hpTotals.length} HP schedule totals vs ${faceHp.length} 'Hire purchase liabilities' lines on the face`);
+      fails.push(`WARN: BS: ${hpTotals.length} HP schedule totals vs ${faceHp.length} hire-purchase liability lines on the face — tie not checkable`);
     } else {
       for (let k=0;k<faceHp.length;k++){
         const [tl,tv]=hpTotals[k];
@@ -595,20 +800,22 @@ function checkBalanceSheet(balance, summary, fails){
       }
     }
   }
-  // Retained Earnings reconciliation
-  const re = rows['retained earnings'];
-  if (re && re.length >= 4 && summary) {
+  // accumulated earnings reconciliation (RE + Current Year Earnings) — WARN
+  const parts = ['retained earnings','current year earnings'].filter(k=>rows[k]).map(k=>rows[k]);
+  if (parts.length && parts[0].length >= 4 && summary) {
+    const earn = parts[0].map((_,i)=>parts.reduce((t,p)=>t+(p[i]||0),0));
     const sRows = rowsByLabel(summary);
-    const npat = sRows['net profit after dividends'] || sRows['net profit after tax'];
+    const npat = sRows['net profit after distributions/dividends paid']
+              || sRows['net profit after dividends'] || sRows['net profit after tax'];
     if (npat) {
-      const months = monthRun(summary), ytd = colIdx(summary,'YTD');
-      if (months.length) {
-        const cur = npat[months[months.length-1]]||0, move=(re[0]||0)-(re[1]||0);
-        if (Math.abs(move-cur)>TOL) fails.push(`BS: Retained Earnings movement (month) ${fmt$(move)} != P&L result ${fmt$(cur)}`);
+      const run = periodRun(summary), ytd = colIdx(summary,'YTD');
+      if (run.length && !run[run.length-1][1].quarter) {
+        const cur = npat[run[run.length-1][0]]||0, move=earn[0]-earn[1];
+        if (Math.abs(move-cur)>TOL) fails.push(`WARN: BS: accumulated earnings movement (month) ${fmt$(move)} != P&L result ${fmt$(cur)}`);
       }
       if (ytd !== null) {
-        const yr = npat[ytd]||0, move=(re[0]||0)-(re[re.length-2]||0);
-        if (Math.abs(move-yr)>TOL) fails.push(`BS: Retained Earnings movement (FY) ${fmt$(move)} != P&L YTD result ${fmt$(yr)}`);
+        const yr = npat[ytd]||0, move=earn[0]-earn[earn.length-2];
+        if (Math.abs(move-yr)>TOL) fails.push(`WARN: BS: accumulated earnings movement (FY) ${fmt$(move)} != P&L YTD result ${fmt$(yr)}`);
       }
     }
   }
@@ -632,13 +839,40 @@ function checkBalanceSheet(balance, summary, fails){
 function checkPack(pack){
   const fails = [];
   const summary=sheetOf(pack,'summary'), detail=sheetOf(pack,'detail'), balance=sheetOf(pack,'balance');
-  if (summary) checkYtdFooting(summary,'Summary',fails);
-  if (detail) checkYtdFooting(detail,'Detail',fails);
+  if (summary) { checkYtdFooting(summary,'Summary',fails); checkXeroTotalFormulas(summary,'Summary',fails); }
+  if (detail) { checkYtdFooting(detail,'Detail',fails); checkXeroTotalFormulas(detail,'Detail',fails); }
   if (summary && detail) checkSummaryVsDetail(summary,detail,fails);
-  if (balance) checkBalanceSheet(balance,summary,fails);
+  if (balance) { checkBalanceSheet(balance,summary,fails); checkXeroTotalFormulas(balance,'BS',fails); }
   return fails;
 }
 const hardFailures = fails => fails.filter(f=>!f.startsWith('WARN'));
+
+/* ── per-client configuration (interim: keyed by the export's org name;
+      moves to SharePoint-per-client storage with the workflow tie-in) ──── */
+const CLIENT_CONFIGS = {
+  'zummo juicers': {
+    client_name: 'Zummo Juicers Pty Ltd',
+    summary_renames: {
+      'Indirect costs':'Overheads', 'Total Indirect costs':'Total Overheads',
+      'Other Income/Expenses':'Other Income / Expenses',
+      'Profit/(Loss) before Taxation':'NET PROFIT BEFORE TAX',
+      'Income Tax Expense':'TAX',
+      'Net Profit After Tax':'NET PROFIT AFTER TAX',
+      'Net Profit After Distributions/Dividends Paid':'NET PROFIT AFTER DIVIDENDS',
+    },
+    summary_drop_sections: ['Income Tax Expense'],
+    summary_blank_before: ['TAX'],
+  },
+  'inspired built': { client_name: 'Inspired Built Pty Ltd' },
+  'tactic administration services': { client_name: 'Tactic Administration Services Pty Ltd' },
+  'tallboy flooring': { client_name: 'Tallboy Flooring Pty Ltd' },
+};
+function clientConfigFor(orgName){
+  const low = String(orgName||'').toLowerCase();
+  for (const [key, cfg] of Object.entries(CLIENT_CONFIGS))
+    if (low.startsWith(key)) return cfg;
+  return {};
+}
 
 /* ── writer: pack → house-styled ExcelJS workbook (writer.py) ─────────── */
 // break every period header consistently over two lines (split at the last
@@ -796,7 +1030,7 @@ function buildDigest(pack, checkFailures){
 
 /* expose core for the Node regression harness */
 if (typeof module !== 'undefined' && module.exports)
-  module.exports = { parseManagementPack, transformPack, checkPack, hardFailures, buildWorkbook, buildDigest };
+  module.exports = { parseManagementPack, transformPack, checkPack, hardFailures, buildWorkbook, buildDigest, clientConfigFor };
 
 /* ── UI wiring (browser only) ─────────────────────────────────────────── */
 if (typeof document !== 'undefined') (function(){
@@ -831,7 +1065,8 @@ if (typeof document !== 'undefined') (function(){
       $('fileInfo').innerHTML = 'Parsed: <b>' + Object.keys(reports).join(', ') + '</b>' +
         (skipped.length ? ' &nbsp;·&nbsp; excluded: ' + skipped.join(', ') : '');
       const org = (reports.summary||reports.detail||reports.balance).orgName;
-      if (!$('clientName').value) $('clientName').value = org;
+      const known = clientConfigFor(org);
+      if (!$('clientName').value) $('clientName').value = known.client_name || org;
       $('ctrls').style.display = 'flex';
       runChecks();
     } catch(err) {
@@ -840,10 +1075,12 @@ if (typeof document !== 'undefined') (function(){
   }
 
   function runChecks(){
-    pack = transformPack(window._reports, {
+    const org = (window._reports.summary||window._reports.detail||window._reports.balance).orgName;
+    const cfg = Object.assign({}, clientConfigFor(org), {
       client_name: $('clientName').value.trim() || undefined,
       bs_comparative_columns: +$('bsComp').value,
     });
+    pack = transformPack(window._reports, cfg);
     fails = checkPack(pack);
     const hard = hardFailures(fails);
     $('checksCard').style.display = 'block';
