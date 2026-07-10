@@ -1,17 +1,19 @@
-// lf-pdf-parser — Cloudflare Worker that turns a financier's PDF amortisation
-// schedule into the plain rows the amortisation tool's paste box accepts.
+// lf-pdf-parser — Cloudflare Worker for the portal's Claude-backed tools.
 //
-// Flow: amortisation.html POSTs { pdf: <base64> } with the caller's Microsoft
-// Graph token in Authorization. The worker verifies the caller is an LF
-// Advisory tenant user via Graph /me (so the endpoint can't be used by the
-// public — no secret ever ships in the page), then sends the PDF to Claude
-// and returns { principal, balloon, rows }.
+// Routes (both POST, both gated on the caller's Microsoft Graph token —
+// verified via Graph /me as an @lfadvisory.com.au account, so the endpoints
+// can't be used by the public and no secret ever ships in a page):
+//   /        { pdf: <base64> }  → amortisation-schedule extraction for
+//            amortisation.html; returns { principal, balloon, rows }.
+//   /review  { digest: <text> } → pre-release balance review of a management
+//            report pack for report-formatter.html; returns { review }.
 //
 // Secrets: ANTHROPIC_API_KEY (secret_text binding).
 // Deploy: REST API upload, same method as register-mailer (see CLAUDE.md).
 
 const ALLOWED_ORIGINS = ['https://www.lfadvisory.com.au', 'https://lfadvisory.com.au'];
 const MODEL = 'claude-sonnet-5';
+const REVIEW_MODEL = 'claude-opus-4-8';
 
 const PROMPT = `You are given a finance amortisation schedule PDF from a financier (hire purchase, chattel mortgage or equipment loan).
 
@@ -39,6 +41,34 @@ Verify before replying (fix the rows, do not explain):
 - Include every repayment row. Do not summarise, skip repayment rows, or add totals, headers, or commentary.
 - If the document is not an amortisation/repayment schedule (e.g. it is a loan contract or invoice), reply exactly: ERROR: not an amortisation schedule`;
 
+// Pre-release balance review of a management report pack (report-formatter.html).
+// Mirrors SYSTEM_PROMPT in lfa-report-formatter/lfa_reports/reviewer.py — the
+// deterministic checker runs in the page; Claude only diagnoses and verdicts.
+const REVIEW_PROMPT = `You are a meticulous Australian accountant at LF Advisory performing a pre-release balance check on a client's monthly management report pack (P&L Summary, P&L Detail, Balance Sheet), generated automatically from Xero data.
+
+A deterministic checker (code, exact to the cent) has ALREADY verified the arithmetic: YTD vs sum of months, Summary-vs-Detail agreement for every shared column, Assets = Liabilities + Equity, Net Assets = Total Equity, the Hire Purchase schedule tie, the Retained Earnings reconciliation, and impossible accumulated-depreciation balances. Its results are included and are AUTHORITATIVE. Do not re-foot columns or re-derive totals yourself — the report data is provided for context only, and misreading one of its many columns would produce a false finding. If you suspect an arithmetic issue the checker did not flag, state it in one line clearly marked "UNVERIFIED — confirm in code" rather than asserting it.
+
+Your job:
+1. Deliver a verdict on whether the pack is fit for release.
+2. Diagnose each checker failure: which account(s) cause it, and the likely mechanism in the Xero report layouts (an account mapped to different categories in the two layouts, gross vs net presentation of the same accounts, a stale cell, a backdated journal, etc.). Group failures that share one cause.
+3. Scan the report STRUCTURE (not the arithmetic) for integrity problems code can't see: the same account name appearing in more than one section, contra/negative accounts with an implausible sign convention, misplaced rows, duplicated or missing lines.
+4. State the concrete fix for each issue (in Xero or in the report layouts).
+
+Do NOT comment on business performance, movements, trends, margins or strategy — that is a separate deliverable and strictly out of scope here.
+
+Output Markdown:
+
+## Verdict
+One line: **BALANCES — ready for release** or **DOES NOT BALANCE — fix before release**, plus a one-sentence justification.
+
+## Failures explained
+One entry per root cause (grouping related checker failures). What disagrees, which account(s), the likely mechanism, the fix.
+
+## Structural observations
+Integrity problems from your structural scan (point 3). If none, say so.
+
+Ground rules: quote only figures that appear in the checker results or the report data — never invent numbers. Be brief: diagnosis, not narration. Amounts are AUD; negative P&L values are costs/outflows.`;
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
@@ -60,9 +90,12 @@ export default {
     const upn = (user.userPrincipalName || user.mail || '').toLowerCase();
     if (!upn.endsWith('@lfadvisory.com.au')) return json({ error: 'Not an LF Advisory account.' }, 403, cors);
 
-    // 2. Read the PDF (base64)
+    // 2. Route + read the request body
     let body;
     try { body = await request.json(); } catch { return json({ error: 'Bad request body.' }, 400, cors); }
+
+    if (new URL(request.url).pathname === '/review') return review(body, env, cors);
+
     const pdf = String(body.pdf || '').replace(/^data:application\/pdf;base64,/, '');
     if (!pdf) return json({ error: 'No PDF supplied.' }, 400, cors);
     if (pdf.length > 25 * 1024 * 1024) return json({ error: 'PDF too large (max ~18MB).' }, 413, cors);
@@ -127,6 +160,41 @@ export default {
     }, 200, cors);
   },
 };
+
+// /review — balance review for report-formatter.html
+async function review(body, env, cors) {
+  const digest = String(body.digest || '');
+  if (!digest) return json({ error: 'No report digest supplied.' }, 400, cors);
+  if (digest.length > 400 * 1024) return json({ error: 'Report digest too large.' }, 413, cors);
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: REVIEW_MODEL,
+      max_tokens: 16000,
+      thinking: { type: 'adaptive' },
+      system: [{ type: 'text', text: REVIEW_PROMPT, cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: 'Review this management report pack:\n\n' + digest }],
+    }),
+  });
+  if (!resp.ok) {
+    console.log('Anthropic error', resp.status, await resp.text());
+    return json({ error: 'Claude API error ' + resp.status + ' — try again shortly.' }, 502, cors);
+  }
+  const data = await resp.json();
+  if (data.stop_reason === 'refusal') return json({ error: 'The model declined to review this pack.' }, 422, cors);
+  let review = '';
+  for (const block of data.content || []) if (block.type === 'text') review += block.text;
+  if (data.stop_reason === 'max_tokens')
+    review += '\n\n---\n*WARNING: review was truncated at the token limit — treat as incomplete.*';
+  if (!review.trim()) return json({ error: 'Empty review from the model — try again.' }, 502, cors);
+  return json({ review, usage: data.usage }, 200, cors);
+}
 
 function json(obj, status, cors) {
   return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', ...cors } });

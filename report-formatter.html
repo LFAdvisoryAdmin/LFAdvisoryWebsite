@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Management Report Formatter — LF Advisory</title>
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;600;700;800&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<style>
+:root {
+  --primary:#2d6670; --primary-dark:#1e4a52; --secondary:#5a7a3a;
+  --accent:#c8a96e; --dark:#1a2332; --mid:#6b7c8d; --light:#f5f7f8;
+  --white:#fff; --danger:#c0392b; --warn:#e67e22; --ok:#27ae60;
+  --border:#dde3e8; --sans:'Lato',sans-serif; --head:'Raleway',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--light);color:var(--dark);font-size:14px}
+nav{position:fixed;top:0;left:0;right:0;z-index:1000;display:flex;align-items:center;justify-content:space-between;padding:0 5vw;height:70px;background:rgba(240,243,239,0.96);backdrop-filter:blur(10px);border-bottom:1px solid #cdd4cc}
+.nav-logo{display:flex;align-items:center;text-decoration:none}
+.nav-logo img{height:44px;width:auto;display:block}
+.nav-links{display:flex;align-items:center;gap:2rem;list-style:none}
+.nav-links a{font-size:.8rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#5a6060;text-decoration:none;transition:color .2s}
+.nav-links a:hover{color:var(--primary)}
+@media(max-width:700px){.nav-links{gap:1rem}.nav-links a{font-size:.7rem}}
+.tool-head{margin-top:70px;background:#263d3f;color:#f0f3ef;padding:2.5rem 3rem;border-bottom:3px solid #6b7340;box-shadow:0 2px 20px rgba(0,0,0,.15)}
+.tool-head-content{display:flex;align-items:center;justify-content:space-between;max-width:1100px;margin:0 auto}
+.tool-head .subtitle{color:#8a9456;font-family:var(--head);font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;font-weight:600;margin-bottom:.6rem}
+.tool-head h1{font-family:var(--head);font-weight:300;font-size:clamp(1.4rem,2.5vw,2.2rem);color:#f0f3ef;letter-spacing:-.01em}
+.tool-head h1 strong{font-weight:700;color:#8a9456}
+.container{max-width:1100px;margin:0 auto;padding:2rem 1.5rem}
+.card{background:var(--white);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07);padding:1.5rem;margin-bottom:1.5rem}
+.card-head{font-family:var(--head);font-weight:700;font-size:.85rem;text-transform:uppercase;letter-spacing:.08em;color:var(--primary);margin-bottom:1.2rem;padding-bottom:.7rem;border-bottom:2px solid var(--light);display:flex;align-items:center;justify-content:space-between}
+.ctrl-bar{display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap;margin-top:1rem}
+.cg{display:flex;flex-direction:column;gap:.3rem}
+.cg label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mid)}
+.cg input{border:1.5px solid var(--border);border-radius:6px;padding:.5rem .75rem;font-family:var(--sans);font-size:.9rem;color:var(--dark);background:var(--white)}
+.cg input:focus{outline:none;border-color:var(--primary)}
+.btn{display:inline-flex;align-items:center;gap:.35rem;padding:.5rem 1rem;border-radius:6px;border:none;cursor:pointer;font-family:var(--head);font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;transition:all .2s;white-space:nowrap}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover:not(:disabled){background:var(--primary-dark)}
+.btn-secondary{background:var(--secondary);color:#fff}.btn-secondary:hover:not(:disabled){background:#496430}
+.btn-outline{background:transparent;color:var(--primary);border:1.5px solid var(--primary)}.btn-outline:hover:not(:disabled){background:var(--primary);color:#fff}
+.drop{border:2px dashed var(--border);border-radius:10px;padding:2rem 1.1rem;text-align:center;cursor:pointer;transition:all .2s;color:var(--mid)}
+.drop:hover,.drop.over{border-color:var(--primary);background:#f0f8fa;color:var(--primary)}
+.drop p{font-family:var(--head);font-weight:600;font-size:.9rem}
+.drop small{font-size:.75rem}
+.alert{padding:.85rem 1.1rem;border-radius:8px;margin-bottom:1rem;font-size:.87rem}
+.a-info{background:#e8f4f8;border-left:4px solid var(--primary);color:var(--primary-dark)}
+.a-ok{background:#d4edda;border-left:4px solid var(--ok);color:#155724}
+.a-warn{background:#fff3cd;border-left:4px solid var(--warn);color:#7d5a00}
+.a-err{background:#fdecea;border-left:4px solid var(--danger);color:#922b21}
+.check-list{list-style:none;font-size:.84rem}
+.check-list li{padding:.45rem .6rem;border-bottom:1px solid var(--light);font-family:monospace;white-space:pre-wrap;word-break:break-word}
+.check-list li.f{color:#922b21}.check-list li.w{color:#7d5a00}
+.md{font-size:.9rem;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.md h3{font-family:var(--head);color:var(--primary);margin:.9rem 0 .4rem;font-size:1rem}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-top:2rem;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <a href="portal.html" class="nav-logo"><img src="data:image/png;base64,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" alt="LF Advisory"/></a>
+  <ul class="nav-links">
+    <li><a href="portal.html">Portal</a></li>
+    <li><a href="index.html">Main Site</a></li>
+  </ul>
+</nav>
+
+<div class="tool-head">
+  <div class="tool-head-content">
+    <div>
+      <div class="subtitle">Workpaper Applications</div>
+      <h1>Management Report <strong>Formatter</strong></h1>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="card">
+    <div class="card-head">1 · Upload raw Xero management report pack</div>
+    <div class="drop" id="drop">
+      <p>Drop the raw Xero export here, or click to browse</p>
+      <small>Xero → Reports → Management Report → Export → Excel (P&amp;L Summary, P&amp;L Detail, Balance Sheet)</small>
+      <input type="file" id="fileInput" accept=".xlsx" style="display:none">
+    </div>
+    <div class="ctrl-bar" id="ctrls" style="display:none">
+      <div class="cg" style="flex:1;min-width:260px">
+        <label>Client legal name (report header)</label>
+        <input type="text" id="clientName" placeholder="e.g. Zummo Juicers Pty Ltd">
+      </div>
+      <div class="cg" style="width:130px">
+        <label>BS FY comparatives</label>
+        <input type="number" id="bsComp" value="2" min="0" max="4">
+      </div>
+      <button class="btn btn-primary" id="btnConvert">Convert &amp; Download</button>
+      <button class="btn btn-secondary" id="btnReview" title="Sends the pack to Claude via the LF worker for a pre-release balance review">AI Balance Review</button>
+    </div>
+    <div id="fileInfo" style="margin-top:.8rem;font-size:.82rem;color:var(--mid)"></div>
+  </div>
+
+  <div class="card" id="checksCard" style="display:none">
+    <div class="card-head">2 · Deterministic balance checks</div>
+    <div id="checksAlert"></div>
+    <ul class="check-list" id="checksList"></ul>
+  </div>
+
+  <div class="card" id="reviewCard" style="display:none">
+    <div class="card-head">3 · AI balance review
+      <button class="btn btn-outline btn-sm" id="btnReviewDl" style="display:none">Download .md</button>
+    </div>
+    <div id="reviewBody" class="md"></div>
+  </div>
+
+  <footer>LF Advisory Pty Ltd — internal workpaper tool. Reports are compiled from information provided; figures are not audited.</footer>
+</div>
+
+<script>
+'use strict';
+/* ════════════════════════════════════════════════════════════════════════
+   Management Report Formatter — raw Xero management pack → LF house-styled
+   workbook, with deterministic balance checks and an AI balance review.
+   Direct port of the Python pipeline in Projects/lfa-report-formatter
+   (xero_parse.py / transform.py / checks.py / writer.py / reviewer.py).
+   Core functions are DOM-free so they can be regression-tested in Node.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── house style (spec §2–§9) ─────────────────────────────────────────── */
+const INK='FF1A2E2C', INK_ON_DARK='FFE8EAE5', BLACK='FF000000', BANNER='FFF0F2EE',
+      DARK='FF1C3432', SECTION='FF2A4D4A', SUBTOTAL='FFEEF0EB', WHITE='FFFFFFFF',
+      TEAL_LIGHT='FFD4E8E7', TEAL_MID='FF3D7E7A';
+const NUM_FMT='#,##0;\\(#,##0\\);\\-', PCT_FMT='0%;\\(0%\\);\\-';
+const FOOTNOTE_TEXT='The figures above have been compiled from information provided to us. The compilation of figures has not involved the verification of the information. This report is the property of LF Advisory Pty Ltd.';
+const EN_DASH='–';
+const LOGO_B64='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';
+const LOGO_W=57, LOGO_H=65; // px ≈ 541080 x 617400 EMU
+
+const GEOMETRY = {
+  summary: {
+    labelCols:1, kindCol:{section:1,header:1,account:1,total:1,grand:1,percent:1},
+    grandMergeLabels:false, labelWidths:[30],
+    headerHeight:27.75, headerLabelSize:8, headerValueSize:7.5,
+    paperSize:8, orientation:'landscape', fitHeight:1,
+    margins:[0.35,0.35,0.5,0.45], footnoteSize:7.5, valueColor:INK,
+    kinds:{
+      section:{labelSize:8.5,labelBold:true,fill:SECTION,dark:true,mergeFull:true,height:15},
+      header:{labelSize:8,labelBold:true,fill:DARK,dark:true,height:15},
+      account:{labelSize:8,valueSize:7.5,labelIndent:2,fill:WHITE,height:13.5},
+      total:{labelSize:8.5,labelBold:true,valueSize:8,valueBold:true,fill:SUBTOTAL,height:15},
+      grand:{labelSize:8.5,labelBold:true,valueSize:8,valueBold:true,fill:DARK,dark:true,height:15.75},
+      percent:{labelSize:8,labelItalic:true,valueSize:7.5,valueItalic:true,labelIndent:2,fill:TEAL_LIGHT,height:12.75,numberFormat:PCT_FMT},
+      blank:{labelSize:8,height:13.5},
+    },
+  },
+  detail: {
+    labelCols:2, kindCol:{section:1,header:2,account:2,total:2,grand:2},
+    grandMergeLabels:false, labelWidths:[2,32],
+    headerHeight:25.5, headerLabelSize:7.5, headerValueSize:7.5,
+    paperSize:9, orientation:'landscape', fitHeight:0,
+    margins:[0.35,0.35,0.5,0.45], footnoteSize:7, valueColor:BLACK,
+    kinds:{
+      section:{labelSize:8,labelBold:true,fill:SECTION,dark:true,mergeFull:true,height:15},
+      header:{labelSize:8,labelBold:true,fill:DARK,dark:true,height:13.5},
+      account:{labelSize:7.5,valueSize:7.5,fill:WHITE,height:12.75},
+      total:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:SUBTOTAL,height:13.5},
+      grand:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:DARK,dark:true,height:13.5},
+      blank:{labelSize:7.5},
+    },
+  },
+  balance: {
+    labelCols:3, kindCol:{section:1,grand:1,header:2,total:2,account:3},
+    grandMergeLabels:true, labelWidths:[3,22,28],
+    headerHeight:24, headerLabelSize:8, headerValueSize:8,
+    paperSize:9, orientation:'portrait', fitHeight:1,
+    margins:[0.5,0.5,0.6,0.5], footnoteSize:7, valueColor:INK,
+    kinds:{
+      section:{labelSize:8,labelBold:true,fill:SECTION,dark:true,mergeFull:true,height:15.75},
+      header:{labelSize:8,labelBold:true,fill:DARK,dark:true,height:15},
+      account:{labelSize:7.5,valueSize:7.5,fill:WHITE,height:13.5},
+      total:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:SUBTOTAL,height:13.5},
+      grand:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:DARK,dark:true,height:15},
+      blank:{labelSize:7.5},
+    },
+  },
+};
+const HEADER_ROW = 5;
+
+/* ── parse: raw Xero export → normalized rows (xero_parse.py) ─────────── */
+const SHEET_MATCHERS = {
+  summary:/profit and loss.*summary/i, detail:/profit and loss.*detail/i, balance:/balance sheet/i,
+};
+const MONTHISH = /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s-]*\d{2,4}/i;
+
+function cellVal(v){
+  if (v == null) return null;
+  if (typeof v === 'object') {
+    if (v.richText) return v.richText.map(t=>t.text).join('');
+    if (v.formula !== undefined || v.sharedFormula !== undefined) {
+      // Xero's computed rows are live formulas; ExcelJS drops a cached result
+      // of 0. Every formula row is recomputed by the transform anyway, so a
+      // missing/error result reads as 0 (matching openpyxl's cached values).
+      return (typeof v.result === 'number') ? v.result : 0;
+    }
+    if (v.result !== undefined) return v.result;
+    if (v.text !== undefined) return v.text;
+    return null;
+  }
+  return v;
+}
+
+function sheetGrid(ws){
+  const grid = [];
+  for (let r = 1; r <= ws.rowCount; r++) {
+    const row = ws.getRow(r), line = [];
+    for (let c = 1; c <= ws.columnCount; c++) line.push(cellVal(row.getCell(c).value));
+    grid.push(line);
+  }
+  return grid;
+}
+
+function findHeader(grid, sheetName){
+  for (let i = 0; i < Math.min(grid.length, 12); i++) {
+    const cells = grid[i];
+    for (let j = 0; j < cells.length; j++) {
+      if (typeof cells[j] === 'string' && cells[j].trim() === 'Account') {
+        const labels = cells.slice(j+1).filter(x=>typeof x==='string' && x.trim());
+        if (labels.length && labels.some(x=>MONTHISH.test(x))) return [i, j];
+      }
+    }
+  }
+  throw new Error(sheetName + ": couldn't find the 'Account' header row — is this a raw Xero export?");
+}
+
+function parseSheet(ws){
+  const grid = sheetGrid(ws);
+  const title = String(grid[0] && grid[0][0] || '').trim();
+  const orgName = String(grid[1] && grid[1][0] || '').trim();
+  const periodLine = String(grid[2] && grid[2][0] || '').trim();
+  const [hIdx, accountCol] = findHeader(grid, ws.name);
+  const header = grid[hIdx];
+  const dataCols = [];
+  for (let j = accountCol+1; j < header.length; j++)
+    if (typeof header[j] === 'string' && header[j].trim()) dataCols.push(j);
+  const columns = dataCols.map(j=>String(header[j]).trim());
+
+  const rows = [], openGroups = [];
+  for (let i = hIdx+1; i < grid.length; i++) {
+    const cells = grid[i];
+    let label = null, labelCol = 0;
+    for (let j = 0; j <= accountCol; j++) {
+      const v = cells[j];
+      if (typeof v === 'string' && v.trim()) { label = v.trim(); labelCol = j; break; }
+    }
+    const values = dataCols.map(j => typeof cells[j] === 'number' ? cells[j] : null);
+    const anyValue = values.some(v=>v!==null);
+
+    if (label === null && !anyValue) { rows.push({kind:'blank', label:null, values:null, col:0}); continue; }
+    if (label && label.toLowerCase().startsWith('total ')) {
+      const target = label.slice(6).trim().toLowerCase();
+      if (openGroups.some(g=>g.toLowerCase()===target)) {
+        while (openGroups.length && openGroups[openGroups.length-1].toLowerCase()!==target) openGroups.pop();
+        openGroups.pop();
+        rows.push({kind:'group_total', label, values: anyValue?values:null, col:labelCol});
+        continue;
+      }
+    }
+    if (!anyValue) {
+      rows.push({kind:'group_open', label, values:null, col:labelCol});
+      if (label) openGroups.push(label);
+    } else {
+      rows.push({kind:'account', label, values, col:labelCol});
+    }
+  }
+  return { orgName, title, periodLine, columns, rows };
+}
+
+function parseManagementPack(wb){
+  const reports = {}, skipped = [];
+  wb.eachSheet(ws => {
+    for (const [kind, rx] of Object.entries(SHEET_MATCHERS)) {
+      if (rx.test(ws.name) && !reports[kind]) { reports[kind] = parseSheet(ws); return; }
+    }
+    skipped.push(ws.name);
+  });
+  return { reports, skipped };
+}
+
+/* ── transform: raw rows → house structure (transform.py) ────────────── */
+const SUMMARY_RENAMES = {
+  'Indirect costs':'Overheads', 'Total Indirect costs':'Total Overheads',
+  'Other Income/Expenses':'Other Income / Expenses',
+  'Profit/(Loss) before Taxation':'NET PROFIT BEFORE TAX',
+  'Income Tax Expense':'TAX',
+  'Net Profit After Tax':'NET PROFIT AFTER TAX',
+  'Net Profit After Distributions/Dividends Paid':'NET PROFIT AFTER DIVIDENDS',
+};
+const SUMMARY_DROP_SECTIONS = new Set(['income tax expense']);
+const SUMMARY_BLANK_BEFORE = new Set(['tax']);
+const GRAND_LABELS = new Set(['gross profit','operating profit','ebit',
+  'profit/(loss) before taxation','net profit before tax','net profit after tax',
+  'net profit after distributions/dividends paid','net profit after dividends']);
+const BS_GRAND_TOTALS = new Set(['total assets','total liabilities','total equity']);
+const MONTH_ABBR = {january:'Jan',february:'Feb',march:'Mar',april:'Apr',may:'May',june:'Jun',
+  july:'Jul',august:'Aug',september:'Sept',october:'Oct',november:'Nov',december:'Dec'};
+const MONTH_LABEL_RX = /^([A-Za-z]+)\s+(\d{4})$/;
+const SUMMARY_COL_WIDTHS = {'This month forecast':8.42,'YTD':9.42,'YTD Forecast':9,
+  'YTD LY':9.42,'Rolling 12 months':11,'Last FY':11};
+
+function monthLabel(label){
+  const m = MONTH_LABEL_RX.exec(String(label||'').trim());
+  if (!m) return null;
+  let abbr = MONTH_ABBR[m[1].toLowerCase()];
+  if (!abbr) for (const [full,a] of Object.entries(MONTH_ABBR))
+    if (full.startsWith(m[1].toLowerCase())) { abbr = a; break; }
+  return abbr ? abbr + ' ' + m[2] : null;
+}
+function currentMonthLabel(periodLine){
+  const m = /ended\s+\d{1,2}\s+([A-Za-z]+)\s+(\d{4})/.exec(periodLine||'');
+  return m ? monthLabel(m[1]+' '+m[2]) : null;
+}
+const round2 = v => Math.round(v*100)/100;
+const rounded = vals => vals.map(round2);
+
+class Totals {
+  constructor(n){ this.n=n; this.stack=[]; this.cumulative=new Array(n).fill(0); this.byName={}; }
+  openGroup(name){ this.stack.push([name, new Array(this.n).fill(0)]); }
+  addAccount(values){
+    for (let i=0;i<Math.min(values.length,this.n);i++){ const v=values[i];
+      if (v!==null && v!==undefined){ for (const [,acc] of this.stack) acc[i]+=v; this.cumulative[i]+=v; } }
+  }
+  closeGroup(totalLabel){
+    const target = totalLabel.slice(6).trim().toLowerCase();
+    while (this.stack.length && this.stack[this.stack.length-1][0].toLowerCase()!==target) this.stack.pop();
+    const total = this.stack.length ? this.stack.pop()[1] : new Array(this.n).fill(0);
+    this.byName[totalLabel.trim().toLowerCase()] = total.slice();
+    return total.slice();
+  }
+}
+
+function transformSummary(raw, cfg){
+  const renames = Object.assign({}, SUMMARY_RENAMES, cfg.summary_renames||{});
+  const curMonth = currentMonthLabel(raw.periodLine);
+  const columns = raw.columns.map(label => {
+    const ml = monthLabel(label);
+    return { label: ml||label, width: ml?8:(SUMMARY_COL_WIDTHS[label]||9),
+             highlight: (ml||label)===curMonth || label==='YTD' };
+  });
+  let seenNonMonth = false;
+  for (const c of columns) {
+    if (!monthLabel(c.label||'')) seenNonMonth = true;
+    else if (seenNonMonth) { c.width = 9; c.highlight = false; }
+  }
+  const eng = new Totals(raw.columns.length);
+  const rows = []; let salesTotal = null, lastGrand = null;
+  for (const rr of raw.rows) {
+    if (rr.kind === 'blank') continue;
+    const label = rr.label || '';
+    const renamed = renames[label] !== undefined ? renames[label] : label;
+    if (rr.kind === 'group_open') {
+      eng.openGroup(label);
+      if (!SUMMARY_DROP_SECTIONS.has(label.toLowerCase()))
+        rows.push({kind:'section', label:renamed.toUpperCase(), values:null});
+    } else if (rr.kind === 'group_total') {
+      const total = eng.closeGroup(label);
+      if (salesTotal === null) salesTotal = total;
+      rows.push({kind:'total', label:renamed, values:rounded(total)});
+    } else if (label.includes('%') || label.toLowerCase().includes('margin')) {
+      const num = lastGrand || new Array(eng.n).fill(0);
+      const den = salesTotal || new Array(eng.n).fill(0);
+      rows.push({kind:'percent', label:renamed, values: num.map((n,i)=>den[i]?n/den[i]:0)});
+    } else if (GRAND_LABELS.has(label.toLowerCase()) || GRAND_LABELS.has(renamed.toLowerCase())) {
+      lastGrand = eng.cumulative.slice();
+      rows.push({kind:'grand', label:renamed, values:rounded(lastGrand)});
+    } else {
+      eng.addAccount(rr.values || []);
+      if (SUMMARY_BLANK_BEFORE.has(renamed.toLowerCase())) rows.push({kind:'blank', label:null, values:null});
+      rows.push({kind:'account', label:renamed, values:rr.values});
+    }
+  }
+  return { kind:'summary', sheetName:'Profit and Loss - Summary',
+    title:'Profit & Loss '+EN_DASH+' Summary', periodLine:raw.periodLine, columns, rows };
+}
+
+function transformDetail(raw){
+  const columns = raw.columns.map(l => ({label: monthLabel(l)||l, width:9, highlight:false}));
+  const eng = new Totals(raw.columns.length);
+  const rows = [];
+  for (const rr of raw.rows) {
+    if (rr.kind === 'blank') continue;
+    const label = rr.label || '';
+    if (rr.kind === 'group_open') {
+      eng.openGroup(label);
+      if (rr.col === 0) rows.push({kind:'section', label:label.toUpperCase(), values:null});
+      else if (rr.col === 1) rows.push({kind:'header', label, values:null});
+      else rows.push({kind:'account', label, values:null});
+    } else if (rr.kind === 'group_total') {
+      const total = rounded(eng.closeGroup(label));
+      if (rr.col === 0) rows.push({kind:'section', label:label.toUpperCase(), values:null});
+      else if (rr.col === 1) rows.push({kind:'total', label, values:total});
+      else rows.push({kind:'account', label, values:total});
+    } else if (GRAND_LABELS.has(label.toLowerCase())) {
+      rows.push({kind:'account', label, values:rounded(eng.cumulative)});
+    } else {
+      eng.addAccount(rr.values || []);
+      rows.push({kind:'account', label, values:rr.values});
+    }
+  }
+  return { kind:'detail', sheetName:'Profit and Loss - Detail',
+    title:'Profit & Loss '+EN_DASH+' Detail', periodLine:raw.periodLine, columns, rows };
+}
+
+function transformBalance(raw, cfg){
+  const nComp = cfg.bs_comparative_columns !== undefined ? +cfg.bs_comparative_columns : 2;
+  const columns = raw.columns.map(l => ({label:l, width:13, highlight:false}));
+  if (nComp > 0 && nComp < columns.length)
+    columns.splice(columns.length-nComp, 0, {label:null, width:13, highlight:false});
+  if (columns.length) columns[0].highlight = true;
+  const eng = new Totals(raw.columns.length);
+  const rows = [];
+  for (const rr of raw.rows) {
+    if (rr.kind === 'blank') continue;
+    const label = rr.label || '';
+    if (rr.kind === 'group_open') {
+      eng.openGroup(label);
+      if (rr.col === 0) rows.push({kind:'section', label:label.toUpperCase(), values:null});
+      else if (rr.col === 1) rows.push({kind:'header', label, values:null});
+      else rows.push({kind:'account', label, values:null});
+    } else if (rr.kind === 'group_total') {
+      const total = rounded(eng.closeGroup(label));
+      if (rr.col === 0) {
+        if (BS_GRAND_TOTALS.has(label.toLowerCase())) rows.push({kind:'grand', label, values:total});
+        else rows.push({kind:'section', label:label.toUpperCase(), values:null});
+      } else if (rr.col === 1) rows.push({kind:'total', label, values:total});
+      else rows.push({kind:'account', label, values:total});
+    } else if (label.toLowerCase() === 'net assets') {
+      const a = eng.byName['total assets'] || new Array(eng.n).fill(0);
+      const l = eng.byName['total liabilities'] || new Array(eng.n).fill(0);
+      rows.push({kind:'account', label, values:rounded(a.map((x,i)=>x-l[i]))});
+    } else {
+      eng.addAccount(rr.values || []);
+      rows.push({kind:'account', label, values:rr.values});
+    }
+  }
+  return { kind:'balance', sheetName:'Balance Sheet', title:'Balance Sheet',
+    periodLine:raw.periodLine, columns, rows };
+}
+
+function transformPack(reports, cfg){
+  cfg = cfg || {};
+  const sheets = [];
+  if (reports.summary) sheets.push(transformSummary(reports.summary, cfg));
+  if (reports.detail) sheets.push(transformDetail(reports.detail));
+  if (reports.balance) sheets.push(transformBalance(reports.balance, cfg));
+  const clientName = cfg.client_name ||
+    (Object.values(reports)[0] ? Object.values(reports)[0].orgName : '');
+  return { clientName, sheets };
+}
+
+/* ── deterministic balance checks (checks.py) ─────────────────────────── */
+const TOL = 0.02, MAX_PER_ROW = 4, FY_START_MONTH = 7;
+const MONTH_NUM = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sept:9,Oct:10,Nov:11,Dec:12};
+const dataColumns = sheet => sheet.columns.filter(c=>c.label!=null);
+const fmt$ = v => v.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+function sheetOf(pack, kind){ return pack.sheets.find(s=>s.kind===kind) || null; }
+function rowsByLabel(sheet){
+  const out = {};
+  for (const r of sheet.rows) if (r.label && r.values) out[r.label.toLowerCase()] = r.values;
+  return out;
+}
+function monthRun(sheet){
+  const idxs = [];
+  const cols = dataColumns(sheet);
+  for (let i=0;i<cols.length;i++){ if (cols[i].label && monthLabel(cols[i].label)) idxs.push(i); else break; }
+  return idxs;
+}
+function colIdx(sheet, label){
+  const cols = dataColumns(sheet);
+  for (let i=0;i<cols.length;i++) if (cols[i].label===label) return i;
+  return null;
+}
+function sectionsOf(sheet, memberKinds){
+  const out = []; let current = null;
+  for (const r of sheet.rows) {
+    if (r.kind === 'section') {
+      if (r.label.startsWith('TOTAL')) current = null;
+      else { current = [r.label, []]; out.push(current); }
+    } else if (r.kind === 'grand' || (r.label && GRAND_LABELS.has(r.label.toLowerCase()))) {
+      current = null;
+    } else if (memberKinds.has(r.kind) && r.values && current) {
+      current[1].push([r.label, r.values]);
+    }
+  }
+  return out;
+}
+
+function checkYtdFooting(sheet, name, fails){
+  const months = monthRun(sheet), ytd = colIdx(sheet,'YTD');
+  if (!months.length || ytd === null) return;
+  const cols = dataColumns(sheet);
+  const fyMonths = [];
+  let found = false;
+  for (let k=months.length-1;k>=0;k--){
+    fyMonths.unshift(months[k]);
+    const abbr = String(cols[months[k]].label||'').split(' ')[0];
+    if (MONTH_NUM[abbr] === FY_START_MONTH) { found = true; break; }
+  }
+  if (!found) return;
+  for (const r of sheet.rows) {
+    if (!r.values || r.kind==='percent' || r.kind==='blank') continue;
+    const s = fyMonths.reduce((a,i)=>a+(r.values[i]||0),0);
+    const y = ytd < r.values.length ? (r.values[ytd]||0) : 0;
+    if (Math.abs(s-y) > TOL)
+      fails.push(`${name}: '${r.label}' YTD ${fmt$(y)} != sum of the ${fyMonths.length} FY months ${fmt$(s)} (diff ${fmt$(s-y)})`);
+  }
+}
+
+function checkSummaryVsDetail(summary, detail, fails){
+  const dIdx = {}; dataColumns(detail).forEach((c,i)=>dIdx[c.label]=i);
+  const shared = [];
+  dataColumns(summary).forEach((c,i)=>{ if (c.label in dIdx) shared.push([c.label,i,dIdx[c.label]]); });
+  if (!shared.length) { fails.push('summary/detail: no shared column labels'); return; }
+  const sSecs = sectionsOf(summary, new Set(['account']));
+  const dSecs = sectionsOf(detail, new Set(['total']));
+  for (let k=0;k<Math.min(sSecs.length,dSecs.length);k++){
+    const [sName,sRows] = sSecs[k], [dName,dRows] = dSecs[k];
+    if (sRows.length !== dRows.length) {
+      const diffs = [];
+      for (const [label,si,di] of shared) {
+        const a = sRows.reduce((t,[,v])=>t+(v[si]||0),0);
+        const b = dRows.reduce((t,[,v])=>t+(v[di]||0),0);
+        if (Math.abs(a-b) > TOL) diffs.push(`${label}: ${fmt$(a)} vs ${fmt$(b)}`);
+      }
+      if (diffs.length) fails.push(`section '${sName}'/'${dName}': aggregates disagree — ${diffs.slice(0,MAX_PER_ROW).join('; ')}`);
+      else fails.push(`WARN: section '${sName}': ${sRows.length} summary line(s) vs ${dRows.length} detail categories — presentation differs but section totals agree`);
+      continue;
+    }
+    for (let m=0;m<sRows.length;m++){
+      const [sl,sv]=sRows[m],[dl,dv]=dRows[m], diffs=[];
+      for (const [label,si,di] of shared) {
+        const a=sv[si]||0, b=dv[di]||0;
+        if (Math.abs(a-b) > TOL) diffs.push(`${label}: ${fmt$(a)} vs ${fmt$(b)}`);
+      }
+      if (diffs.length) {
+        const more = diffs.length>MAX_PER_ROW ? ` (+${diffs.length-MAX_PER_ROW} more columns)` : '';
+        fails.push(`${sName}: '${sl}' vs detail '${dl}' — ${diffs.slice(0,MAX_PER_ROW).join('; ')}${more}`);
+      }
+    }
+  }
+  const sGrands = summary.rows.filter(r=>r.kind==='grand').map(r=>[r.label,r.values]);
+  const dGrands = detail.rows.filter(r=>r.kind==='account'&&r.label&&GRAND_LABELS.has(r.label.toLowerCase())&&r.values).map(r=>[r.label,r.values]);
+  for (let k=0;k<Math.min(sGrands.length,dGrands.length);k++){
+    const [sl,sv]=sGrands[k],[dl,dv]=dGrands[k];
+    for (const [label,si,di] of shared) {
+      if (Math.abs((sv[si]||0)-(dv[di]||0)) > TOL) {
+        fails.push(`grand '${sl}' vs '${dl}' at ${label}: ${fmt$(sv[si])} != ${fmt$(dv[di])}`);
+        break;
+      }
+    }
+  }
+}
+
+function checkBalanceSheet(balance, summary, fails){
+  const rows = rowsByLabel(balance);
+  const cols = dataColumns(balance).map(c=>c.label);
+  const assets=rows['total assets'], liabs=rows['total liabilities'],
+        equity=rows['total equity'], net=rows['net assets'];
+  if (!assets||!liabs||!equity||!net) { fails.push('BS: Total Assets / Liabilities / Equity / Net Assets row missing'); return; }
+  cols.forEach((label,i)=>{
+    const a=assets[i]||0,l=liabs[i]||0,e=equity[i]||0,n=net[i]||0;
+    if (Math.abs(a-(l+e))>TOL) fails.push(`BS ${label}: Assets ${fmt$(a)} != Liabilities ${fmt$(l)} + Equity ${fmt$(e)}`);
+    if (Math.abs(n-e)>TOL) fails.push(`BS ${label}: Net Assets ${fmt$(n)} != Total Equity ${fmt$(e)}`);
+  });
+  // HP schedule tie
+  const faceHp=[], hpTotals=[]; let inHp=false;
+  for (const r of balance.rows) {
+    if (r.kind==='section') inHp = (r.label||'').includes('HIRE PURCHASE');
+    if (!r.values) continue;
+    if (!inHp && r.label && r.label.toLowerCase()==='hire purchase liabilities') faceHp.push(r.values);
+    if (inHp && r.kind==='total') hpTotals.push([r.label, r.values]);
+  }
+  if (hpTotals.length) {
+    if (faceHp.length !== hpTotals.length) {
+      fails.push(`BS: ${hpTotals.length} HP schedule totals vs ${faceHp.length} 'Hire purchase liabilities' lines on the face`);
+    } else {
+      for (let k=0;k<faceHp.length;k++){
+        const [tl,tv]=hpTotals[k];
+        for (let i=0;i<Math.min(faceHp[k].length,tv.length);i++){
+          if (Math.abs((faceHp[k][i]||0)-(tv[i]||0))>TOL){
+            fails.push(`BS: HP schedule '${tl}' ${fmt$(tv[i])} != face HP liability ${fmt$(faceHp[k][i])} (col ${i})`); break;
+          }
+        }
+      }
+    }
+  }
+  // Retained Earnings reconciliation
+  const re = rows['retained earnings'];
+  if (re && re.length >= 4 && summary) {
+    const sRows = rowsByLabel(summary);
+    const npat = sRows['net profit after dividends'] || sRows['net profit after tax'];
+    if (npat) {
+      const months = monthRun(summary), ytd = colIdx(summary,'YTD');
+      if (months.length) {
+        const cur = npat[months[months.length-1]]||0, move=(re[0]||0)-(re[1]||0);
+        if (Math.abs(move-cur)>TOL) fails.push(`BS: Retained Earnings movement (month) ${fmt$(move)} != P&L result ${fmt$(cur)}`);
+      }
+      if (ytd !== null) {
+        const yr = npat[ytd]||0, move=(re[0]||0)-(re[re.length-2]||0);
+        if (Math.abs(move-yr)>TOL) fails.push(`BS: Retained Earnings movement (FY) ${fmt$(move)} != P&L YTD result ${fmt$(yr)}`);
+      }
+    }
+  }
+  // accumulated depreciation vs cost (WARN)
+  let prev = null;
+  for (const r of balance.rows) {
+    if (r.kind!=='account' || !r.values || !r.label) continue;
+    if (r.label.toLowerCase().startsWith('accumulated depreciation')) {
+      if (prev) {
+        for (let i=0;i<cols.length;i++){
+          const cost=prev.values[i]||0, ad=r.values[i]||0;
+          if (cost>=0 && Math.abs(ad)>cost+TOL && ad<0){
+            fails.push(`WARN: BS ${cols[i]}: '${r.label}' ${fmt$(ad)} exceeds cost line '${prev.label}' ${fmt$(cost)} — negative book value is impossible`); break;
+          }
+        }
+      }
+    } else prev = r;
+  }
+}
+
+function checkPack(pack){
+  const fails = [];
+  const summary=sheetOf(pack,'summary'), detail=sheetOf(pack,'detail'), balance=sheetOf(pack,'balance');
+  if (summary) checkYtdFooting(summary,'Summary',fails);
+  if (detail) checkYtdFooting(detail,'Detail',fails);
+  if (summary && detail) checkSummaryVsDetail(summary,detail,fails);
+  if (balance) checkBalanceSheet(balance,summary,fails);
+  return fails;
+}
+const hardFailures = fails => fails.filter(f=>!f.startsWith('WARN'));
+
+/* ── writer: pack → house-styled ExcelJS workbook (writer.py) ─────────── */
+function mkFont(size,bold,italic,argb){ return {name:'Arial',size,bold:!!bold,italic:!!italic,color:{argb}}; }
+function mkFill(argb){ return {type:'pattern',pattern:'solid',fgColor:{argb}}; }
+
+function buildWorkbook(pack){
+  const wb = new ExcelJS.Workbook();
+  const logoId = wb.addImage({base64:LOGO_B64, extension:'png'});
+  for (const sheet of pack.sheets) {
+    const ws = wb.addWorksheet(sheet.sheetName);
+    buildSheet(ws, pack.clientName, sheet, logoId);
+  }
+  return wb;
+}
+
+function buildSheet(ws, clientName, sheet, logoId){
+  const geom = GEOMETRY[sheet.kind];
+  const ncols = geom.labelCols + sheet.columns.length;
+
+  geom.labelWidths.forEach((w,i)=>{ ws.getColumn(i+1).width = w; });
+  sheet.columns.forEach((c,j)=>{ ws.getColumn(geom.labelCols+1+j).width = c.width; });
+
+  // header block (rows 1–4)
+  const banner = mkFill(BANNER);
+  const heads = [[1,clientName,mkFont(14,true,false,INK),22],[2,sheet.title,mkFont(12,true,false,INK),18],[3,sheet.periodLine,mkFont(9,false,false,INK),16]];
+  for (const [r,text,font,height] of heads) {
+    for (let c=1;c<=ncols;c++) ws.getCell(r,c).fill = banner;
+    const cell = ws.getCell(r,1);
+    cell.value = text; cell.font = font;
+    cell.alignment = {horizontal:'left',vertical:'middle',indent:1};
+    ws.mergeCells(r,1,r,ncols);
+    ws.getRow(r).height = height;
+  }
+  ws.addImage(logoId, {tl:{col:ncols-1,row:0}, ext:{width:LOGO_W,height:LOGO_H}, editAs:'oneCell'});
+
+  // table header (row 5)
+  const dark = mkFill(DARK), mid = mkFill(TEAL_MID);
+  for (let c=1;c<=ncols;c++){
+    const cell = ws.getCell(HEADER_ROW,c);
+    cell.fill = dark;
+    cell.font = mkFont(geom.headerValueSize,true,false,INK_ON_DARK);
+    if (c < geom.labelCols) cell.alignment = {horizontal:'left',indent: sheet.kind==='balance'?1:0};
+  }
+  const acct = ws.getCell(HEADER_ROW, geom.labelCols);
+  acct.value = 'Account';
+  acct.font = mkFont(geom.headerLabelSize,true,false,INK_ON_DARK);
+  acct.alignment = sheet.kind==='detail' ? {horizontal:'center',wrapText:true} : {horizontal:'left',indent:1};
+  sheet.columns.forEach((col,j)=>{
+    const cell = ws.getCell(HEADER_ROW, geom.labelCols+1+j);
+    if (col.label != null) cell.value = col.label;
+    cell.font = mkFont(geom.headerValueSize,true,false,INK_ON_DARK);
+    cell.alignment = {horizontal:'center',wrapText:true};
+    if (col.highlight) cell.fill = mid;
+  });
+  ws.getRow(HEADER_ROW).height = geom.headerHeight;
+
+  // body rows
+  let r = HEADER_ROW;
+  for (const row of sheet.rows) { r++; writeRow(ws, r, row, sheet, geom, ncols); }
+
+  // footnote
+  r++;
+  for (let c=1;c<=ncols;c++) ws.getCell(r,c).fill = mkFill(DARK);
+  const fn = ws.getCell(r,1);
+  fn.value = FOOTNOTE_TEXT;
+  fn.font = mkFont(geom.footnoteSize,false,true,SUBTOTAL);
+  fn.alignment = {horizontal:'center',vertical:'middle'};
+  ws.mergeCells(r,1,r,ncols);
+  ws.getRow(r).height = 12;
+
+  // print setup
+  ws.views = [{showGridLines:false}];
+  ws.pageSetup = {
+    paperSize: geom.paperSize, orientation: geom.orientation,
+    fitToPage: true, fitToWidth: 1, fitToHeight: geom.fitHeight,
+    printTitlesRow: `${HEADER_ROW}:${HEADER_ROW}`,
+    margins: {left:geom.margins[0], right:geom.margins[1], top:geom.margins[2],
+              bottom:geom.margins[3], header:0.3, footer:0.3},
+  };
+}
+
+function writeRow(ws, r, row, sheet, geom, ncols){
+  const ks = geom.kinds[row.kind];
+  const height = row.height != null ? row.height : ks.height;
+  if (height != null) ws.getRow(r).height = height;
+  if (row.kind === 'blank') return;
+
+  const textColor = ks.dark ? INK_ON_DARK : INK;
+  const valueColor = ks.dark ? INK_ON_DARK : geom.valueColor;
+  if (ks.fill) { const f = mkFill(ks.fill); for (let c=1;c<=ncols;c++) ws.getCell(r,c).fill = f; }
+
+  const labelCol = geom.kindCol[row.kind] !== undefined ? geom.kindCol[row.kind] : geom.labelCols;
+  const cell = ws.getCell(r, labelCol);
+  cell.value = row.label;
+  cell.font = mkFont(ks.labelSize, ks.labelBold, ks.labelItalic, textColor);
+  cell.alignment = {horizontal:'left', indent: ks.labelIndent !== undefined ? ks.labelIndent : 1};
+
+  if (ks.mergeFull) { ws.mergeCells(r,1,r,ncols); return; }
+  if (row.kind === 'grand' && geom.grandMergeLabels && geom.labelCols > 1)
+    ws.mergeCells(r,1,r,geom.labelCols);
+
+  const values = row.values;
+  const hasValues = values != null;
+  const vfont = mkFont(ks.valueSize||ks.labelSize, ks.valueBold, ks.valueItalic,
+                       (hasValues||ks.dark) ? valueColor : INK);
+  const styleData = hasValues || row.kind === 'account';
+  let vi = 0;
+  for (let j=0;j<sheet.columns.length;j++){
+    const col = sheet.columns[j];
+    const c = ws.getCell(r, geom.labelCols+1+j);
+    if (styleData) { c.font = vfont; c.alignment = {horizontal:'right'}; }
+    if (col.label == null) continue;      // spacer column
+    if (hasValues) {
+      const v = vi < values.length ? values[vi] : null;
+      c.value = (v == null) ? 0 : v;      // blank-vs-zero rule (§7)
+      c.numFmt = ks.numberFormat || NUM_FMT;
+    }
+    vi++;
+    if (col.highlight) c.fill = mkFill(ks.dark ? TEAL_MID : TEAL_LIGHT);
+  }
+}
+
+/* ── AI review digest (reviewer.py) ───────────────────────────────────── */
+function fmtDigest(v, percent){
+  if (v == null) return '-';
+  if (percent) return (v*100).toFixed(1)+'%';
+  return Math.round(v).toLocaleString('en-AU');
+}
+function buildDigest(pack, checkFailures){
+  const lines = ['Client: '+pack.clientName, '', '=== Deterministic balance-check results (authoritative) ==='];
+  if (checkFailures.length)
+    for (const f of checkFailures) lines.push(f.startsWith('WARN') ? f : 'FAIL: '+f);
+  else
+    lines.push('All checks passed: YTD footing, Summary==Detail (all columns), Assets==Liabilities+Equity, Net Assets==Total Equity, HP schedule tie, Retained Earnings reconciliation.');
+  for (const sheet of pack.sheets) {
+    lines.push('', `=== ${sheet.sheetName} (${sheet.periodLine}) ===`);
+    lines.push('columns: ' + dataColumns(sheet).map(c=>c.label).join(' | '));
+    for (const row of sheet.rows) {
+      if (row.kind === 'blank') continue;
+      const tag = {section:'#',header:'##',total:'TOTAL',grand:'GRAND',percent:'%'}[row.kind] || '';
+      const label = tag ? `[${tag}] ${row.label}` : String(row.label);
+      if (!row.values) lines.push(label);
+      else lines.push(label+': '+row.values.map(v=>fmtDigest(v,row.kind==='percent')).join(' | '));
+    }
+  }
+  return lines.join('\n');
+}
+
+/* expose core for the Node regression harness */
+if (typeof module !== 'undefined' && module.exports)
+  module.exports = { parseManagementPack, transformPack, checkPack, hardFailures, buildWorkbook, buildDigest };
+
+/* ── UI wiring (browser only) ─────────────────────────────────────────── */
+if (typeof document !== 'undefined') (function(){
+  const WORKER_URL = 'https://lf-pdf-parser.liam-5b0.workers.dev/review';
+  const $ = id => document.getElementById(id);
+  let pack = null, fails = null, rawFileName = '';
+
+  function getStoredToken(){
+    const t = localStorage.getItem('lfa_ms_token'), exp = parseInt(localStorage.getItem('lfa_ms_token_exp')||'0');
+    return (t && Date.now() < exp) ? t : null;
+  }
+
+  const drop = $('drop'), fi = $('fileInput');
+  drop.addEventListener('click', ()=>fi.click());
+  drop.addEventListener('dragover', e=>{e.preventDefault();drop.classList.add('over');});
+  drop.addEventListener('dragleave', ()=>drop.classList.remove('over'));
+  drop.addEventListener('drop', e=>{e.preventDefault();drop.classList.remove('over');
+    if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);});
+  fi.addEventListener('change', ()=>{ if (fi.files.length) loadFile(fi.files[0]); });
+
+  async function loadFile(file){
+    rawFileName = file.name;
+    $('fileInfo').textContent = 'Reading ' + file.name + ' ...';
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buf);
+      const { reports, skipped } = parseManagementPack(wb);
+      if (!reports.summary && !reports.detail && !reports.balance)
+        throw new Error('No recognised report sheets found — export the Management Report pack from Xero as Excel.');
+      window._reports = reports;
+      $('fileInfo').innerHTML = 'Parsed: <b>' + Object.keys(reports).join(', ') + '</b>' +
+        (skipped.length ? ' &nbsp;·&nbsp; excluded: ' + skipped.join(', ') : '');
+      const org = (reports.summary||reports.detail||reports.balance).orgName;
+      if (!$('clientName').value) $('clientName').value = org;
+      $('ctrls').style.display = 'flex';
+      runChecks();
+    } catch(err) {
+      $('fileInfo').innerHTML = '<span style="color:var(--danger)">' + err.message + '</span>';
+    }
+  }
+
+  function runChecks(){
+    pack = transformPack(window._reports, {
+      client_name: $('clientName').value.trim() || undefined,
+      bs_comparative_columns: +$('bsComp').value,
+    });
+    fails = checkPack(pack);
+    const hard = hardFailures(fails);
+    $('checksCard').style.display = 'block';
+    $('checksAlert').innerHTML = hard.length
+      ? '<div class="alert a-err"><b>DOES NOT BALANCE</b> — ' + hard.length + ' failure(s). The workbook can still be downloaded, but fix the Xero layout before release.</div>'
+      : (fails.length
+        ? '<div class="alert a-warn"><b>Balances</b> — with ' + fails.length + ' advisory warning(s).</div>'
+        : '<div class="alert a-ok"><b>Balances</b> — all deterministic checks passed.</div>');
+    $('checksList').innerHTML = fails.map(f =>
+      '<li class="' + (f.startsWith('WARN')?'w':'f') + '">' + escapeHtml(f) + '</li>').join('');
+  }
+
+  $('clientName').addEventListener('change', ()=>{ if (window._reports) runChecks(); });
+  $('bsComp').addEventListener('change', ()=>{ if (window._reports) runChecks(); });
+
+  $('btnConvert').addEventListener('click', async ()=>{
+    if (!window._reports) return;
+    runChecks();
+    const btn = $('btnConvert'); btn.disabled = true;
+    try {
+      const wb = buildWorkbook(pack);
+      const buf = await wb.xlsx.writeBuffer();
+      const period = (currentMonthLabel(pack.sheets[0].periodLine)||'').replace(' ','-');
+      dl(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),
+         (pack.clientName||'Client') + ' - Management Report ' + period + ' - LF Advisory.xlsx');
+    } finally { btn.disabled = false; }
+  });
+
+  $('btnReview').addEventListener('click', async ()=>{
+    if (!window._reports) return;
+    runChecks();
+    const token = getStoredToken();
+    const body = $('reviewBody');
+    $('reviewCard').style.display = 'block';
+    if (!token) { body.innerHTML = '<div class="alert a-warn">Sign in at the <a href="portal.html">portal</a> first — the review runs through the LF worker and needs your staff sign-in.</div>'; return; }
+    const btn = $('btnReview'); btn.disabled = true;
+    body.innerHTML = '<div class="alert a-info"><span class="spin" style="border-color:var(--primary);border-top-color:transparent"></span>&nbsp; Reviewing with Claude — typically 30–90 seconds ...</div>';
+    try {
+      const resp = await fetch(WORKER_URL, {
+        method:'POST',
+        headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+        body: JSON.stringify({digest: buildDigest(pack, fails)}),
+      });
+      const data = await resp.json().catch(()=>({error:'Bad response from worker'}));
+      if (!resp.ok) throw new Error(data.error || ('Worker error '+resp.status));
+      body.innerHTML = mdLite(data.review);
+      window._reviewMd = data.review;
+      $('btnReviewDl').style.display = 'inline-flex';
+    } catch(err) {
+      body.innerHTML = '<div class="alert a-err">' + escapeHtml(err.message) + '</div>';
+    } finally { btn.disabled = false; }
+  });
+
+  $('btnReviewDl').addEventListener('click', ()=>{
+    if (window._reviewMd) dl(new Blob([window._reviewMd],{type:'text/markdown'}),
+      (pack.clientName||'Client') + ' - balance review.md');
+  });
+
+  function dl(blob, name){
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();}, 500);
+  }
+  function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function mdLite(md){
+    return escapeHtml(md)
+      .replace(/^## (.*)$/gm,'<h3>$1</h3>')
+      .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+      .replace(/^- /gm,'&bull; ');
+  }
+})();
+</script>
+</body>
+</html>
