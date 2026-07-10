@@ -486,6 +486,8 @@ function percentValues(rr){
   return rr.values.map(v=>(v||0)/scale);
 }
 
+const BREAK_WIDTH = 1.5;  // slim breaker column between summary column blocks
+
 function buildColumns(raw, kind){
   const cur = currentPeriodEnd(raw.periodLine);
   const cols = [];
@@ -503,7 +505,23 @@ function buildColumns(raw, kind){
                  highlight: label.toUpperCase() === 'YTD'});
     }
   }
+  if (kind === 'summary') insertBreakers(cols);
   return cols;
+}
+
+// slim spacer columns between the summary's column blocks: [historical] |
+// [current period + comparatives] | [YTD block] | [Rolling 12 / Last FY]
+function insertBreakers(cols){
+  const firstIdx = pred => { const i = cols.findIndex(c=>c.label && pred(c)); return i < 0 ? null : i; };
+  const breaks = [];
+  const curI = firstIdx(c => c.highlight && periodInfo(c.label));
+  if (curI) breaks.push(curI);
+  const ytdI = firstIdx(c => c.label.toUpperCase() === 'YTD');
+  if (ytdI) breaks.push(ytdI);
+  const tailI = firstIdx(c => c.label.toLowerCase().startsWith('rolling')
+      || ['last fy','full year last year'].includes(c.label.toLowerCase()));
+  if (tailI && ytdI && tailI > ytdI) breaks.push(tailI);
+  [...new Set(breaks)].sort((a,b)=>b-a).forEach(i => cols.splice(i, 0, {label:null, width:BREAK_WIDTH, highlight:false}));
 }
 
 function transformSummary(raw, cfg){
