@@ -641,6 +641,13 @@ function checkPack(pack){
 const hardFailures = fails => fails.filter(f=>!f.startsWith('WARN'));
 
 /* ── writer: pack → house-styled ExcelJS workbook (writer.py) ─────────── */
+// break every period header consistently over two lines (split at the last
+// space): 'Jul 2025' becomes Jul + newline + 2025. One-word labels (YTD)
+// stay on one line.
+function twoLine(label){
+  const i = label.lastIndexOf(' ');
+  return i < 0 ? label : label.slice(0,i) + '\n' + label.slice(i+1);
+}
 function mkFont(size,bold,italic,argb){ return {name:'Arial',size,bold:!!bold,italic:!!italic,color:{argb}}; }
 function mkFill(argb){ return {type:'pattern',pattern:'solid',fgColor:{argb}}; }
 
@@ -688,9 +695,9 @@ function buildSheet(ws, clientName, sheet, logoId){
   acct.alignment = sheet.kind==='detail' ? {horizontal:'center',wrapText:true} : {horizontal:'left',indent:1};
   sheet.columns.forEach((col,j)=>{
     const cell = ws.getCell(HEADER_ROW, geom.labelCols+1+j);
-    if (col.label != null) cell.value = col.label;
+    if (col.label != null) cell.value = twoLine(col.label);
     cell.font = mkFont(geom.headerValueSize,true,false,INK_ON_DARK);
-    cell.alignment = {horizontal:'center',wrapText:true};
+    cell.alignment = {horizontal:'center',vertical:'middle',wrapText:true};
     if (col.highlight) cell.fill = mid;
   });
   ws.getRow(HEADER_ROW).height = geom.headerHeight;
