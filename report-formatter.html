@@ -144,6 +144,7 @@ const GEOMETRY = {
     headerHeight:27.75, headerLabelSize:8, headerValueSize:7.5,
     paperSize:8, orientation:'landscape', fitHeight:1,
     margins:[0.35,0.35,0.5,0.45], footnoteSize:7.5, valueColor:INK,
+    spacerUnfilled:true,
     kinds:{
       section:{labelSize:8.5,labelBold:true,fill:SECTION,dark:true,mergeFull:true,height:15},
       header:{labelSize:8,labelBold:true,fill:DARK,dark:true,height:15},
@@ -934,10 +935,13 @@ function buildSheet(ws, clientName, sheet, logoId){
   ws.addImage(logoId, {tl:{col:ncols-1,row:0}, ext:{width:LOGO_W,height:LOGO_H}, editAs:'oneCell'});
 
   // table header (row 5)
+  const unfilled = new Set();
+  if (geom.spacerUnfilled)
+    sheet.columns.forEach((col,j)=>{ if (col.label == null) unfilled.add(geom.labelCols+1+j); });
   const dark = mkFill(DARK), mid = mkFill(TEAL_MID);
   for (let c=1;c<=ncols;c++){
     const cell = ws.getCell(HEADER_ROW,c);
-    cell.fill = dark;
+    if (!unfilled.has(c)) cell.fill = dark;
     cell.font = mkFont(geom.headerValueSize,true,false,INK_ON_DARK);
     if (c < geom.labelCols) cell.alignment = {horizontal:'left',indent: sheet.kind==='balance'?1:0};
   }
@@ -956,7 +960,7 @@ function buildSheet(ws, clientName, sheet, logoId){
 
   // body rows
   let r = HEADER_ROW;
-  for (const row of sheet.rows) { r++; writeRow(ws, r, row, sheet, geom, ncols); }
+  for (const row of sheet.rows) { r++; writeRow(ws, r, row, sheet, geom, ncols, unfilled); }
 
   // footnote
   r++;
@@ -979,7 +983,7 @@ function buildSheet(ws, clientName, sheet, logoId){
   };
 }
 
-function writeRow(ws, r, row, sheet, geom, ncols){
+function writeRow(ws, r, row, sheet, geom, ncols, unfilled){
   const ks = geom.kinds[row.kind];
   const height = row.height != null ? row.height : ks.height;
   if (height != null) ws.getRow(r).height = height;
@@ -987,7 +991,7 @@ function writeRow(ws, r, row, sheet, geom, ncols){
 
   const textColor = ks.dark ? INK_ON_DARK : INK;
   const valueColor = ks.dark ? INK_ON_DARK : geom.valueColor;
-  if (ks.fill) { const f = mkFill(ks.fill); for (let c=1;c<=ncols;c++) ws.getCell(r,c).fill = f; }
+  if (ks.fill) { const f = mkFill(ks.fill); for (let c=1;c<=ncols;c++) if (!unfilled.has(c)) ws.getCell(r,c).fill = f; }
 
   const labelCol = geom.kindCol[row.kind] !== undefined ? geom.kindCol[row.kind] : geom.labelCols;
   const cell = ws.getCell(r, labelCol);
@@ -995,7 +999,7 @@ function writeRow(ws, r, row, sheet, geom, ncols){
   cell.font = mkFont(ks.labelSize, ks.labelBold, ks.labelItalic, textColor);
   cell.alignment = {horizontal:'left', indent: ks.labelIndent !== undefined ? ks.labelIndent : 1};
 
-  if (ks.mergeFull) { ws.mergeCells(r,1,r,ncols); return; }
+  if (ks.mergeFull) { if (!unfilled.size) ws.mergeCells(r,1,r,ncols); return; }
   if (row.kind === 'grand' && geom.grandMergeLabels && geom.labelCols > 1)
     ws.mergeCells(r,1,r,geom.labelCols);
 
