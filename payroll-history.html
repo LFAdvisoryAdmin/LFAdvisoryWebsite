@@ -813,6 +813,12 @@ function extractEmployeeLeaveBalances() {
             return employees;
         }
 
+// AASB 101 classification: current when vested OR vesting within 12 months
+// (no unconditional right to defer settlement). Mirrors payroll-reconciliation.html.
+function isCurrentLSLClassification(yearsOfService, vestingYears) {
+    return yearsOfService >= vestingYears || (vestingYears - yearsOfService) <= 1;
+}
+
 function addLSLCalculationAppendix(doc, lslData) {
             // Appendix A: Methodology
             doc.addPage();
@@ -1093,6 +1099,9 @@ function addLSLCalculationAppendix(doc, lslData) {
                     const empState = emp.state || 'QLD';
                     const vestingYears = emp.vestingYears || (empState === 'VIC' || empState === 'ACT' ? 7 : 10);
                     const isVested = emp.yearsOfService >= vestingYears;
+                    const isClassifiedCurrent = emp.isCurrent !== undefined
+                        ? emp.isCurrent
+                        : isCurrentLSLClassification(emp.yearsOfService, vestingYears);
                     const empLabel = emp.hasOverride ? `${emp.name} \u{1F527}` : emp.name;
                     
                     // Employee header bar
@@ -1102,7 +1111,9 @@ function addLSLCalculationAppendix(doc, lslData) {
                     doc.setFont(undefined, 'bold');
                     doc.setFontSize(8);
                     doc.text(`${idx + 1}. ${empLabel}`, 22, yPos + 2);
-                    const statusLabel = isVested ? 'CURRENT LIABILITY' : 'NON-CURRENT LIABILITY';
+                    const statusLabel = isClassifiedCurrent
+                        ? (isVested ? 'CURRENT LIABILITY (VESTED)' : 'CURRENT LIABILITY (VESTS ≤ 12 MTHS)')
+                        : 'NON-CURRENT LIABILITY';
                     const statusX = 195 - doc.getTextWidth(statusLabel);
                     doc.text(statusLabel, statusX, yPos + 2);
                     doc.setTextColor(0, 0, 0);
@@ -1112,7 +1123,7 @@ function addLSLCalculationAppendix(doc, lslData) {
                     doc.setFontSize(7.5);
                     
                     // Info line
-                    let infoLine = `State: ${empState}  |  Vesting: ${vestingYears} yrs  |  Years of Service: ${emp.yearsOfService.toFixed(2)}`;
+                    let infoLine = `State: ${empState}${emp.stateDefaulted ? ' (defaulted)' : ''}  |  Vesting: ${vestingYears} yrs  |  Years of Service: ${emp.yearsOfService.toFixed(2)}`;
                     if (emp.hasOverride) {
                         const overrideDate = emp.serviceStartDate ? new Date(emp.serviceStartDate).toLocaleDateString('en-AU') : 'N/A';
                         infoLine += `  |  Service Date Override: ${overrideDate}`;
@@ -1201,10 +1212,11 @@ function addLSLCalculationAppendix(doc, lslData) {
                         doc.setFont(undefined, 'normal');
                         yPos += 5;
                         
-                        // Final
+                        // Final — discounted measurement, but classification can still be
+                        // current when the employee vests within 12 months (AASB 101)
                         doc.setFont(undefined, 'bold');
                         doc.setFontSize(8.5);
-                        doc.text(`AASB 119 Provision (Non-Current Liability — Account 24800):`, 22, yPos);
+                        doc.text(`AASB 119 Provision (${isClassifiedCurrent ? 'Current Liability — vests ≤ 12 mths' : 'Non-Current Liability — Account 24800'}):`, 22, yPos);
                         doc.setTextColor(44, 74, 94);
                         doc.text(fmt(emp.provision), 155, yPos);
                         doc.setTextColor(0, 0, 0);
@@ -1239,7 +1251,10 @@ function addLSLCalculationAppendix(doc, lslData) {
                 // Current / Non-Current split
                 doc.setFont(undefined, 'normal');
                 doc.setFontSize(8);
-                const totalCurrent = lslData.employeeProvisions.filter(e => e.yearsOfService >= (e.vestingYears || (e.state === 'VIC' || e.state === 'ACT' ? 7 : 10))).reduce((sum, e) => sum + e.provision, 0);
+                const totalCurrent = lslData.employeeProvisions.filter(e => e.isCurrent !== undefined
+                        ? e.isCurrent
+                        : isCurrentLSLClassification(e.yearsOfService, e.vestingYears || (e.state === 'VIC' || e.state === 'ACT' ? 7 : 10)))
+                    .reduce((sum, e) => sum + e.provision, 0);
                 const totalNonCurrent = grandTotal - totalCurrent;
                 doc.text(`  Current Liability (Acc. 21382): $${totalCurrent.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 22, yPos);
                 yPos += 5;
@@ -1264,8 +1279,8 @@ function addLSLCalculationAppendix(doc, lslData) {
                     { label: 'Add: Current Month Movement (Expense)', value: lslData.movement || 0 },
                     { label: 'Closing Balance (This Month Provision)', value: lslData.currentProvision || 0 },
                     { label: '', value: null },
-                    { label: 'Current Liability (Acc. 21382 — vested employees)', value: lslData.currentLiability || 0 },
-                    { label: 'Non-Current Liability (Acc. 24800 — unvested employees)', value: lslData.nonCurrentLiability || 0 },
+                    { label: 'Current Liability (Acc. 21382 — vested / vesting ≤ 12 mths)', value: lslData.currentLiability || 0 },
+                    { label: 'Non-Current Liability (Acc. 24800 — vesting > 12 mths)', value: lslData.nonCurrentLiability || 0 },
                     { label: 'Total AASB 119 Provision', value: lslData.currentProvision || 0 },
                 ];
                 
@@ -1462,47 +1477,69 @@ function addBalanceSheetBreakdowns(doc) {
                 
                 doc.setFontSize(10);
                 doc.setFont(undefined, 'normal');
-                doc.text(`Current Liability (10+ years): $${lslData.currentLiability.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 20, yPos);
+                doc.text(`Current Liability (vested / vesting ≤ 12 mths): $${lslData.currentLiability.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 20, yPos);
                 yPos += 6;
-                doc.text(`Non-Current Liability (<10 years): $${lslData.nonCurrentLiability.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 20, yPos);
+                doc.text(`Non-Current Liability (vesting > 12 mths): $${lslData.nonCurrentLiability.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 20, yPos);
                 yPos += 6;
                 doc.setFont(undefined, 'bold');
                 doc.text(`Total AASB 119 Provision: $${lslData.currentProvision.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 20, yPos);
                 doc.setFont(undefined, 'normal');
                 yPos += 10;
-                
+
                 doc.text('Employee Detail:', 20, yPos);
                 yPos += 8;
-                
+
                 doc.setFont(undefined, 'bold');
                 doc.setFontSize(8);
                 doc.text('Employee', 20, yPos);
-                doc.text('Dept', 70, yPos);
-                doc.text('Years', 100, yPos);
+                doc.text('Dept', 65, yPos);
+                doc.text('State', 90, yPos);
+                doc.text('Years', 105, yPos);
                 doc.text('Raw', 120, yPos);
                 doc.text('AASB 119', 150, yPos);
                 doc.text('Type', 180, yPos);
                 yPos += 2;
                 doc.line(20, yPos, 195, yPos);
                 yPos += 4;
-                
+
                 doc.setFont(undefined, 'normal');
-                
+
                 if (lslData.employeeProvisions) {
                     lslData.employeeProvisions.forEach(emp => {
                         checkPage();
-                        doc.text(emp.name.substring(0, 22), 20, yPos);
-                        doc.text(emp.department.substring(0, 12), 70, yPos);
-                        doc.text(emp.yearsOfService.toFixed(1), 100, yPos);
+                        doc.text(emp.name.substring(0, 20), 20, yPos);
+                        doc.text(emp.department.substring(0, 10), 65, yPos);
+                        doc.text(`${emp.state || '?'}${emp.stateDefaulted ? '*' : ''}`, 90, yPos);
+                        doc.text(emp.yearsOfService.toFixed(1), 105, yPos);
                         doc.text(`$${emp.rawLiability.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 120, yPos);
                         doc.text(`$${emp.provision.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 150, yPos);
                         doc.text(emp.isCurrent ? 'Current' : 'Non-Curr', 180, yPos);
                         yPos += 5;
                     });
+                    if (lslData.employeeProvisions.some(e => e.stateDefaulted)) {
+                        yPos += 3;
+                        doc.setFontSize(7);
+                        doc.text('* State not found in contacts file — QLD (10-yr vesting) assumed. Verify and set a state override in LSL Settings if incorrect.', 20, yPos);
+                        doc.setFontSize(8);
+                        yPos += 5;
+                    }
                 }
-                
+
                 // ========== LSL APPENDIX - CALCULATION METHODOLOGY ==========
                 addLSLCalculationAppendix(doc, lslData);
+            } else {
+                // Never silently omit the section — make missing data visible
+                doc.addPage();
+                yPos = 20;
+                doc.setFontSize(14);
+                doc.setFont(undefined, 'bold');
+                doc.text('LONG SERVICE LEAVE PROVISION', 20, yPos);
+                yPos += 10;
+                doc.setFontSize(10);
+                doc.setFont(undefined, 'normal');
+                doc.text('LSL data is not available for this reconciliation snapshot.', 20, yPos);
+                yPos += 6;
+                doc.text('Re-run the reconciliation with the leave and remuneration files to include the AASB 119 LSL provision.', 20, yPos);
             }
             
             // ========== PAYROLL TAX ==========
@@ -1655,7 +1692,8 @@ function setupExportContext(snapshot) {
     lslData = snapshot.lslData || null;
     leaveThisData = null;
     leaveLastData = null;
-    window.lastLSLData = snapshot.lastLSLData || null;
+    // Older snapshots stored the LSL result only under `lslData`
+    window.lastLSLData = snapshot.lastLSLData || snapshot.lslData || null;
     // Ensure employeeProvisions always exists to avoid crashes on old snapshots
     if (window.lastLSLData && !window.lastLSLData.employeeProvisions) {
         window.lastLSLData.employeeProvisions = [];
@@ -2090,7 +2128,7 @@ function generateExcelAuditReport() {
                     const dFact     = isVested ? 1 : (1 / Math.pow(1 + dRate, yToVest));
                     lslRows.push([
                         emp.name + (emp.hasOverride ? ' 🔧' : ''),
-                        emp.state || 'QLD',
+                        (emp.state || 'QLD') + (emp.stateDefaulted ? ' (defaulted)' : ''),
                         nc(vestingYrs, INT_FMT),
                         nc(parseFloat(emp.yearsOfService.toFixed(4))),
                         nc(emp.rawLiability),
@@ -2107,8 +2145,8 @@ function generateExcelAuditReport() {
             lslRows.push(['', '', '', '', '', '', '', '', '', '', '']);
             lslRows.push(['TOTALS', '', '', '', fc(`SUM(E${lslStart}:E${lslEnd})`), fc(`SUM(F${lslStart}:F${lslEnd})`), '', '', '', '', fc(`SUM(K${lslStart}:K${lslEnd})`)]);
             lslRows.push(['', '', '', '', '', '', '', '', '', '', '']);
-            lslRows.push(['Current Liability (21382 — vested)',       '', '', '', '', '', '', '', '', '', nc(lslData?.currentLiability||0)]);
-            lslRows.push(['Non-Current Liability (24800 — unvested)', '', '', '', '', '', '', '', '', '', nc(lslData?.nonCurrentLiability||0)]);
+            lslRows.push(['Current Liability (21382 — vested / vesting ≤ 12 mths)', '', '', '', '', '', '', '', '', '', nc(lslData?.currentLiability||0)]);
+            lslRows.push(['Non-Current Liability (24800 — vesting > 12 mths)',      '', '', '', '', '', '', '', '', '', nc(lslData?.nonCurrentLiability||0)]);
             lslRows.push(['Total AASB 119 Provision',                 '', '', '', '', '', '', '', '', '', nc(lslData?.currentProvision||0)]);
             lslRows.push(['Monthly Movement',                         '', '', '', '', '', '', '', '', '', nc(lslData?.movement||0)]);
             addSheet('LSL Provision', lslRows, [28, 8, 12, 14, 16, 16, 12, 13, 14, 14, 18]);
