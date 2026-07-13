@@ -483,8 +483,11 @@ function isPercent(label){
   return low.includes('%') || low.includes('margin');
 }
 function percentValues(rr){
-  const scale = rr.formula && rr.formula.includes('100') ? 100 : 1;
-  return rr.values.map(v=>(v||0)/scale);
+  // fractions stored; detect 0-100-scale rows from the formula or from
+  // magnitude (a genuine fraction row rarely exceeds 1.5 = 150%)
+  const vals = rr.values.map(v=>v||0);
+  const scaled = (rr.formula && rr.formula.includes('100')) || vals.some(v=>Math.abs(v)>1.5);
+  return scaled ? vals.map(v=>v/100) : vals;
 }
 
 const BREAK_WIDTH = 1.5;  // slim breaker column between summary column blocks
@@ -707,6 +710,17 @@ function checkYtdFooting(sheet, name, fails){
   }
 }
 
+function checkPercentRows(sheet, name, fails){
+  // fractions stored; beyond ±150% almost always means a mis-scaled formula
+  // or wrong denominator in the Xero layout
+  for (const r of sheet.rows) {
+    if (r.kind !== 'percent' || !r.values) continue;
+    const worst = Math.max(0, ...r.values.map(v=>Math.abs(v||0)));
+    if (worst > 1.5)
+      fails.push(`WARN: ${name}: percent row '${r.label}' reaches ${(worst*100).toFixed(0)}% — looks mis-scaled or has the wrong denominator; check the layout formula`);
+  }
+}
+
 function checkXeroTotalFormulas(sheet, name, fails){
   const cols = dataColumns(sheet).map(c=>c.label);
   for (const r of sheet.rows) {
@@ -858,7 +872,7 @@ function checkBalanceSheet(balance, summary, fails){
 function checkPack(pack){
   const fails = [];
   const summary=sheetOf(pack,'summary'), detail=sheetOf(pack,'detail'), balance=sheetOf(pack,'balance');
-  if (summary) { checkYtdFooting(summary,'Summary',fails); checkXeroTotalFormulas(summary,'Summary',fails); }
+  if (summary) { checkYtdFooting(summary,'Summary',fails); checkXeroTotalFormulas(summary,'Summary',fails); checkPercentRows(summary,'Summary',fails); }
   if (detail) { checkYtdFooting(detail,'Detail',fails); checkXeroTotalFormulas(detail,'Detail',fails); }
   if (summary && detail) checkSummaryVsDetail(summary,detail,fails);
   if (balance) { checkBalanceSheet(balance,summary,fails); checkXeroTotalFormulas(balance,'BS',fails); }
