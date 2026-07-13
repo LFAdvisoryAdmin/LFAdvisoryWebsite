@@ -358,21 +358,21 @@ function parseSheet(ws){
       else values.push(null);
     });
 
-    if (label === null && !anyValue) { rows.push({kind:'blank', label:null, values:null, col:0, computed:false, formula:null}); continue; }
+    if (label === null && !anyValue) { rows.push({kind:'blank', label:null, values:null, col:0, computed:false, formula:null, gridRow:i}); continue; }
     if (label && label.toLowerCase().startsWith('total ')) {
       const target = label.slice(6).trim().toLowerCase();
       if (openGroups.some(g=>g.toLowerCase()===target)) {
         while (openGroups.length && openGroups[openGroups.length-1].toLowerCase()!==target) openGroups.pop();
         openGroups.pop();
-        rows.push({kind:'group_total', label, values: anyValue?values:null, col:labelCol, computed, formula});
+        rows.push({kind:'group_total', label, values: anyValue?values:null, col:labelCol, computed, formula, gridRow:i});
         continue;
       }
     }
     if (!anyValue) {
-      rows.push({kind:'group_open', label, values:null, col:labelCol, computed:false, formula:null});
+      rows.push({kind:'group_open', label, values:null, col:labelCol, computed:false, formula:null, gridRow:i});
       if (label) openGroups.push(label);
     } else {
-      rows.push({kind:'account', label, values, col:labelCol, computed, formula});
+      rows.push({kind:'account', label, values, col:labelCol, computed, formula, gridRow:i});
     }
   }
   return { orgName, title, periodLine, columns, rows };
@@ -482,12 +482,33 @@ function isPercent(label){
   const low = String(label||'').toLowerCase();
   return low.includes('%') || low.includes('margin');
 }
-function percentValues(rr){
-  // fractions stored; detect 0-100-scale rows from the formula or from
-  // magnitude (a genuine fraction row rarely exceeds 1.5 = 150%)
+const REF_ROW_RX = /\$?[A-Za-z]{1,3}\$?(\d+)/g;
+
+// Percent-row values as fractions, correct in EVERY column. Xero's derived
+// columns (Rolling 12 months, sometimes YTD) can sum the monthly percentage
+// cells — nonsense. The row's monthly formula names its numerator and
+// denominator rows ((B25/B14)*100), so recompute each column as that ratio.
+// Falls back to the evaluated cells normalised to fractions.
+function percentValues(rr, raw){
   const vals = rr.values.map(v=>v||0);
   const scaled = (rr.formula && rr.formula.includes('100')) || vals.some(v=>Math.abs(v)>1.5);
-  return scaled ? vals.map(v=>v/100) : vals;
+  const base = scaled ? vals.map(v=>v/100) : vals;
+
+  const f = rr.formula || '';
+  if (f.toUpperCase().includes('SUM') || f.includes(':')) return base;
+  const refRows = [], seen = new Set();
+  for (const m of f.matchAll(REF_ROW_RX)) {
+    if (!seen.has(m[1])) { seen.add(m[1]); refRows.push(+m[1]); }
+  }
+  if (refRows.length !== 2) return base;
+  const byGrid = {};
+  for (const r of raw.rows) if (r.values) byGrid[r.gridRow] = r;
+  const num = byGrid[refRows[0]-1], den = byGrid[refRows[1]-1];
+  if (!num || !den) return base;
+  const ratio = vals.map((_,i) => den.values[i] ? (num.values[i]||0)/den.values[i] : 0);
+  // sanity: the first (monthly) column must agree with Xero's own cell
+  if (base.length && Math.abs(ratio[0]-base[0]) > Math.max(1e-6, Math.abs(base[0])*1e-3)) return base;
+  return ratio;
 }
 
 const BREAK_WIDTH = 1.5;  // slim breaker column between summary column blocks
@@ -551,7 +572,7 @@ function transformSummary(raw, cfg){
       rows.push({kind:'total', label:renamed, values:rounded(total),
                  xeroValues: rr.computed ? rounded(rr.values) : null});
     } else if (rr.computed && isPercent(label)) {
-      rows.push({kind:'percent', label:renamed, values:percentValues(rr), computed:true});
+      rows.push({kind:'percent', label:renamed, values:percentValues(rr, raw), computed:true});
     } else if (rr.computed && !eng.inRealGroup) {
       rows.push({kind:'grand', label:renamed, values:rounded(rr.values), computed:true});
     } else {
