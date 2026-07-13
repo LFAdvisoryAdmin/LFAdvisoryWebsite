@@ -655,8 +655,34 @@ function transformDetail(raw){
       rows.push({kind:'account', label, values:rr.values});
     }
   }
+  ensureDetailYtd(columns, rows, raw.periodLine);
   return { kind:'detail', sheetName:'Profit and Loss - Detail',
     title:'Profit & Loss '+EN_DASH+' Detail', periodLine:raw.periodLine, columns, rows };
+}
+
+// Some Xero Detail layouts export only the 12 months; the house style
+// carries a YTD column, so synthesise one (sum of FY periods to date).
+function ensureDetailYtd(columns, rows, periodLine){
+  if (columns.some(c => String(c.label||'').toUpperCase() === 'YTD')) return;
+  const cur = currentPeriodEnd(periodLine);
+  if (cur === null) return;
+  const run = [];
+  for (let i=0;i<columns.length;i++){
+    const p = periodInfo(columns[i].label || '');
+    if (p) run.push([i,p]); else break;
+  }
+  const k = run.findIndex(([,p]) => p.end === cur[0] && p.year === cur[1]);
+  if (k < 0) return;
+  const fyIdx = [];
+  let found = false;
+  for (let m=k;m>=0;m--){
+    fyIdx.unshift(run[m][0]);
+    if (run[m][1].start === 7) { found = true; break; }
+  }
+  if (!found) return;
+  columns.push({label:'YTD', width:9, highlight:false});
+  for (const r of rows)
+    if (r.values) r.values = r.values.concat([round2(fyIdx.reduce((a,i)=>a+(r.values[i]||0),0))]);
 }
 
 function transformBalance(raw, cfg){
