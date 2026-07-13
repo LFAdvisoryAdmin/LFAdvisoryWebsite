@@ -561,8 +561,36 @@ function transformSummary(raw, cfg){
       rows.push({kind:'account', label:renamed, values:rr.values});
     }
   }
+  ensureOperatingMargin(rows);
   return { kind:'summary', sheetName:'Profit and Loss - Summary',
     title:'Profit & Loss '+EN_DASH+' Summary', periodLine:raw.periodLine, columns, rows };
+}
+
+// synthesise an 'Operating margin (%)' row under Operating Profit when the
+// layout doesn't provide one (house style — every Summary shows one). If a
+// gross-margin row exists, back out the revenue base Xero used (GP / GP%);
+// otherwise use the first section total.
+function ensureOperatingMargin(rows){
+  if (rows.some(r => r.kind === 'percent' && String(r.label||'').toLowerCase().includes('operating'))) return;
+  const opI = rows.findIndex(r => r.kind === 'grand' && r.values
+      && String(r.label||'').toLowerCase().includes('operating profit'));
+  if (opI < 0) return;
+  const op = rows[opI].values;
+  let denom = null;
+  const gpPct = rows.find(r => r.kind === 'percent' && r.values
+      && String(r.label||'').toLowerCase().includes('gross'));
+  if (gpPct) {
+    const gp = rows.find(r => (r.kind === 'grand' || r.kind === 'total') && r.values
+        && String(r.label||'').toLowerCase().includes('gross profit'));
+    if (gp) denom = op.map((_,i) => gpPct.values[i] ? (gp.values[i]||0)/gpPct.values[i] : 0);
+  }
+  if (denom === null) {
+    const firstTotal = rows.find(r => r.kind === 'total' && r.values);
+    if (!firstTotal) return;
+    denom = firstTotal.values.map(v => v||0);
+  }
+  const margin = op.map((v,i) => denom[i] ? (v||0)/denom[i] : 0);
+  rows.splice(opI+1, 0, {kind:'percent', label:'Operating margin (%)', values:margin, computed:true});
 }
 
 function transformDetail(raw){
