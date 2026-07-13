@@ -328,6 +328,10 @@ function parseSheet(ws){
   const title = String(grid[0] && grid[0][0] || '').trim();
   const orgName = String(grid[1] && grid[1][0] || '').trim();
   const periodLine = String(grid[2] && grid[2][0] || '').trim();
+  // LF-formatted workbooks put the client in A1 and the report title in A2
+  // (raw Xero exports are the other way around) — reject our own output
+  if (/^(Profit & Loss|Balance Sheet$)/.test(orgName))
+    throw new Error('This file is already in the LF Advisory format — upload the raw Xero management report export instead.');
   const [hIdx, accountCol] = findHeader(grid, ws.name);
   const header = grid[hIdx];
   const dataCols = [];
@@ -763,6 +767,7 @@ function checkYtdFooting(sheet, name, fails){
   const n = fyMonths.length;
   for (const r of sheet.rows) {
     if (!r.values || r.kind==='percent' || r.kind==='blank') continue;
+    if (/%|margin/i.test(r.label || '')) continue;  // margins never sum across periods
     const s = fyMonths.reduce((a,i)=>a+(r.values[i]||0),0);
     const y = ytd < r.values.length ? (r.values[ytd]||0) : 0;
     if (Math.abs(s-y) > TOL)
