@@ -200,15 +200,27 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
   <!-- ================= WACC / BLENDED RATE ================= -->
   <div class="tc" id="tab-wacc">
     <div class="card">
+      <div class="card-head"><span>Historical Blended Rate (WACC)</span></div>
+      <div class="hint" style="margin-top:0">
+        Month-end blended rate across all loans on foot at each date — finalised loans count up to their expiry, so
+        <b>finalise old loans rather than deleting them</b> to keep the history accurate. Hover for detail; <b>click a point</b> to load that date in the table below.
+      </div>
+      <div id="waccChartWrap" style="position:relative">
+        <svg id="waccChart" style="width:100%;height:280px;display:block"></svg>
+        <div id="waccTip" style="position:absolute;display:none;pointer-events:none;background:#1a2332;color:#fff;border-radius:6px;padding:.45rem .65rem;font-size:.75rem;line-height:1.55;white-space:nowrap;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.25)"></div>
+      </div>
+    </div>
+    <div class="card">
       <div class="card-head">
-        <span>Blended Rate (WACC) — Current Loans</span>
+        <span>Loan Book at a Date</span>
         <div class="btn-group"><button class="btn btn-outline btn-sm" onclick="exportWaccCSV()">Export CSV</button></div>
       </div>
       <div class="ctrl-bar">
         <div class="cg"><label>As at</label><input type="date" id="waccDate" onchange="renderWacc()"></div>
       </div>
       <div class="hint">
-        Weighted by outstanding balance at the selected date (includes expired loans not yet finalised — the money is still out).
+        Weighted by outstanding balance at the selected date. Historical dates include the loans that were on foot then
+        (finalised loans up to their expiry); expired-but-current loans stay included — the money is still out.
         Contribution = rate &times; weight. Daily interest = balance &times; rate &divide; 365.
       </div>
       <div class="tbl-wrap"><table id="waccTable"></table></div>
@@ -869,16 +881,108 @@ function exportAccrualsCSV(){
 /* ============================================================
    WACC / BLENDED RATE TAB
    ============================================================ */
+// Loans on foot at a date: started on/before it, and either still current
+// today or (if finalised) not yet past their expiry at that date — so
+// historical dates reconstruct the book as it was.
 function waccRows(asOf){
   return loansRef()
-    .filter(l => l.status === "current" && l.start <= asOf)
+    .filter(l => l.start <= asOf && (l.status === "current" || asOf <= loanEnd(l)))
     .map(l => {
       const bal = balanceOn(l, minISO(asOf, loanEnd(l)));
-      return {l, bal, rate:+l.rate, daily: bal*l.rate/100/365, annual: bal*l.rate/100, expired: loanEnd(l) < asOf};
+      return {l, bal, rate:+l.rate, daily: bal*l.rate/100/365, annual: bal*l.rate/100,
+              expired: l.status === "current" && loanEnd(l) < asOf};
     })
     .filter(r => r.bal > 0.005)
     .sort((a,b) => b.bal - a.bal);
 }
+function waccStatsAt(dISO){
+  const rows = waccRows(dISO);
+  const bal = rows.reduce((s,r) => s + r.bal, 0);
+  return {date:dISO, bal, wacc: bal ? rows.reduce((s,r) => s + r.annual, 0)/bal*100 : 0, n: rows.length};
+}
+function waccSeries(){
+  const ls = loansRef(); if (!ls.length) return [];
+  const t = todayISO();
+  const first = ls.reduce((m,l) => l.start < m ? l.start : m, t);
+  const pts = [];
+  let dm = eomonth(first, 0);
+  while (dm < t){ pts.push(waccStatsAt(dm)); dm = eomonth(dm, 1); }
+  const tp = waccStatsAt(t); tp.today = true; pts.push(tp);
+  return pts.filter(p => p.bal > 0);
+}
+
+/* --- historical WACC line chart (inline SVG, house teal) --- */
+const MONS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const fmtMon = s => { const [y,m] = s.split("-"); return MONS[+m-1] + " " + y.slice(2); };
+let _waccChartPts = [];   // pixel-space points for hover/click
+function renderWaccChart(){
+  const svg = document.getElementById("waccChart");
+  const W = svg.clientWidth;
+  if (!W) return;                                  // tab hidden — re-rendered on tab switch
+  const H = 280, mL = 54, mR = 30, mT = 16, mB = 34;
+  const pts = waccSeries();
+  if (pts.length < 2){ svg.innerHTML = ""; _waccChartPts = []; return; }
+  let lo = Math.min(...pts.map(p => p.wacc)), hi = Math.max(...pts.map(p => p.wacc));
+  if (hi - lo < 0.6){ lo -= 0.35; hi += 0.35; }
+  const step = (hi - lo) <= 2 ? 0.5 : (hi - lo) <= 5 ? 1 : 2;
+  lo = Math.floor(lo/step)*step; hi = Math.ceil(hi/step)*step;
+  const x = i => mL + i*(W - mL - mR)/(pts.length - 1);
+  const y = w => mT + (hi - w)/(hi - lo)*(H - mT - mB);
+  let s = "";
+  for (let g = lo; g <= hi + 1e-9; g += step){
+    s += `<line x1="${mL}" y1="${y(g)}" x2="${W-mR}" y2="${y(g)}" stroke="#eceff2" stroke-width="1"/>
+          <text x="${mL-8}" y="${y(g)+4}" text-anchor="end" font-size="11" fill="#6b7c8d">${(+g.toFixed(2))}%</text>`;
+  }
+  const kx = Math.max(1, Math.ceil(pts.length/9));
+  pts.forEach((p,i) => {
+    if (i % kx === 0 || i === pts.length-1)
+      s += `<text x="${x(i)}" y="${H-mB+18}" text-anchor="middle" font-size="11" fill="#6b7c8d">${p.today ? "Today" : fmtMon(p.date)}</text>`;
+  });
+  s += `<line id="waccCross" x1="0" y1="${mT}" x2="0" y2="${H-mB}" stroke="#b9c4cc" stroke-width="1" visibility="hidden"/>`;
+  s += `<path d="${pts.map((p,i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(p.wacc).toFixed(1)).join(" ")}" fill="none" stroke="#2d6670" stroke-width="2"/>`;
+  pts.forEach((p,i) => {
+    s += `<circle cx="${x(i)}" cy="${y(p.wacc)}" r="4" fill="${p.today ? "#2d6670" : "#fff"}" stroke="#2d6670" stroke-width="2"/>`;
+  });
+  const last = pts[pts.length-1];
+  s += `<text x="${x(pts.length-1)}" y="${y(last.wacc)-12}" text-anchor="end" font-size="12" font-weight="700" fill="#1a2332">${last.wacc.toFixed(2)}%</text>`;
+  svg.innerHTML = s;
+  _waccChartPts = pts.map((p,i) => ({px:x(i), py:y(p.wacc), p}));
+
+  const tip = document.getElementById("waccTip");
+  const nearest = e => {
+    const r = svg.getBoundingClientRect();
+    const mx = e.clientX - r.left;
+    let best = 0;
+    _waccChartPts.forEach((c,i) => { if (Math.abs(c.px - mx) < Math.abs(_waccChartPts[best].px - mx)) best = i; });
+    return best;
+  };
+  svg.onmousemove = e => {
+    if (!_waccChartPts.length) return;
+    const i = nearest(e), c = _waccChartPts[i];
+    const cross = document.getElementById("waccCross");
+    cross.setAttribute("x1", c.px); cross.setAttribute("x2", c.px);
+    cross.setAttribute("visibility", "visible");
+    tip.innerHTML = `<b>${c.p.today ? "Today (" + fmtDate(c.p.date) + ")" : fmtDate(c.p.date)}</b><br>
+      Blended rate: <b>${c.p.wacc.toFixed(2)}%</b><br>Loans on foot: ${c.p.n}<br>Balance: $${fmt$(c.p.bal)}`;
+    tip.style.display = "block";
+    const wrapW = svg.parentElement.clientWidth;
+    tip.style.left = (c.px + 190 > wrapW ? c.px - 185 : c.px + 12) + "px";
+    tip.style.top = Math.max(4, c.py - 66) + "px";
+  };
+  svg.onmouseleave = () => {
+    tip.style.display = "none";
+    const cross = document.getElementById("waccCross");
+    if (cross) cross.setAttribute("visibility", "hidden");
+  };
+  svg.onclick = e => {
+    if (!_waccChartPts.length) return;
+    const c = _waccChartPts[nearest(e)];
+    document.getElementById("waccDate").value = c.p.date;
+    renderWacc();
+    document.getElementById("waccTable").scrollIntoView({behavior:"smooth", block:"start"});
+  };
+}
+window.addEventListener("resize", () => renderWaccChart());
 function renderWacc(){
   const el = document.getElementById("waccDate");
   if (!el.value) el.value = todayISO();
@@ -894,7 +998,7 @@ function renderWacc(){
   for (const r of rows){
     const w = totBal ? r.bal/totBal*100 : 0;
     html += `<tr>
-      <td><a class="rowlink" onclick="openEditor('${r.l.id}')">${esc(r.l.investor)}</a>${r.expired ? ' <span class="badge b-expired">expired</span>' : ""}</td>
+      <td><a class="rowlink" onclick="openEditor('${r.l.id}')">${esc(r.l.investor)}</a>${r.expired ? ' <span class="badge b-expired">expired</span>' : ""}${r.l.status === "finalised" ? ' <span class="badge b-final">Finalised</span>' : ""}</td>
       <td>${esc(r.l.entity||"")}</td>
       <td class="r">${fmt$(r.bal)}</td>
       <td class="r">${fmtPct(r.rate)}</td>
@@ -922,6 +1026,7 @@ function renderWacc(){
   }
   eh += `</tbody>`;
   document.getElementById("waccEntityTable").innerHTML = eh;
+  renderWaccChart();
 }
 function exportWaccCSV(){
   const asOf = document.getElementById("waccDate").value;
@@ -1076,6 +1181,7 @@ function switchTab(el){
   document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === el));
   document.querySelectorAll(".tc").forEach(x => x.classList.remove("on"));
   document.getElementById("tab-" + el.dataset.tab).classList.add("on");
+  if (el.dataset.tab === "wacc") renderWaccChart();   // chart can't size itself while hidden
 }
 function renderAll(){ renderKPIs(); renderRegister(); renderAccruals(); renderWacc(); renderUpcoming(); }
 
