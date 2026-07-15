@@ -552,7 +552,7 @@ async function getSiteId(token){
 }
 async function odInit(){
   const token = getStoredToken();
-  if(!token){ setSync('offline'); ensureHistory(); renderAll(); return; }
+  if(!token){ setSync('offline'); ensureHistory(); normalizeLoans(); renderAll(); return; }
   try{
     setSync('loading');
     const siteId = await getSiteId(token);
@@ -583,6 +583,7 @@ async function odInit(){
     setSync(getStoredToken() ? 'error' : 'offline');
   }
   ensureHistory();   // after the merge, so it appends to the freshest copy
+  normalizeLoans();
   renderAll();
 }
 function queueSave(){ if(!_loaded) return; clearTimeout(_saveTimer); _saveTimer = setTimeout(odSave, 1200); }
@@ -760,6 +761,24 @@ function seedFinalised(){
     mk({investor:"SWHooper Pty Ltd ATF Hoops SF", start:"2025-08-17", principal:211000, rate:11, termMonths:6, notes:"Rolled P&I into $222,605."}),
   ];
 }
+// Housekeeping run on every load (idempotent):
+// 1. Repair: loans finalised at roll time before their expiry get linked to
+//    their successor and flipped back to current (they're still on foot).
+// 2. Auto-finalise rolled-forward loans once their expiry has passed.
+function normalizeLoans(){
+  const t = todayISO();
+  let changed = false;
+  for (const l of loansRef()){
+    if (!l.rolledInto && l.status === "finalised" && loanEnd(l) > t && /Rolled forward into new loan commencing/.test(l.notes || "")){
+      const succ = loansRef().find(x => x !== l && x.investor === l.investor && x.start === loanEnd(l));
+      if (succ){ l.rolledInto = succ.id; l.status = "current"; changed = true; }
+    }
+    if (l.rolledInto && l.status === "current" && loanEnd(l) < t){
+      l.status = "finalised"; changed = true;
+    }
+  }
+  if (changed) save();
+}
 // One-time additive migration: appends the historical finalised loans to an
 // existing dataset without touching edits. Runs after the SharePoint merge.
 function ensureHistory(){
@@ -784,12 +803,13 @@ function loadSeed(confirmFirst){
 function renderKPIs(){
   const t = todayISO();
   const cur = loansRef().filter(l => l.status === "current");
-  const principal = cur.reduce((s,l) => s + balanceOn(l, t), 0);
-  const accrual = cur.reduce((s,l) => s + accruedTo(l, t) - interestPaidTo(l, t), 0);
-  const daily = cur.reduce((s,l) => s + balanceOn(l, t) * l.rate/100/365, 0);
-  const wacc = principal ? cur.reduce((s,l) => s + balanceOn(l, t) * l.rate/100, 0) / principal * 100 : 0;
-  const next60 = cur.filter(l => { const e = loanEnd(l); return e >= t && daysDiff(t, e) <= 60; }).length;
-  const expired = cur.filter(l => loanEnd(l) < t).length;
+  const started = cur.filter(l => l.start <= t);   // future-start rollovers don't count yet
+  const principal = started.reduce((s,l) => s + balanceOn(l, t), 0);
+  const accrual = started.reduce((s,l) => s + accruedTo(l, t) - interestPaidTo(l, t), 0);
+  const daily = started.reduce((s,l) => s + balanceOn(l, t) * l.rate/100/365, 0);
+  const wacc = principal ? started.reduce((s,l) => s + balanceOn(l, t) * l.rate/100, 0) / principal * 100 : 0;
+  const next60 = cur.filter(l => { if (l.rolledInto) return false; const e = loanEnd(l); return e >= t && daysDiff(t, e) <= 60; }).length;
+  const expired = cur.filter(l => !l.rolledInto && loanEnd(l) < t).length;
   document.getElementById("kpis").innerHTML = `
     <div class="tile" onclick="gotoRegister('current')"><div class="tile-lbl">Principal Outstanding</div><div class="tile-val">$${fmt$(principal)}</div><div class="tile-sub">current loans, today</div></div>
     <div class="tile t3" onclick="gotoTab('history')"><div class="tile-lbl">Blended Rate (WACC)</div><div class="tile-val">${fmtPct(wacc)}</div><div class="tile-sub">weighted by balance</div></div>
@@ -852,8 +872,8 @@ function renderRegister(){
     if (filter === "current" || filter === "finalised") return l.status === filter;
     if (l.status !== "current") return false;
     const end = loanEnd(l);
-    if (filter === "expiring60") return end >= t && daysDiff(t, end) <= 60;
-    if (filter === "expired") return end < t;
+    if (filter === "expiring60") return !l.rolledInto && end >= t && daysDiff(t, end) <= 60;
+    if (filter === "expired") return !l.rolledInto && end < t;
     return true;
   });
   if (q) list = list.filter(l => (l.investor + " " + (l.entity||"")).toLowerCase().includes(q));
@@ -892,7 +912,13 @@ function renderRegister(){
       </tr>`;
       continue;
     }
-    html += `<tr>
+    const future = l.status === "current" && l.start > t;
+    const rolling = l.status === "current" && l.rolledInto;
+    const statusBadge = rolling ? `<span class="badge b-freq">Rolling fwd ${fmtDate(end)}</span>`
+      : future ? `<span class="badge b-final">Starts ${fmtDate(l.start)}</span>`
+      : expired ? '<span class="badge b-expired">Past expiry</span>'
+      : `<span class="badge ${l.status === "current" ? "b-current" : "b-final"}">${l.status === "current" ? "Current" : "Finalised"}</span>`;
+    html += `<tr${future ? ' style="opacity:.55"' : ""}>
       <td><a class="rowlink" onclick="openEditor('${l.id}')">${esc(l.investor)}</a>${l.notes ? `<div class="small muted">${esc(l.notes)}</div>` : ""}</td>
       <td>${esc(l.entity||"")}</td>
       <td>${fmtDate(l.start)}</td>
@@ -903,8 +929,8 @@ function renderRegister(){
       <td>${fmtDate(end)}${l.endOverride ? ' <span class="small muted">(o/r)</span>' : ""}</td>
       <td><span class="badge b-freq">${FREQ_LABEL[l.freq]||esc(l.freq)}</span></td>
       <td class="r">${fmt$(contractInterest(l))}</td>
-      <td class="r">${l.status==="current" ? fmt$(acc) : ""}</td>
-      <td>${expired ? '<span class="badge b-expired">Past expiry</span>' : `<span class="badge ${l.status === "current" ? "b-current" : "b-final"}">${l.status === "current" ? "Current" : "Finalised"}</span>`}
+      <td class="r">${l.status==="current" && !future ? fmt$(acc) : ""}</td>
+      <td>${statusBadge}
         <div class="small" style="margin-top:.2rem"><a class="rowlink" onclick="startInline('${l.id}')">Quick edit</a></div></td>
     </tr>`;
   }
@@ -1187,12 +1213,22 @@ function cashflowItems(){
     if (l.status !== "current") continue;
     const end = loanEnd(l);
     const exp = l.expect || "";
-    let interest = finalInterest(l), principal = balanceOn(l, end), label;
-    if (exp === "rollP"){ principal = 0; label = "Expiry — interest paid out, principal rolls forward"; }
+    let interest = finalInterest(l), principal = balanceOn(l, end), label, rolled = false;
+    if (l.rolledInto){
+      // rollover already created: cash required = what the successor doesn't absorb
+      rolled = true;
+      const succ = loansRef().find(x => x.id === l.rolledInto);
+      const owed = balanceOn(l, end) + finalInterest(l);
+      const shortfall = succ ? Math.max(0, owed - (+succ.principal || 0)) : owed;
+      interest = Math.min(finalInterest(l), shortfall);
+      principal = shortfall - interest;
+      label = "Expiry — rolls forward into new loan" + (shortfall > 0.005 ? " (net cash out)" : " (no cash required)");
+    }
+    else if (exp === "rollP"){ principal = 0; label = "Expiry — interest paid out, principal rolls forward"; }
     else if (exp === "rollPI"){ interest = 0; principal = 0; label = "Expiry — P&I rolls forward (no cash required)"; }
     else if (exp === "payout"){ label = "Expiry — full payout of principal + interest"; }
     else label = "Expiry — principal + final interest (action TBC, assumed payout)";
-    items.push({date:end, loan:l, label, interest, principal, overdue:end < t, expiry:true});
+    items.push({date:end, loan:l, label, interest, principal, overdue:end < t, expiry:true, rolled});
     if (FREQ_MONTHS[l.freq]){
       for (const sd of scheduleDates(l)){
         if (sd >= end || sd < t) continue;
@@ -1254,11 +1290,11 @@ function renderCashflow(){
       <td class="r">${fmt$(g.interest)}</td><td class="r">${fmt$(g.principal)}</td>
       <td class="r">${fmt$(g.total)}</td><td class="r">${fmt$(cum)}</td></tr>`;
     for (const it of g.items){
-      if (it.expiry && !(it.loan.expect||"")) tbc++;
+      if (it.expiry && !it.rolled && !(it.loan.expect||"")) tbc++;
       html += `<tr><td></td>
         <td><a class="rowlink" onclick="openEditor('${it.loan.id}')">${esc(it.loan.investor)}</a>
           <span class="muted small"> — ${esc(it.label)}</span></td>
-        <td>${it.expiry ? expectSelect(it.loan) : ""}</td>
+        <td>${it.expiry ? (it.rolled ? '<span class="badge b-current">Rolled &#10003;</span>' : expectSelect(it.loan)) : ""}</td>
         <td${it.overdue ? ' class="warn-txt"' : ""}>${fmtDate(it.date)}</td>
         <td class="r">${it.interest ? fmt$(it.interest) : ""}</td>
         <td class="r">${it.principal ? fmt$(it.principal) : ""}</td>
@@ -1335,8 +1371,16 @@ function renderUpcoming(){
     if (l.status !== "current") continue;
     const end = loanEnd(l);
     if (end <= limit){
-      items.push({date:end, loan:l, what:"Loan expiry — principal + final interest due",
-        amount: balanceOn(l, end) + finalInterest(l), overdue: end < t});
+      if (l.rolledInto){
+        const succ = loansRef().find(x => x.id === l.rolledInto);
+        const owed = balanceOn(l, end) + finalInterest(l);
+        const net = succ ? Math.max(0, owed - (+succ.principal || 0)) : owed;
+        items.push({date:end, loan:l, what:"Loan rolls forward" + (net > 0.005 ? " — net cash due" : " — no cash required"),
+          amount: net, overdue: false});
+      } else {
+        items.push({date:end, loan:l, what:"Loan expiry — principal + final interest due",
+          amount: balanceOn(l, end) + finalInterest(l), overdue: end < t});
+      }
     }
     const rem = l.reminderMonths ? edate(end, -l.reminderMonths) : null;
     if (rem && rem >= t && rem <= limit) items.push({date:rem, loan:l, what:`Send reminder letter (${l.reminderMonths} months before expiry)`, amount:null});
@@ -1485,7 +1529,9 @@ function saveLoan(){
   if (rollSourceId && loan.id !== rollSourceId){
     const src = loansRef().find(x => x.id === rollSourceId);
     if (src && src.status === "current"){
-      src.status = "finalised";
+      src.rolledInto = loan.id;    // stays current until expiry; normalizeLoans() finalises then
+      src.expect = "";
+      if (loanEnd(src) < todayISO()) src.status = "finalised";
       src.notes = ((src.notes || "") + " Rolled forward into new loan commencing " + fmtDate(loan.start) + ".").trim();
     }
   }
