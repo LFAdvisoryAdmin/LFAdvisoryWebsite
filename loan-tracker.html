@@ -227,6 +227,7 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
         <li>All loans are <b>simple interest</b>, daily accrual on an <b>actual/365</b> basis.</li>
         <li>End date defaults to start date + term (calendar months) and can be overridden.</li>
         <li>Interest frequency drives the <i>scheduled</i> payment dates shown in Upcoming. Actual payments are recorded as events and reduce the balance-sheet accrual.</li>
+        <li><b>Scheduled payment amounts are contractual flat amounts</b> — balance &times; rate &times; period/12 (e.g. $6,250/qtr on $166,666.66 @ 15%) — while balance-sheet accruals remain daily actual/365.</li>
         <li>A <b>capitalisation</b> event adds unpaid accrued interest to principal on the chosen date (the compounding loans) — interest then accrues on the higher balance.</li>
         <li>A <b>principal repayment</b> event reduces the outstanding balance from the day after the payment date (e.g. half the principal repaid at 6 months).</li>
       </ul>
@@ -387,7 +388,23 @@ function interestPaidTo(loan, asOfISO){
   return (loan.events||[]).filter(e => e.type==="interest_payment" && e.date <= asOfISO)
     .reduce((s,e) => s + (+e.amount||0), 0);
 }
-function contractInterest(loan){ return accruedTo(loan, loanEnd(loan)); }
+// Contractual (flat) interest — principal × rate × term/12, matching the
+// register workbook's G column. Loans whose principal changes mid-term
+// (repayments/advances/capitalisations) fall back to the daily engine
+// since a single flat figure no longer applies.
+function contractInterest(loan){
+  if (principalEvents(loan).length) return accruedTo(loan, loanEnd(loan));
+  return +loan.principal * loan.rate/100 * loan.termMonths/12;
+}
+// Flat periodic interest due at schedule date sd: balance over the period
+// × rate × months/12 — "neat" contractual amounts (e.g. $6,250/qtr on
+// $166,666.66 @ 15%), NOT the daily accrual. Accruals stay actual/365.
+function periodicAmount(loan, sd){
+  const m = FREQ_MONTHS[loan.freq];
+  if (!m) return 0;
+  const prev = edate(sd, -m);
+  return balanceOn(loan, prev < loan.start ? loan.start : prev) * loan.rate/100 * m/12;
+}
 function scheduleDates(loan){
   const out = [], end = loanEnd(loan);
   const m = FREQ_MONTHS[loan.freq];
@@ -572,8 +589,10 @@ function seedLoans(){
         notes:"07/07/26 — Sam advised rollover for 12 months (new expiry 19/09/27)."}),
     mk({investor:"Walsh Supermarkets Pty Ltd", start:"2025-09-19", principal:300000, rate:12, termMonths:12}),
     mk({investor:"Graham Randall", start:"2025-12-01", principal:750000, rate:12, termMonths:8, freq:"monthly", endOverride:"2026-08-01",
-        events:pays(["2026-01-01","2026-02-01","2026-03-01","2026-04-01","2026-05-01","2026-06-01"], 7500, "Monthly interest — imported, confirm dates"),
-        notes:"Monthly interest $7,500. $45,000 paid to 30/06/26 per June workbook."}),
+        events:[...pays(["2026-01-01","2026-02-01","2026-03-01","2026-04-01","2026-05-01","2026-06-01"], 7500, "Monthly interest — imported, confirm dates"),
+                {date:"2026-07-01", type:"interest_payment", amount:7500, note:"Monthly interest paid 01/07/26"},
+                {date:"2026-07-01", type:"principal_repayment", amount:250000, note:"$250K capital repaid 01/07/26"}],
+        notes:"$250K capital + $7,500 interest paid 01/07/26. Remaining $500K + $5,000 interest due 01/08/26."}),
     mk({investor:"David Pearce Property", start:"2026-03-26", principal:300000, rate:12, termMonths:6}),
     mk({investor:"Michael Morris", start:"2026-03-17", principal:250000, rate:12, termMonths:18, freq:"annual",
         notes:"Interest payment due at 12 months (17/03/27); principal rolls to 17/09/27."}),
@@ -753,16 +772,18 @@ function renderUpcoming(){
   for (const l of loansRef()){
     if (l.status !== "current") continue;
     const end = loanEnd(l);
-    if (end <= limit) items.push({date:end, loan:l, what:"Loan expiry — principal" + (l.freq==="maturity" ? " + interest" : "") + " due",
-      amount: balanceOn(l, end) + (accruedTo(l, end) - interestPaidTo(l, end)), overdue: end < t});
+    if (end <= limit){
+      const finalInt = FREQ_MONTHS[l.freq] ? periodicAmount(l, end)
+        : Math.max(0, contractInterest(l) - interestPaidTo(l, end));
+      items.push({date:end, loan:l, what:"Loan expiry — principal + final interest due",
+        amount: balanceOn(l, end) + finalInt, overdue: end < t});
+    }
     const rem = l.reminderMonths ? edate(end, -l.reminderMonths) : null;
     if (rem && rem >= t && rem <= limit) items.push({date:rem, loan:l, what:`Send reminder letter (${l.reminderMonths} months before expiry)`, amount:null});
     if (FREQ_MONTHS[l.freq]){
       for (const sd of scheduleDates(l)){
         if (sd >= end || sd < t || sd > limit) continue;
-        const prev = edate(sd, -FREQ_MONTHS[l.freq]);
-        const from = prev > l.start ? prev : l.start;
-        items.push({date:sd, loan:l, what:`${FREQ_LABEL[l.freq]} interest payment due`, amount: accruedTo(l, sd) - accruedTo(l, from)});
+        items.push({date:sd, loan:l, what:`${FREQ_LABEL[l.freq]} interest payment due`, amount: periodicAmount(l, sd)});
       }
     }
     for (const e of (l.events||[])){
