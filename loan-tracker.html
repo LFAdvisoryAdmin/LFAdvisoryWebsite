@@ -222,10 +222,18 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
       </div>
       <div class="ctrl-bar">
         <div class="cg"><label>As at</label><input type="date" id="waccDate" onchange="renderWacc()"></div>
+        <div class="cg"><label>Blended rate at date</label>
+          <div id="waccHeadline" style="font-family:var(--head);font-weight:800;font-size:1.5rem;color:var(--primary);line-height:1.2">—</div></div>
+        <div class="cg"><label>vs today</label>
+          <div id="waccDelta" style="font-family:var(--head);font-weight:700;font-size:1rem;line-height:2">—</div></div>
+        <div class="cg"><label>Book at date</label>
+          <div id="waccBook" class="muted" style="font-size:.85rem;line-height:2">—</div></div>
       </div>
       <div class="hint">
         Weighted by outstanding balance at the selected date. Historical dates include the loans that were on foot then
         (finalised loans up to their expiry); expired-but-current loans stay included — the money is still out.
+        <b>Future dates are a projection</b>: loans drop off at expiry (rollovers not assumed), scheduled principal repayments
+        are applied, and future-dated loans join when they start — so you can see what expiries and new money do to the rate.
         Contribution = rate &times; weight. Daily interest = balance &times; rate &divide; 365.
       </div>
       <div class="tbl-wrap"><table id="waccTable"></table></div>
@@ -950,12 +958,16 @@ function exportAccrualsCSV(){
 /* ============================================================
    WACC / BLENDED RATE TAB
    ============================================================ */
-// Loans on foot at a date: started on/before it, and either still current
-// today or (if finalised) not yet past their expiry at that date — so
-// historical dates reconstruct the book as it was.
+// Loans on foot at a date. Past/present: current loans stay included past
+// expiry (the money is still out); finalised loans count up to their expiry —
+// so historical dates reconstruct the book as it was. FUTURE dates are a
+// projection: every loan drops off at its expiry (rollovers not assumed) and
+// scheduled principal repayments reduce the balance.
 function waccRows(asOf){
+  const projecting = asOf > todayISO();
   return loansRef()
-    .filter(l => l.start <= asOf && (l.status === "current" || asOf <= loanEnd(l)))
+    .filter(l => l.start <= asOf && (projecting ? asOf <= loanEnd(l)
+                                                : (l.status === "current" || asOf <= loanEnd(l))))
     .map(l => {
       const bal = balanceOn(l, minISO(asOf, loanEnd(l)));
       return {l, bal, rate:+l.rate, daily: bal*l.rate/100/365, annual: bal*l.rate/100,
@@ -1061,6 +1073,22 @@ function renderWacc(){
   const totAnnual = rows.reduce((s,r) => s + r.annual, 0);
   const totDaily = rows.reduce((s,r) => s + r.daily, 0);
   const wacc = totBal ? totAnnual/totBal*100 : 0;
+
+  // headline readout beside the date picker, with movement vs today
+  const now = waccStatsAt(todayISO());
+  document.getElementById("waccHeadline").textContent = totBal ? fmtPct(wacc) : "—";
+  const deltaEl = document.getElementById("waccDelta");
+  if (!totBal || !now.bal || asOf === todayISO()){
+    deltaEl.textContent = asOf === todayISO() ? "— (this is today)" : "—";
+    deltaEl.style.color = "var(--mid)";
+  } else {
+    const d = wacc - now.wacc;
+    deltaEl.textContent = (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(2) + " pts vs " + fmtPct(now.wacc) + " today";
+    deltaEl.style.color = Math.abs(d) < 0.005 ? "var(--mid)" : (d > 0 ? "var(--danger)" : "var(--ok)");
+  }
+  document.getElementById("waccBook").textContent = totBal
+    ? `$${fmt$(totBal)} across ${rows.length} loans · $${fmt$(totDaily)}/day`
+    : "no loans on foot at this date";
 
   let html = `<thead><tr><th>Investor</th><th>Entity</th><th class="r">Balance</th><th class="r">Rate</th>
     <th class="r">Weight</th><th class="r">Contribution</th><th class="r">Daily Interest</th><th class="r">Annual Interest</th></tr></thead><tbody>`;
