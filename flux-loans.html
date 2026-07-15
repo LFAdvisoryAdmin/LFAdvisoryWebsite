@@ -1,0 +1,1646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Investor Loan Tracker — Flux Property Group</title>
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;600;700;800&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary:#2d6670; --primary-dark:#1e4a52; --secondary:#5a7a3a;
+  --accent:#c8a96e; --dark:#1a2332; --mid:#6b7c8d; --light:#f5f7f8;
+  --white:#fff; --danger:#c0392b; --warn:#e67e22; --ok:#27ae60;
+  --border:#dde3e8; --sans:'Lato',sans-serif; --head:'Raleway',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--light);color:var(--dark);font-size:14px}
+
+/* Top ribbon — matches the other workpaper tools */
+nav{position:fixed;top:0;left:0;right:0;z-index:1000;display:flex;align-items:center;justify-content:space-between;padding:0 5vw;height:70px;background:rgba(240,243,239,0.96);backdrop-filter:blur(10px);border-bottom:1px solid #cdd4cc}
+.nav-links{display:flex;align-items:center;gap:2rem;list-style:none}
+.nav-links a{font-size:.8rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#5a6060;text-decoration:none;transition:color .2s}
+.nav-links a:hover{color:var(--primary)}
+.nav-logo{font-family:var(--head);font-weight:800;color:var(--primary);text-decoration:none;font-size:1.05rem;letter-spacing:.05em}
+@media(max-width:700px){.nav-links{gap:1rem}.nav-links a{font-size:.7rem}}
+
+.tool-head{margin-top:70px;background:#263d3f;color:#f0f3ef;padding:2.5rem 3rem;border-bottom:3px solid #6b7340;box-shadow:0 2px 20px rgba(0,0,0,.15)}
+.tool-head-content{display:flex;align-items:center;justify-content:space-between;max-width:1420px;margin:0 auto}
+.tool-head .subtitle{color:#8a9456;font-family:var(--head);font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;font-weight:600;margin-bottom:.6rem}
+.tool-head h1{font-family:var(--head);font-weight:300;font-size:clamp(1.4rem,2.5vw,2.2rem);color:#f0f3ef;letter-spacing:-.01em}
+.tool-head h1 strong{font-weight:700;color:#8a9456}
+.tool-head .client-tag{font-family:var(--head);font-size:.8rem;color:#c7cede;margin-top:.4rem}
+
+.container{max-width:1420px;margin:0 auto;padding:2rem 1.5rem}
+
+/* Tiles */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:1rem;margin-bottom:1.5rem}
+@media(max-width:1000px){.tiles{grid-template-columns:repeat(2,1fr)}}
+.tile{background:var(--white);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07);padding:1.2rem 1.5rem;border-left:4px solid var(--primary);cursor:pointer;transition:box-shadow .15s,transform .15s}
+.tile:hover{box-shadow:0 4px 14px rgba(0,0,0,.14);transform:translateY(-1px)}
+.tile.t2{border-left-color:var(--accent)}.tile.t3{border-left-color:var(--secondary)}.tile.t4{border-left-color:var(--warn)}.tile.t5{border-left-color:var(--danger)}
+.tile-lbl{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--mid);margin-bottom:.25rem}
+.tile-val{font-family:var(--head);font-size:1.45rem;font-weight:800;color:var(--dark);font-variant-numeric:tabular-nums}
+.tile-sub{font-size:.72rem;color:var(--mid);margin-top:.15rem}
+
+/* Card */
+.card{background:var(--white);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07);padding:1.5rem;margin-bottom:1.5rem}
+.card-head{font-family:var(--head);font-weight:700;font-size:.85rem;text-transform:uppercase;letter-spacing:.08em;color:var(--primary);margin-bottom:1.2rem;padding-bottom:.7rem;border-bottom:2px solid var(--light);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:.35rem;padding:.5rem 1rem;border-radius:6px;border:none;cursor:pointer;font-family:var(--head);font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;transition:all .2s;white-space:nowrap}
+.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:var(--primary-dark)}
+.btn-outline{background:transparent;color:var(--primary);border:1.5px solid var(--primary)}.btn-outline:hover{background:var(--primary);color:#fff}
+.btn-danger{background:transparent;color:var(--danger);border:1.5px solid var(--border)}.btn-danger:hover{border-color:var(--danger)}
+.btn-sm{padding:.33rem .7rem;font-size:.7rem}
+.btn-group{display:flex;gap:.5rem;flex-wrap:wrap}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:1.5rem;flex-wrap:wrap}
+.tab{padding:.7rem 1.4rem;cursor:pointer;font-family:var(--head);font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mid);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab.on{color:var(--primary);border-bottom-color:var(--primary)}
+.tc{display:none}.tc.on{display:block}
+
+/* Controls */
+.ctrl-bar{display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:1rem}
+.cg{display:flex;flex-direction:column;gap:.3rem}
+.cg label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mid)}
+input,select,textarea{border:1.5px solid var(--border);border-radius:6px;padding:.5rem .75rem;font-family:var(--sans);font-size:.9rem;color:var(--dark);background:var(--white)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)}
+
+/* Table */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+thead th{background:var(--dark);color:#fff;font-family:var(--head);font-weight:600;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;padding:.65rem .7rem;text-align:left;white-space:nowrap}
+th.r,td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border)}
+tbody tr:hover{background:#f0f5f6}
+tbody td{padding:.55rem .7rem;vertical-align:top}
+tr.total td{font-weight:700;font-family:var(--head);background:var(--light);border-top:2px solid var(--dark);font-size:.82rem}
+tr.total:hover td{background:var(--light)}
+
+/* Badges / misc */
+.badge{display:inline-block;padding:.15rem .5rem;border-radius:20px;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.b-current{background:#d4edda;color:#155724}.b-final{background:#e2e3e5;color:#495057}
+.b-expired{background:#fdebd0;color:#9c640c}.b-freq{background:#d6e4f0;color:#1f4e79}
+.muted{color:var(--mid)}.small{font-size:.75rem}
+a.rowlink{color:var(--primary);font-weight:700;text-decoration:none;cursor:pointer}
+a.rowlink:hover{text-decoration:underline}
+.banner{background:#fdf6e3;border:1px solid #e8d9a0;border-radius:8px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.85rem}
+.hint{font-size:.78rem;color:var(--mid);margin:.4rem 0 1rem}
+.warn-txt{color:var(--warn);font-weight:700}
+.neg{color:var(--danger)}
+
+/* Modal */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;padding:2rem 1rem;overflow-y:auto}
+.modal.on{display:flex;align-items:flex-start;justify-content:center}
+.modal-box{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:860px;margin:auto;position:relative}
+.modal-ttl{font-family:var(--head);font-weight:700;font-size:1.1rem;color:var(--primary);margin-bottom:1.5rem}
+.frow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:1rem;margin-bottom:1rem}
+.fg{display:flex;flex-direction:column;gap:.3rem}
+.fg label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mid)}
+.fg input,.fg select,.fg textarea{width:100%}
+.modal-foot{display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border);flex-wrap:wrap}
+.evrow{display:grid;grid-template-columns:145px 200px 130px 1fr 36px;gap:.5rem;margin-bottom:.4rem;align-items:center}
+.modal h4{font-family:var(--head);font-size:.8rem;text-transform:uppercase;letter-spacing:.07em;color:var(--primary);margin:1.4rem 0 .5rem}
+
+footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
+@media print{nav,.tool-head,.tabs,.btn,footer{display:none!important}.container{padding:0}body{background:#fff}}
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="nav-logo">FLUX PROPERTY</span>
+  <ul class="nav-links"><li><a href="https://www.lfadvisory.com.au" target="_blank" rel="noopener">Prepared by LF Advisory</a></li></ul>
+</nav>
+
+<header class="tool-head">
+  <div class="tool-head-content">
+    <div>
+      <div class="subtitle">Flux Property Group | Investor Loans</div>
+      <h1>Investor Loan <strong>Tracker</strong></h1>
+      <div class="client-tag">Flux Property Group — simple interest, actual/365 daily accrual</div>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+  <div id="banner"></div>
+
+  <div class="tiles" id="kpis"></div>
+
+  <div class="tabs">
+    <div class="tab on" data-tab="register" onclick="switchTab(this)">Loan Register</div>
+    <div class="tab" data-tab="accruals" onclick="switchTab(this)">Monthly Accruals</div>
+    <div class="tab" data-tab="wacc" onclick="switchTab(this)">Blended Rate</div>
+    <div class="tab" data-tab="history" onclick="switchTab(this)">Graphs</div>
+    <div class="tab" data-tab="cashflow" onclick="switchTab(this)">Cashflow</div>
+    <div class="tab" data-tab="upcoming" onclick="switchTab(this)">Upcoming</div>
+    <div class="tab" data-tab="data" onclick="switchTab(this)">Data &amp; Settings</div>
+  </div>
+
+  <!-- ================= REGISTER ================= -->
+  <div class="tc on" id="tab-register">
+    <div class="card">
+      <div class="card-head">
+        <span>Loan Register <span id="syncStatus" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--mid);margin-left:.8rem"></span></span>
+        <div class="btn-group">
+          <button class="btn btn-outline btn-sm" id="syncBtn" style="display:none" onclick="connectMicrosoft()">Sign in with Microsoft</button>
+          <button class="btn btn-primary btn-sm" onclick="openEditor()">+ Add Loan</button>
+        </div>
+      </div>
+      <div class="ctrl-bar">
+        <div class="cg"><label>Show</label>
+          <select id="regFilter" onchange="renderRegister()">
+            <option value="current">Current loans</option>
+            <option value="expiring60">Expiring &le; 60 days</option>
+            <option value="expired">Past expiry</option>
+            <option value="finalised">Finalised loans</option>
+            <option value="all">All loans</option>
+          </select>
+        </div>
+        <div class="cg"><label>Search</label><input type="search" id="regSearch" placeholder="Investor…" oninput="renderRegister()" style="width:220px"></div>
+        <div class="cg" style="margin-left:auto;justify-content:flex-end"><span class="muted small" id="regCount"></span></div>
+      </div>
+      <div class="hint" style="margin-top:0">
+        <b>Quick edit</b> (right-hand column) fixes loan terms in the row. Click an <b>investor's name</b> for the full editor —
+        events (repayments, interest payments, capitalisations), notes and delete.
+      </div>
+      <div class="tbl-wrap"><table id="regTable"></table></div>
+    </div>
+  </div>
+
+  <!-- ================= ACCRUALS ================= -->
+  <div class="tc" id="tab-accruals">
+    <div class="card">
+      <div class="card-head">
+        <span>Interest Accruals</span>
+        <div class="btn-group">
+          <button class="btn btn-outline btn-sm" onclick="exportAccrualsCSV()">Export CSV</button>
+          <button class="btn btn-outline btn-sm" onclick="window.print()">Print</button>
+        </div>
+      </div>
+      <div class="ctrl-bar">
+        <div class="cg"><label>Month end</label><input type="date" id="accDate" onchange="renderAccruals()"></div>
+        <button class="btn btn-outline btn-sm" onclick="shiftMonth(-1)">&larr; Prev month</button>
+        <button class="btn btn-outline btn-sm" onclick="shiftMonth(1)">Next month &rarr;</button>
+      </div>
+      <div class="hint">
+        Daily rate = outstanding principal &times; annual rate &divide; 365. Days count inclusive of the investment date through to the earlier of month end and loan expiry.
+        Expired loans that have not been finalised keep their principal and accrued interest on the balance sheet until marked finalised.
+      </div>
+      <div class="tbl-wrap"><table id="accTable"></table></div>
+    </div>
+  </div>
+
+  <!-- ================= WACC HISTORY (chart) ================= -->
+  <div class="tc" id="tab-history">
+    <div class="card">
+      <div class="card-head"><span>Historical Blended Rate (WACC)</span></div>
+      <div class="hint" style="margin-top:0">
+        Month-end blended rate across all loans on foot at each date — finalised loans count up to their expiry, so
+        <b>finalise old loans rather than deleting them</b> to keep the history accurate. Hover for detail; <b>click a point</b> to open that date in the Blended Rate tab.
+      </div>
+      <div id="waccChartWrap" style="position:relative">
+        <svg id="waccChart" style="width:100%;height:300px;display:block"></svg>
+        <div id="waccTip" style="position:absolute;display:none;pointer-events:none;background:#1a2332;color:#fff;border-radius:6px;padding:.45rem .65rem;font-size:.75rem;line-height:1.55;white-space:nowrap;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.25)"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><span>Historical Loan Balance</span></div>
+      <div class="hint" style="margin-top:0">
+        Total principal outstanding at each month end — same loans as the WACC curve above. <b>Click a point</b> to open that date in the Blended Rate tab.
+      </div>
+      <div id="balChartWrap" style="position:relative">
+        <svg id="balChart" style="width:100%;height:280px;display:block"></svg>
+        <div id="balTip" style="position:absolute;display:none;pointer-events:none;background:#1a2332;color:#fff;border-radius:6px;padding:.45rem .65rem;font-size:.75rem;line-height:1.55;white-space:nowrap;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.25)"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><span>Monthly Interest Expense</span></div>
+      <div class="hint" style="margin-top:0">
+        Interest accrued each month across all loans on foot (daily actual/365 — the amount that hits the P&amp;L, matching the
+        Monthly Accruals sheet). The current month shows month-to-date in a lighter bar. <b>Click a bar</b> to open that month in Monthly Accruals.
+      </div>
+      <div id="intChartWrap" style="position:relative">
+        <svg id="intChart" style="width:100%;height:280px;display:block"></svg>
+        <div id="intTip" style="position:absolute;display:none;pointer-events:none;background:#1a2332;color:#fff;border-radius:6px;padding:.45rem .65rem;font-size:.75rem;line-height:1.55;white-space:nowrap;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.25)"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= WACC / BLENDED RATE ================= -->
+  <div class="tc" id="tab-wacc">
+    <div class="card">
+      <div class="card-head">
+        <span>Loan Book at a Date</span>
+        <div class="btn-group"><button class="btn btn-outline btn-sm" onclick="exportWaccCSV()">Export CSV</button></div>
+      </div>
+      <div class="ctrl-bar">
+        <div class="cg"><label>As at</label><input type="date" id="waccDate" onchange="renderWacc()"></div>
+        <div class="cg"><label>Blended rate at date</label>
+          <div id="waccHeadline" style="font-family:var(--head);font-weight:800;font-size:1.5rem;color:var(--primary);line-height:1.2">—</div></div>
+        <div class="cg"><label>vs today</label>
+          <div id="waccDelta" style="font-family:var(--head);font-weight:700;font-size:1rem;line-height:2">—</div></div>
+        <div class="cg"><label>Book at date</label>
+          <div id="waccBook" class="muted" style="font-size:.85rem;line-height:2">—</div></div>
+      </div>
+      <div class="hint">
+        Weighted by outstanding balance at the selected date. Historical dates include the loans that were on foot then
+        (finalised loans up to their expiry); expired-but-current loans stay included — the money is still out.
+        <b>Future dates are a projection</b>: loans drop off at expiry (rollovers not assumed), scheduled principal repayments
+        are applied, and future-dated loans join when they start — so you can see what expiries and new money do to the rate.
+        Contribution = rate &times; weight. Daily interest = balance &times; rate &divide; 365.
+      </div>
+      <div class="tbl-wrap"><table id="waccTable"></table></div>
+      <div class="card-head" style="margin-top:1.8rem"><span>By Entity</span></div>
+      <div class="tbl-wrap"><table id="waccEntityTable"></table></div>
+    </div>
+  </div>
+
+  <!-- ================= CASHFLOW FORECAST ================= -->
+  <div class="tc" id="tab-cashflow">
+    <div class="card">
+      <div class="card-head">
+        <span>Cashflow Forecast — Loan Payouts</span>
+        <div class="btn-group"><button class="btn btn-outline btn-sm" onclick="exportCashflowCSV()">Export CSV</button></div>
+      </div>
+      <div class="ctrl-bar">
+        <div class="cg"><label>Horizon</label>
+          <select id="cfHorizon" onchange="renderCashflow()">
+            <option value="12" selected>Next 12 months</option>
+            <option value="24">Next 24 months</option>
+            <option value="999">All future</option>
+          </select>
+        </div>
+      </div>
+      <div class="hint">
+        Cash required month by month. Each expiry uses the loan's <b>likely action</b> (set it in the table):
+        <b>take P&amp;I in full</b> = full payout &middot; <b>roll principal, take interest</b> = interest only &middot;
+        <b>roll forward P&amp;I</b> = no cash required. Loans still <b>TBC</b> (amber dropdown) are assumed full payout.
+        Periodic interest and scheduled repayments fall on their contractual dates. Expired-not-finalised loans appear as <b>Overdue</b>.
+        Once a rollover is actually agreed, open the loan and use <b>Roll forward</b> to create the new loan.
+      </div>
+      <div id="cfChartWrap" style="position:relative">
+        <svg id="cfChart" style="width:100%;height:260px;display:block"></svg>
+        <div id="cfTip" style="position:absolute;display:none;pointer-events:none;background:#1a2332;color:#fff;border-radius:6px;padding:.45rem .65rem;font-size:.75rem;line-height:1.55;white-space:nowrap;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.25)"></div>
+      </div>
+      <div class="tbl-wrap" style="margin-top:1rem"><table id="cfTable"></table></div>
+    </div>
+  </div>
+
+  <!-- ================= UPCOMING ================= -->
+  <div class="tc" id="tab-upcoming">
+    <div class="card">
+      <div class="card-head"><span>Upcoming Obligations</span></div>
+      <div class="ctrl-bar">
+        <div class="cg"><label>Horizon</label>
+          <select id="upHorizon" onchange="renderUpcoming()">
+            <option value="60">Next 60 days</option>
+            <option value="90" selected>Next 90 days</option>
+            <option value="180">Next 180 days</option>
+            <option value="365">Next 12 months</option>
+          </select>
+        </div>
+      </div>
+      <div class="tbl-wrap"><table id="upTable"></table></div>
+    </div>
+  </div>
+
+  <!-- ================= DATA ================= -->
+  <div class="tc" id="tab-data">
+    <div class="card">
+      <div class="card-head"><span>Data</span></div>
+      <p class="hint">
+        Data lives in a single JSON file (<b>flux-loan-tracker-data.json</b>) in the <b>Flux Management</b> SharePoint site under
+        <b>General / Investors Loan Summary</b>. Sign in with your Microsoft 365 account and every change saves there automatically,
+        shared across the team. A copy is kept in this browser as an offline fallback. Use Export for backups.
+      </p>
+      <div class="btn-group" style="margin-bottom:1.5rem">
+        <button class="btn btn-primary btn-sm" onclick="connectMicrosoft()">Sign in with Microsoft</button>
+        <button class="btn btn-outline btn-sm" onclick="exportJSON()">Export data (JSON)</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('importFile').click()">Import data (JSON)</button>
+        <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(this)">
+        <button class="btn btn-danger btn-sm" onclick="clearAll()">Clear all loans</button>
+      </div>
+      <div id="setupNotes"></div>
+      <div class="card-head"><span>Conventions</span></div>
+      <ul class="hint" style="margin-left:1.2rem">
+        <li>All loans are <b>simple interest</b>, daily accrual on an <b>actual/365</b> basis.</li>
+        <li>End date defaults to start date + term (calendar months) and can be overridden.</li>
+        <li>Interest frequency drives the <i>scheduled</i> payment dates shown in Upcoming. Actual payments are recorded as events and reduce the balance-sheet accrual.</li>
+        <li><b>Scheduled payment amounts are contractual flat amounts</b> — balance &times; rate &times; period/12 — while balance-sheet accruals remain daily actual/365.</li>
+        <li>A <b>capitalisation</b> event adds unpaid accrued interest to principal on the chosen date (the compounding loans) — interest then accrues on the higher balance.</li>
+        <li>A <b>principal repayment</b> event reduces the outstanding balance from the day after the payment date (e.g. half the principal repaid at 6 months).</li>
+        <li>When a loan is repaid or rolled, mark it <b>Finalised</b> (or use Roll forward) rather than deleting it — history feeds the graphs.</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer><footer>Investor loan tracker — Flux Property Group · LF Advisory</footer>
+</div>
+
+<!-- ================= EDITOR MODAL ================= -->
+<div class="modal" id="editorOverlay">
+  <div class="modal-box">
+    <div class="modal-ttl" id="edTitle">Add Loan</div>
+    <div class="frow">
+      <div class="fg"><label>Investor *</label><input id="edInvestor"></div>
+      <div class="fg"><label>Flux entity for loan</label>
+        <input id="edEntity" list="entityList">
+        <datalist id="entityList">
+          <option>Flux Property Group</option><option>Flux Property</option>
+          <option>Flux Holdings Pty Ltd</option><option>Ben, Scott &amp; Lee (Personal)</option>
+          <option>Hendra Ventures</option>
+        </datalist>
+      </div>
+      <div class="fg"><label>Date of investment *</label><input type="date" id="edStart" onchange="syncEnd()"></div>
+      <div class="fg"><label>Amount invested (principal) *</label><input type="number" step="0.01" id="edPrincipal"></div>
+      <div class="fg"><label>Interest rate (% p.a.) *</label><input type="number" step="0.01" id="edRate"></div>
+      <div class="fg"><label>Loan term (months) *</label><input type="number" step="1" id="edTerm" onchange="syncEnd()"></div>
+      <div class="fg"><label>Loan expiry (auto — edit to override)</label><input type="date" id="edEnd"></div>
+      <div class="fg"><label>Interest payable</label>
+        <select id="edFreq">
+          <option value="maturity">At expiry (with principal)</option>
+          <option value="monthly">Monthly</option>
+          <option value="quarterly">Quarterly</option>
+          <option value="semiannual">Every 6 months</option>
+          <option value="annual">Annually</option>
+        </select>
+      </div>
+      <div class="fg"><label>Reminder letter (months before expiry)</label><input type="number" step="1" id="edReminder" value="3"></div>
+      <div class="fg"><label>Status</label>
+        <select id="edStatus">
+          <option value="current">Current</option>
+          <option value="finalised">Finalised (paid out / rolled over)</option>
+        </select>
+      </div>
+      <div class="fg"><label>Likely action at expiry</label>
+        <select id="edExpect">
+          <option value="">TBC — assume full payout</option>
+          <option value="payout">Take principal + interest in full</option>
+          <option value="rollP">Roll forward principal, take interest</option>
+          <option value="rollPI">Roll forward P&amp;I</option>
+        </select>
+      </div>
+    </div>
+    <div class="fg"><label>Notes / payout details</label><textarea id="edNotes" rows="2"></textarea></div>
+
+    <h4>Events — repayments, interest payments, capitalisations, further advances</h4>
+    <div class="hint" style="margin-top:0">
+      Record what actually happens on the loan. Half the principal repaid at 6 months &rarr; <i>Principal repayment</i>;
+      interest paid quarterly &rarr; an <i>Interest payment</i> each quarter; compounding loan &rarr; <i>Capitalise accrued interest</i> at the compounding date
+      (leave the amount blank to capitalise whatever is accrued and unpaid at that date).
+    </div>
+    <div id="edEvents"></div>
+    <button class="btn btn-outline btn-sm" onclick="addEventRow()">+ Add event</button>
+    <div class="hint" id="edAccruedHint"></div>
+
+    <div class="modal-foot">
+      <button class="btn btn-danger btn-sm" id="edDelete" onclick="deleteLoan()">Delete loan</button>
+      <button class="btn btn-outline btn-sm" id="edRoll" onclick="rollForward()">Roll forward &rarr;</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-outline" onclick="closeEditor()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveLoan()">Save loan</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   Investor Loan Tracker — Flux Property Group
+   Simple interest, actual/365, daily accrual engine.
+   CLIENT EDITION — signs in against Flux Property's own Microsoft
+   365 tenant; data file flux-loan-tracker-data.json lives in their
+   SharePoint (Flux Management / General / Investors Loan Summary).
+   localStorage mirror as offline fallback.
+   ============================================================ */
+
+const DAY = 86400000;
+const FREQ_MONTHS = {monthly:1, quarterly:3, semiannual:6, annual:12};
+const FREQ_LABEL = {maturity:"At expiry", monthly:"Monthly", quarterly:"Quarterly", semiannual:"6-monthly", annual:"Annual"};
+const EV_LABEL = {principal_repayment:"Principal repayment", further_advance:"Further advance",
+                  interest_payment:"Interest payment", capitalisation:"Capitalise accrued interest"};
+
+let store = { version:1, updatedAt:0, loans:[] };
+const loansRef = () => store.loans;
+
+/* ---------- date helpers (all UTC) ---------- */
+const d = s => { const [y,m,dd] = s.split("-").map(Number); return new Date(Date.UTC(y, m-1, dd)); };
+const iso = dt => dt.toISOString().slice(0,10);
+const fmtDate = s => { if(!s) return ""; const [y,m,dd] = s.split("-"); return `${dd}/${m}/${y}`; };
+function edate(startISO, months){
+  const dt = d(startISO);
+  const y = dt.getUTCFullYear(), m = dt.getUTCMonth(), day = dt.getUTCDate();
+  const t = new Date(Date.UTC(y, m + months, 1));
+  const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth()+1, 0)).getUTCDate();
+  t.setUTCDate(Math.min(day, last));
+  return iso(t);
+}
+const eomonth = (isoStr, offset) => {
+  const dt = d(isoStr);
+  return iso(new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth()+1+offset, 0)));
+};
+const daysDiff = (a,b) => Math.round((d(b)-d(a))/DAY);
+const minISO = (a,b) => a < b ? a : b;
+const todayISO = () => iso(new Date());
+
+/* ---------- money ---------- */
+const fmt$ = v => {
+  if (v === null || v === undefined) return "";
+  const s = Math.abs(v).toLocaleString("en-AU",{minimumFractionDigits:2, maximumFractionDigits:2});
+  return v < -0.005 ? `(${s})` : s;
+};
+const fmtPct = v => (v===null||v===undefined||v==="") ? "" : `${(+v).toFixed(2).replace(/\.?0+$/,"")}%`;
+const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+
+/* ============================================================
+   INTEREST ENGINE — see Data & Settings tab for conventions
+   ============================================================ */
+function loanEnd(loan){ return loan.endOverride || edate(loan.start, loan.termMonths); }
+
+function principalEvents(loan){
+  return (loan.events||[])
+    .filter(e => e.type !== "interest_payment")
+    .slice().sort((a,b) => a.date < b.date ? -1 : 1);
+}
+// walks the principal timeline; returns {acc, bal} at stopISO
+function walk(loan, stopISO){
+  const rate = loan.rate/100/365;
+  const evs = principalEvents(loan).filter(e => e.date <= stopISO);
+  let bal = +loan.principal, acc = 0, cursor = loan.start, capTaken = 0;
+  for (const e of evs){
+    if (e.date >= cursor){
+      acc += bal * rate * (daysDiff(cursor, e.date) + 1);
+      cursor = iso(new Date(d(e.date).getTime() + DAY));
+    }
+    if (e.type === "principal_repayment") bal -= +e.amount || 0;
+    else if (e.type === "further_advance") bal += +e.amount || 0;
+    else if (e.type === "capitalisation"){
+      const auto = (e.amount === null || e.amount === undefined || e.amount === "");
+      const amt = auto ? Math.max(0, acc - interestPaidTo(loan, e.date) - capTaken) : +e.amount;
+      bal += amt; if (auto) capTaken += amt;
+    }
+  }
+  return {acc, bal, rate, cursor};
+}
+function accruedTo(loan, asOfISO){
+  const stop = minISO(asOfISO, loanEnd(loan));
+  if (!loan.start || stop < loan.start) return 0;
+  const w = walk(loan, stop);
+  let acc = w.acc;
+  if (w.cursor <= stop) acc += w.bal * w.rate * (daysDiff(w.cursor, stop) + 1);
+  return acc;
+}
+function balanceOn(loan, asOfISO){
+  return walk(loan, minISO(asOfISO, loanEnd(loan))).bal;
+}
+function interestPaidTo(loan, asOfISO){
+  return (loan.events||[]).filter(e => e.type==="interest_payment" && e.date <= asOfISO)
+    .reduce((s,e) => s + (+e.amount||0), 0);
+}
+// Contractual (flat) interest — principal × rate × term/12, matching the
+// register workbook's G column. Loans whose principal changes mid-term
+// (repayments/advances/capitalisations) fall back to the daily engine
+// since a single flat figure no longer applies.
+function contractInterest(loan){
+  if (principalEvents(loan).length) return accruedTo(loan, loanEnd(loan));
+  return +loan.principal * loan.rate/100 * loan.termMonths/12;
+}
+// Flat periodic interest due at schedule date sd: balance over the period
+// × rate × months/12 — "neat" contractual amounts (e.g. $6,250/qtr on
+// $166,666.66 @ 15%), NOT the daily accrual. Accruals stay actual/365.
+function periodicAmount(loan, sd){
+  const m = FREQ_MONTHS[loan.freq];
+  if (!m) return 0;
+  const prev = edate(sd, -m);
+  return balanceOn(loan, prev < loan.start ? loan.start : prev) * loan.rate/100 * m/12;
+}
+function scheduleDates(loan){
+  const out = [], end = loanEnd(loan);
+  const m = FREQ_MONTHS[loan.freq];
+  if (m){
+    for (let k = m; ; k += m){
+      const dt = edate(loan.start, k);
+      if (dt >= end) break;
+      out.push(dt);
+    }
+  }
+  out.push(end);
+  return out;
+}
+
+/* ============================================================
+   Microsoft Graph / SharePoint sync — CLIENT EDITION
+   Signs in directly against Flux Property's Microsoft 365 tenant
+   (implicit token flow, same pattern as the LF payroll tools).
+   ONE-TIME SETUP: register a single-page app in Flux's Entra
+   tenant (delegated Files.ReadWrite + Sites.ReadWrite.All +
+   User.Read; SPA redirect URI = this page's URL) and fill in CFG.
+   ============================================================ */
+const CFG = {
+  tenantId:   "SETUP_REQUIRED",   // Flux's Entra Directory (tenant) ID
+  clientId:   "SETUP_REQUIRED",   // App registration (client) ID in Flux's tenant
+  siteSearch: "Flux Management",  // SharePoint site holding the data file
+  folder:     "General/Investors Loan Summary"   // path within the site's Documents library
+};
+const GRAPH = 'https://graph.microsoft.com/v1.0';
+const DATA_FILE = 'flux-loan-tracker-data.json';
+const LS_KEY = 'flux_loan_tracker_v1';
+const NEEDS_SETUP = /SETUP_REQUIRED/.test(CFG.tenantId + CFG.clientId);
+let _siteId = sessionStorage.getItem('flux_sp_site_id') || null;
+let _saveTimer = null;
+let _loaded = false;   // block SharePoint writes until the server copy has been read
+
+function setSync(state){
+  const map = {
+    loading:'· connecting…', connected:'· synced with team (SharePoint)',
+    saving:'· saving…', saved:'· saved to SharePoint',
+    offline:'· not signed in — saving on this device only', error:'· SharePoint unavailable — using local copy',
+    setup:'· Microsoft sign-in not configured — see Data & Settings'
+  };
+  const el = document.getElementById('syncStatus');
+  el.textContent = map[state] || '';
+  el.style.color = (state==='offline'||state==='error'||state==='setup') ? 'var(--warn)' : 'var(--mid)';
+  document.getElementById('syncBtn').style.display = (state==='offline') ? 'inline-flex' : 'none';
+}
+function parseTokenFromHash(){
+  const hash = window.location.hash.substring(1);
+  if (!hash) return null;
+  const params = Object.fromEntries(hash.split('&').map(p => p.split('=').map(decodeURIComponent)));
+  if (params.access_token){
+    history.replaceState(null, '', window.location.pathname);
+    const exp = Date.now() + (parseInt(params.expires_in || '3600') * 1000);
+    localStorage.setItem('flux_ms_token', params.access_token);
+    localStorage.setItem('flux_ms_token_exp', String(exp));
+    return params.access_token;
+  }
+  return null;
+}
+function getStoredToken(){
+  const t = localStorage.getItem('flux_ms_token'), exp = parseInt(localStorage.getItem('flux_ms_token_exp')||'0');
+  return (t && Date.now() < exp - 60000) ? t : null;
+}
+function _authFail(){ localStorage.removeItem('flux_ms_token'); localStorage.removeItem('flux_ms_token_exp'); }
+function connectMicrosoft(){
+  if (NEEDS_SETUP){
+    alert('Microsoft sign-in is not configured yet — LF Advisory needs to complete the one-time app registration (see Data & Settings).');
+    return;
+  }
+  window.location.href = 'https://login.microsoftonline.com/' + CFG.tenantId + '/oauth2/v2.0/authorize'
+    + '?client_id=' + CFG.clientId
+    + '&response_type=token'
+    + '&redirect_uri=' + encodeURIComponent(window.location.origin + window.location.pathname)
+    + '&scope=' + encodeURIComponent('Files.ReadWrite Sites.ReadWrite.All User.Read')
+    + '&response_mode=fragment';
+}
+async function getSiteId(token){
+  if (_siteId) return _siteId;
+  const r = await fetch(GRAPH + '/sites?search=' + encodeURIComponent(CFG.siteSearch), {headers:{Authorization:'Bearer '+token}});
+  if (r.status===401||r.status===403){ _authFail(); throw new Error('auth '+r.status); }
+  if (!r.ok) throw new Error('site search '+r.status);
+  const sites = (await r.json()).value || [];
+  const site = sites.find(s => (s.displayName||'').toLowerCase() === CFG.siteSearch.toLowerCase()) || sites[0];
+  if (!site) throw new Error('SharePoint site "' + CFG.siteSearch + '" not found');
+  _siteId = site.id; sessionStorage.setItem('flux_sp_site_id', _siteId);
+  return _siteId;
+}
+function dataUrl(siteId){
+  const path = CFG.folder.split('/').map(encodeURIComponent).join('/');
+  return GRAPH + '/sites/' + siteId + '/drive/root:/' + path + '/' + encodeURIComponent(DATA_FILE) + ':/content';
+}
+async function odInit(){
+  if (NEEDS_SETUP){ setSync('setup'); normalizeLoans(); renderAll(); return; }
+  const token = getStoredToken();
+  if(!token){ setSync('offline'); normalizeLoans(); renderAll(); return; }
+  try{
+    setSync('loading');
+    const siteId = await getSiteId(token);
+    const r = await fetch(dataUrl(siteId), {headers:{Authorization:'Bearer '+token}});
+    if(r.status===401||r.status===403){ _authFail(); throw new Error('auth '+r.status); }
+    let dirty = false;
+    if(r.ok){
+      const server = await r.json();
+      if(server && Array.isArray(server.loans)){
+        if((store.updatedAt||0) > (server.updatedAt||0)){
+          dirty = true;                       // offline edits are newer — push up
+        } else {
+          store = server;                     // server wins
+          localStorage.setItem(LS_KEY, JSON.stringify(store));
+        }
+      }
+    } else if(r.status === 404){
+      if(store.loans.length) dirty = true;    // first run: push local data up
+    } else {
+      throw new Error('graph ' + r.status);
+    }
+    _loaded = true;
+    if(dirty) queueSave();
+    setSync('connected');
+  }catch(e){
+    console.error('[Sync] load error:', e);
+    setSync(getStoredToken() ? 'error' : 'offline');
+  }
+  normalizeLoans();
+  renderAll();
+}
+function queueSave(){ if(!_loaded) return; clearTimeout(_saveTimer); _saveTimer = setTimeout(odSave, 1200); }
+async function odSave(){
+  const token = getStoredToken();
+  if(!token){ setSync('offline'); return; }
+  try{
+    const siteId = await getSiteId(token);
+    setSync('saving');
+    const r = await fetch(dataUrl(siteId),
+      {method:'PUT', headers:{Authorization:'Bearer '+token, 'Content-Type':'application/json'}, body: JSON.stringify(store, null, 2)});
+    if(r.status===401||r.status===403){ _authFail(); setSync('offline'); return; }
+    if(!r.ok) throw new Error('save '+r.status);
+    setSync('saved');
+  }catch(e){ console.error('[Sync] save error:', e); setSync('error'); }
+}
+
+/* ---------- local persistence ---------- */
+function save(){
+  store.updatedAt = Date.now();
+  localStorage.setItem(LS_KEY, JSON.stringify(store));
+  queueSave();
+}
+function loadLocal(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw){ const p = JSON.parse(raw); if(Array.isArray(p.loans)){ store = p; return true; } }
+  }catch(e){}
+  return false;
+}
+function exportJSON(){
+  const blob = new Blob([JSON.stringify(store, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `flux-loan-data-${todayISO()}.json`;
+  a.click();
+}
+function importJSON(input){
+  const f = input.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const data = JSON.parse(r.result);
+      if (!Array.isArray(data.loans)) throw new Error("No loans array in file");
+      store.loans = data.loans; save(); renderAll();
+      banner(`Imported ${store.loans.length} loans from ${esc(f.name)}.`);
+    }catch(e){ alert("Could not read that file: " + e.message); }
+  };
+  r.readAsText(f);
+  input.value = "";
+}
+function clearAll(){
+  if (!confirm("Delete ALL loans (this device AND the shared SharePoint copy)? Export a JSON backup first if unsure.")) return;
+  store.loans = []; save(); renderAll();
+}
+function banner(msg){
+  document.getElementById("banner").innerHTML = msg ? `<div class="banner">${msg}</div>` : "";
+}
+
+// Housekeeping run on every load (idempotent):
+// 1. Repair: loans finalised at roll time before their expiry get linked to
+//    their successor and flipped back to current (they're still on foot).
+// 2. Auto-finalise rolled-forward loans once their expiry has passed.
+function normalizeLoans(){
+  const t = todayISO();
+  let changed = false;
+  for (const l of loansRef()){
+    if (!l.rolledInto && l.status === "finalised" && loanEnd(l) > t && /Rolled forward into new loan commencing/.test(l.notes || "")){
+      const succ = loansRef().find(x => x !== l && x.investor === l.investor && x.start === loanEnd(l));
+      if (succ){ l.rolledInto = succ.id; l.status = "current"; changed = true; }
+    }
+    if (l.rolledInto && l.status === "current" && loanEnd(l) < t){
+      l.status = "finalised"; changed = true;
+    }
+  }
+  if (changed) save();
+}
+
+/* ============================================================
+   KPI TILES
+   ============================================================ */
+function renderKPIs(){
+  const t = todayISO();
+  const cur = loansRef().filter(l => l.status === "current");
+  const started = cur.filter(l => l.start <= t);   // future-start rollovers don't count yet
+  const principal = started.reduce((s,l) => s + balanceOn(l, t), 0);
+  const accrual = started.reduce((s,l) => s + accruedTo(l, t) - interestPaidTo(l, t), 0);
+  const daily = started.reduce((s,l) => s + balanceOn(l, t) * l.rate/100/365, 0);
+  const wacc = principal ? started.reduce((s,l) => s + balanceOn(l, t) * l.rate/100, 0) / principal * 100 : 0;
+  const next60 = cur.filter(l => { if (l.rolledInto) return false; const e = loanEnd(l); return e >= t && daysDiff(t, e) <= 60; }).length;
+  const expired = cur.filter(l => !l.rolledInto && loanEnd(l) < t).length;
+  document.getElementById("kpis").innerHTML = `
+    <div class="tile" onclick="gotoRegister('current')"><div class="tile-lbl">Principal Outstanding</div><div class="tile-val">$${fmt$(principal)}</div><div class="tile-sub">current loans, today</div></div>
+    <div class="tile t3" onclick="gotoTab('history')"><div class="tile-lbl">Blended Rate (WACC)</div><div class="tile-val">${fmtPct(wacc)}</div><div class="tile-sub">weighted by balance</div></div>
+    <div class="tile t3" onclick="gotoTab('wacc')"><div class="tile-lbl">Daily Interest</div><div class="tile-val">$${fmt$(daily)}</div><div class="tile-sub">per day at current balances</div></div>
+    <div class="tile t2" onclick="gotoTab('accruals')"><div class="tile-lbl">Interest Accrued &amp; Unpaid</div><div class="tile-val">$${fmt$(accrual)}</div><div class="tile-sub">as at today</div></div>
+    <div class="tile" onclick="gotoRegister('current')"><div class="tile-lbl">Current Loans</div><div class="tile-val">${cur.length}</div><div class="tile-sub">on the register</div></div>
+    <div class="tile t4" onclick="gotoRegister('expiring60')"><div class="tile-lbl">Expiring &le; 60 Days</div><div class="tile-val">${next60}</div><div class="tile-sub">letters &amp; instructions</div></div>
+    <div class="tile t5" onclick="gotoRegister('expired')"><div class="tile-lbl">Past Expiry</div><div class="tile-val${expired ? ' neg' : ''}">${expired}</div><div class="tile-sub">finalise or roll over</div></div>`;
+}
+function gotoTab(name){
+  switchTab(document.querySelector('.tab[data-tab="' + name + '"]'));
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function gotoRegister(filter){
+  document.getElementById('regFilter').value = filter;
+  renderRegister();
+  gotoTab('register');
+}
+
+/* ============================================================
+   REGISTER TAB
+   ============================================================ */
+let inlineEditId = null;   // loan id currently in quick-edit mode
+function startInline(id){ inlineEditId = id; renderRegister(); }
+function cancelInline(){ inlineEditId = null; renderRegister(); }
+function ilSyncEnd(){
+  const s = document.getElementById("il_start").value;
+  const t = +document.getElementById("il_term").value;
+  if (s && t) document.getElementById("il_end").value = edate(s, t);
+}
+function saveInline(id){
+  const l = loansRef().find(x => x.id === id);
+  if (!l) return;
+  const g = k => document.getElementById("il_" + k);
+  const investor = g("investor").value.trim();
+  const start = g("start").value;
+  const principal = +g("principal").value;
+  const rate = +g("rate").value;
+  const term = +g("term").value;
+  if (!investor || !start || !principal || !rate || !term){
+    alert("Investor, date of investment, principal, rate and term are required."); return;
+  }
+  const end = g("end").value;
+  l.investor = investor;
+  l.entity = g("entity").value.trim();
+  l.start = start; l.principal = principal; l.rate = rate; l.termMonths = term;
+  l.endOverride = (end && end !== edate(start, term)) ? end : null;
+  l.freq = g("freq").value;
+  l.status = g("status").value;
+  l.notes = g("notes").value.trim();
+  inlineEditId = null;
+  save(); renderAll();
+}
+function renderRegister(){
+  const filter = document.getElementById("regFilter").value;
+  const q = document.getElementById("regSearch").value.trim().toLowerCase();
+  const t = todayISO();
+  let list = loansRef().filter(l => {
+    if (filter === "all") return true;
+    if (filter === "current" || filter === "finalised") return l.status === filter;
+    if (l.status !== "current") return false;
+    const end = loanEnd(l);
+    if (filter === "expiring60") return !l.rolledInto && end >= t && daysDiff(t, end) <= 60;
+    if (filter === "expired") return !l.rolledInto && end < t;
+    return true;
+  });
+  if (q) list = list.filter(l => (l.investor + " " + (l.entity||"")).toLowerCase().includes(q));
+  list.sort((a,b) => loanEnd(a) < loanEnd(b) ? -1 : 1);
+
+  let html = `<thead><tr><th>Investor</th><th>Entity</th><th>Invested</th><th class="r">Principal</th>
+    <th class="r">Balance Now</th><th class="r">Rate</th><th class="r">Term</th><th>Expiry</th>
+    <th>Interest</th><th class="r">Contract Interest</th><th class="r">Accrued Unpaid</th><th>Status</th></tr></thead><tbody>`;
+  let totP = 0, totB = 0, totI = 0, totA = 0;
+  for (const l of list){
+    const end = loanEnd(l), bal = balanceOn(l, t);
+    const acc = l.status === "current" ? accruedTo(l, t) - interestPaidTo(l, t) : 0;
+    const expired = l.status === "current" && end < t;
+    if (l.status === "current"){ totP += +l.principal; totB += bal; totI += contractInterest(l); totA += acc; }
+    if (l.id === inlineEditId){
+      html += `<tr style="background:#f0f8fa">
+        <td><input id="il_investor" value="${esc(l.investor)}" style="width:100%;min-width:190px;margin-bottom:.3rem">
+            <input id="il_notes" value="${esc(l.notes||"")}" placeholder="notes / payout details" style="width:100%;font-size:.75rem"></td>
+        <td><input id="il_entity" list="entityList" value="${esc(l.entity||"")}" style="width:150px"></td>
+        <td><input type="date" id="il_start" value="${l.start}" style="width:145px" onchange="ilSyncEnd()"></td>
+        <td class="r"><input type="number" step="0.01" id="il_principal" value="${l.principal}" style="width:115px;text-align:right"></td>
+        <td class="r muted">${fmt$(bal)}</td>
+        <td class="r"><input type="number" step="0.01" id="il_rate" value="${l.rate}" style="width:70px;text-align:right"> %</td>
+        <td class="r"><input type="number" step="1" id="il_term" value="${l.termMonths}" style="width:60px;text-align:right" onchange="ilSyncEnd()"></td>
+        <td><input type="date" id="il_end" value="${end}" style="width:145px"></td>
+        <td><select id="il_freq" style="width:120px">${Object.entries(FREQ_LABEL).map(([k,v]) => `<option value="${k}"${l.freq===k?" selected":""}>${v}</option>`).join("")}</select></td>
+        <td class="r muted">—</td>
+        <td class="r muted">—</td>
+        <td><select id="il_status" style="width:105px">
+              <option value="current"${l.status==="current"?" selected":""}>Current</option>
+              <option value="finalised"${l.status==="finalised"?" selected":""}>Finalised</option></select>
+          <div class="btn-group" style="margin-top:.35rem">
+            <button class="btn btn-primary btn-sm" onclick="saveInline('${l.id}')">Save</button>
+            <button class="btn btn-outline btn-sm" onclick="cancelInline()">Cancel</button>
+          </div></td>
+      </tr>`;
+      continue;
+    }
+    const future = l.status === "current" && l.start > t;
+    const rolling = l.status === "current" && l.rolledInto;
+    const statusBadge = rolling ? `<span class="badge b-freq">Rolling fwd ${fmtDate(end)}</span>`
+      : future ? `<span class="badge b-final">Starts ${fmtDate(l.start)}</span>`
+      : expired ? '<span class="badge b-expired">Past expiry</span>'
+      : `<span class="badge ${l.status === "current" ? "b-current" : "b-final"}">${l.status === "current" ? "Current" : "Finalised"}</span>`;
+    html += `<tr${future ? ' style="opacity:.55"' : ""}>
+      <td><a class="rowlink" onclick="openEditor('${l.id}')">${esc(l.investor)}</a>${l.notes ? `<div class="small muted">${esc(l.notes)}</div>` : ""}</td>
+      <td>${esc(l.entity||"")}</td>
+      <td>${fmtDate(l.start)}</td>
+      <td class="r">${fmt$(+l.principal)}</td>
+      <td class="r">${fmt$(bal)}</td>
+      <td class="r">${fmtPct(l.rate)}</td>
+      <td class="r">${l.termMonths} mo</td>
+      <td>${fmtDate(end)}${l.endOverride ? ' <span class="small muted">(o/r)</span>' : ""}</td>
+      <td><span class="badge b-freq">${FREQ_LABEL[l.freq]||esc(l.freq)}</span></td>
+      <td class="r">${fmt$(contractInterest(l))}</td>
+      <td class="r">${l.status==="current" && !future ? fmt$(acc) : ""}</td>
+      <td>${statusBadge}
+        <div class="small" style="margin-top:.2rem"><a class="rowlink" onclick="startInline('${l.id}')">Quick edit</a></div></td>
+    </tr>`;
+  }
+  html += `</tbody>`;
+  if (filter !== "finalised"){
+    html += `<tfoot><tr class="total"><td colspan="3">Total — listed current loans</td><td class="r">${fmt$(totP)}</td>
+      <td class="r">${fmt$(totB)}</td><td></td><td></td><td></td><td></td>
+      <td class="r">${fmt$(totI)}</td><td class="r">${fmt$(totA)}</td><td></td></tr></tfoot>`;
+  }
+  document.getElementById("regTable").innerHTML = html;
+  document.getElementById("regCount").textContent = `${list.length} loans`;
+}
+
+/* ============================================================
+   ACCRUALS TAB — mirrors the Monthly Interest Calcs workbook
+   ============================================================ */
+function renderAccruals(){
+  const me = document.getElementById("accDate").value;
+  if (!me) return;
+  const prevEOM = eomonth(me, -1);
+  const monthStart = iso(new Date(d(prevEOM).getTime() + DAY));
+
+  let html = `<thead><tr><th>Investor</th><th>Entity</th><th>Invested</th><th class="r">Principal</th>
+    <th class="r">Rate</th><th>Expiry</th><th class="r">Daily Rate</th><th class="r">Total Days</th>
+    <th class="r">Interest Accrued</th><th class="r">Less: Paid</th><th class="r">Accrual per BS</th>
+    <th class="r">Days This Month</th><th class="r">Monthly Interest</th><th class="r">Loan per BS</th></tr></thead><tbody>`;
+
+  const rows = [];
+  for (const l of loansRef()){
+    if (l.status === "finalised") continue;
+    if (l.start > me) continue;
+    const end = loanEnd(l);
+    const stop = minISO(me, end);
+    const bal = balanceOn(l, stop);
+    const dailyRate = bal * l.rate/100/365;
+    const totalDays = daysDiff(l.start, stop) + 1;
+    const accrued = accruedTo(l, me);
+    const paid = interestPaidTo(l, me);
+    const accruedPrev = accruedTo(l, prevEOM);
+    const monthly = accrued - accruedPrev;
+    const dtmFrom = l.start > monthStart ? l.start : monthStart;
+    const daysThisMonth = stop >= dtmFrom ? daysDiff(dtmFrom, stop) + 1 : 0;
+    rows.push({l, end, bal, dailyRate, totalDays, accrued, paid, accrualBS: accrued - paid, daysThisMonth, monthly});
+  }
+  rows.sort((a,b) => a.end < b.end ? -1 : 1);
+
+  const tot = {p:0, accrued:0, paid:0, accrualBS:0, monthly:0, loanBS:0};
+  for (const r of rows){
+    const expired = r.end < me;
+    tot.p += +r.l.principal; tot.accrued += r.accrued; tot.paid += r.paid;
+    tot.accrualBS += r.accrualBS; tot.monthly += r.monthly; tot.loanBS += r.bal;
+    html += `<tr>
+      <td><a class="rowlink" onclick="openEditor('${r.l.id}')">${esc(r.l.investor)}</a>${expired ? ' <span class="badge b-expired">expired — finalise or roll</span>' : ""}</td>
+      <td>${esc(r.l.entity||"")}</td>
+      <td>${fmtDate(r.l.start)}</td>
+      <td class="r">${fmt$(+r.l.principal)}</td>
+      <td class="r">${fmtPct(r.l.rate)}</td>
+      <td>${fmtDate(r.end)}</td>
+      <td class="r">${fmt$(r.dailyRate)}</td>
+      <td class="r">${r.totalDays}</td>
+      <td class="r">${fmt$(r.accrued)}</td>
+      <td class="r">${r.paid ? "("+fmt$(r.paid)+")" : ""}</td>
+      <td class="r"><b>${fmt$(r.accrualBS)}</b></td>
+      <td class="r">${r.daysThisMonth}</td>
+      <td class="r">${fmt$(r.monthly)}</td>
+      <td class="r">${fmt$(r.bal)}</td>
+    </tr>`;
+  }
+  html += `</tbody><tfoot><tr class="total"><td colspan="3">Totals — ${fmtDate(me)}</td>
+    <td class="r">${fmt$(tot.p)}</td><td></td><td></td><td></td><td></td>
+    <td class="r">${fmt$(tot.accrued)}</td><td class="r">${tot.paid ? "("+fmt$(tot.paid)+")" : ""}</td>
+    <td class="r">${fmt$(tot.accrualBS)}</td><td></td>
+    <td class="r">${fmt$(tot.monthly)}</td><td class="r">${fmt$(tot.loanBS)}</td></tr></tfoot>`;
+  document.getElementById("accTable").innerHTML = html;
+}
+function shiftMonth(n){
+  const el = document.getElementById("accDate");
+  el.value = eomonth(el.value, n);
+  renderAccruals();
+}
+function exportAccrualsCSV(){
+  const me = document.getElementById("accDate").value;
+  const rows = [...document.getElementById("accTable").querySelectorAll("tr")].map(tr =>
+    [...tr.children].map(td => `"${td.innerText.replace(/"/g,'""').replace(/\n/g," ")}"`).join(","));
+  const blob = new Blob([rows.join("\r\n")], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `flux-interest-accruals-${me}.csv`;
+  a.click();
+}
+
+/* ============================================================
+   WACC / BLENDED RATE TAB
+   ============================================================ */
+// Loans on foot at a date. Past/present: current loans stay included past
+// expiry (the money is still out); finalised loans count up to their expiry —
+// so historical dates reconstruct the book as it was. FUTURE dates are a
+// projection: every loan drops off at its expiry (rollovers not assumed) and
+// scheduled principal repayments reduce the balance.
+function waccRows(asOf){
+  const projecting = asOf > todayISO();
+  return loansRef()
+    .filter(l => l.start <= asOf && (projecting ? asOf <= loanEnd(l)
+                                                : (l.status === "current" || asOf <= loanEnd(l))))
+    .map(l => {
+      const bal = balanceOn(l, minISO(asOf, loanEnd(l)));
+      return {l, bal, rate:+l.rate, daily: bal*l.rate/100/365, annual: bal*l.rate/100,
+              expired: l.status === "current" && loanEnd(l) < asOf};
+    })
+    .filter(r => r.bal > 0.005)
+    .sort((a,b) => b.bal - a.bal);
+}
+function waccStatsAt(dISO){
+  const rows = waccRows(dISO);
+  const bal = rows.reduce((s,r) => s + r.bal, 0);
+  return {date:dISO, bal, wacc: bal ? rows.reduce((s,r) => s + r.annual, 0)/bal*100 : 0, n: rows.length};
+}
+function waccSeries(){
+  const ls = loansRef(); if (!ls.length) return [];
+  const t = todayISO();
+  const first = ls.reduce((m,l) => l.start < m ? l.start : m, t);
+  const pts = [];
+  let dm = eomonth(first, 0);
+  while (dm < t){ pts.push(waccStatsAt(dm)); dm = eomonth(dm, 1); }
+  const tp = waccStatsAt(t); tp.today = true; pts.push(tp);
+  return pts.filter(p => p.bal > 0);
+}
+
+/* --- historical WACC line chart (inline SVG, house teal) --- */
+const MONS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const fmtMon = s => { const [y,m] = s.split("-"); return MONS[+m-1] + " " + y.slice(2); };
+let _waccChartPts = [];   // pixel-space points for hover/click
+function renderWaccChart(){
+  const svg = document.getElementById("waccChart");
+  const W = svg.clientWidth;
+  if (!W) return;                                  // tab hidden — re-rendered on tab switch
+  const H = 280, mL = 54, mR = 30, mT = 16, mB = 34;
+  const pts = waccSeries();
+  if (pts.length < 2){ svg.innerHTML = ""; _waccChartPts = []; return; }
+  let lo = Math.min(...pts.map(p => p.wacc)), hi = Math.max(...pts.map(p => p.wacc));
+  if (hi - lo < 0.6){ lo -= 0.35; hi += 0.35; }
+  const step = (hi - lo) <= 2 ? 0.5 : (hi - lo) <= 5 ? 1 : 2;
+  lo = Math.floor(lo/step)*step; hi = Math.ceil(hi/step)*step;
+  const x = i => mL + i*(W - mL - mR)/(pts.length - 1);
+  const y = w => mT + (hi - w)/(hi - lo)*(H - mT - mB);
+  let s = "";
+  for (let g = lo; g <= hi + 1e-9; g += step){
+    s += `<line x1="${mL}" y1="${y(g)}" x2="${W-mR}" y2="${y(g)}" stroke="#eceff2" stroke-width="1"/>
+          <text x="${mL-8}" y="${y(g)+4}" text-anchor="end" font-size="11" fill="#6b7c8d">${(+g.toFixed(2))}%</text>`;
+  }
+  const kx = Math.max(1, Math.ceil(pts.length/9));
+  pts.forEach((p,i) => {
+    if (i % kx === 0 || i === pts.length-1)
+      s += `<text x="${x(i)}" y="${H-mB+18}" text-anchor="middle" font-size="11" fill="#6b7c8d">${p.today ? "Today" : fmtMon(p.date)}</text>`;
+  });
+  s += `<line id="waccCross" x1="0" y1="${mT}" x2="0" y2="${H-mB}" stroke="#b9c4cc" stroke-width="1" visibility="hidden"/>`;
+  s += `<path d="${pts.map((p,i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(p.wacc).toFixed(1)).join(" ")}" fill="none" stroke="#2d6670" stroke-width="2"/>`;
+  pts.forEach((p,i) => {
+    s += `<circle cx="${x(i)}" cy="${y(p.wacc)}" r="4" fill="${p.today ? "#2d6670" : "#fff"}" stroke="#2d6670" stroke-width="2"/>`;
+  });
+  const last = pts[pts.length-1];
+  s += `<text x="${x(pts.length-1)}" y="${y(last.wacc)-12}" text-anchor="end" font-size="12" font-weight="700" fill="#1a2332">${last.wacc.toFixed(2)}%</text>`;
+  svg.innerHTML = s;
+  _waccChartPts = pts.map((p,i) => ({px:x(i), py:y(p.wacc), p}));
+
+  const tip = document.getElementById("waccTip");
+  const nearest = e => {
+    const r = svg.getBoundingClientRect();
+    const mx = e.clientX - r.left;
+    let best = 0;
+    _waccChartPts.forEach((c,i) => { if (Math.abs(c.px - mx) < Math.abs(_waccChartPts[best].px - mx)) best = i; });
+    return best;
+  };
+  svg.onmousemove = e => {
+    if (!_waccChartPts.length) return;
+    const i = nearest(e), c = _waccChartPts[i];
+    const cross = document.getElementById("waccCross");
+    cross.setAttribute("x1", c.px); cross.setAttribute("x2", c.px);
+    cross.setAttribute("visibility", "visible");
+    tip.innerHTML = `<b>${c.p.today ? "Today (" + fmtDate(c.p.date) + ")" : fmtDate(c.p.date)}</b><br>
+      Blended rate: <b>${c.p.wacc.toFixed(2)}%</b><br>Loans on foot: ${c.p.n}<br>Balance: $${fmt$(c.p.bal)}`;
+    tip.style.display = "block";
+    const wrapW = svg.parentElement.clientWidth;
+    tip.style.left = (c.px + 190 > wrapW ? c.px - 185 : c.px + 12) + "px";
+    tip.style.top = Math.max(4, c.py - 66) + "px";
+  };
+  svg.onmouseleave = () => {
+    tip.style.display = "none";
+    const cross = document.getElementById("waccCross");
+    if (cross) cross.setAttribute("visibility", "hidden");
+  };
+  svg.onclick = e => {
+    if (!_waccChartPts.length) return;
+    const c = _waccChartPts[nearest(e)];
+    document.getElementById("waccDate").value = c.p.date;
+    renderWacc();
+    gotoTab("wacc");
+  };
+  renderBalChart(pts);
+}
+
+/* --- historical loan balance chart (below the WACC curve) --- */
+function renderBalChart(pts){
+  const svg = document.getElementById("balChart");
+  const W = svg.clientWidth;
+  if (!W) return;
+  if (!pts) pts = waccSeries();
+  if (pts.length < 2){ svg.innerHTML = ""; return; }
+  const H = 280, mL = 60, mR = 30, mT = 16, mB = 34;
+  const max = Math.max(...pts.map(p => p.bal));
+  const pow = Math.pow(10, Math.floor(Math.log10(max || 1)));
+  const niceMax = [1,1.5,2,2.5,3,4,5,6,8,10].map(m => m*pow).find(v => v >= max) || max;
+  const x = i => mL + i*(W - mL - mR)/(pts.length - 1);
+  const y = v => mT + (1 - v/niceMax)*(H - mT - mB);
+  let s = "";
+  for (let k = 0; k <= 4; k++){
+    const v = niceMax*k/4;
+    s += `<line x1="${mL}" y1="${y(v)}" x2="${W-mR}" y2="${y(v)}" stroke="#eceff2" stroke-width="1"/>
+          <text x="${mL-8}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="#6b7c8d">${fmtShort$(v)}</text>`;
+  }
+  const kx = Math.max(1, Math.ceil(pts.length/9));
+  pts.forEach((p,i) => {
+    if (i % kx === 0 || i === pts.length-1)
+      s += `<text x="${x(i)}" y="${H-mB+18}" text-anchor="middle" font-size="11" fill="#6b7c8d">${p.today ? "Today" : fmtMon(p.date)}</text>`;
+  });
+  s += `<line id="balCross" x1="0" y1="${mT}" x2="0" y2="${H-mB}" stroke="#b9c4cc" stroke-width="1" visibility="hidden"/>`;
+  const lineD = pts.map((p,i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(p.bal).toFixed(1)).join(" ");
+  s += `<path d="${lineD} L ${x(pts.length-1).toFixed(1)} ${H-mB} L ${x(0).toFixed(1)} ${H-mB} Z" fill="#2d6670" opacity="0.08"/>`;
+  s += `<path d="${lineD}" fill="none" stroke="#2d6670" stroke-width="2"/>`;
+  pts.forEach((p,i) => {
+    s += `<circle cx="${x(i)}" cy="${y(p.bal)}" r="3.5" fill="${p.today ? "#2d6670" : "#fff"}" stroke="#2d6670" stroke-width="2"/>`;
+  });
+  const last = pts[pts.length-1];
+  s += `<text x="${x(pts.length-1)}" y="${y(last.bal)-12}" text-anchor="end" font-size="12" font-weight="700" fill="#1a2332">${fmtShort$(last.bal)}</text>`;
+  svg.innerHTML = s;
+  const px = pts.map((p,i) => ({px:x(i), py:y(p.bal), p}));
+  const tip = document.getElementById("balTip");
+  const nearest = e => {
+    const r = svg.getBoundingClientRect();
+    const mx = e.clientX - r.left;
+    let best = 0;
+    px.forEach((c,i) => { if (Math.abs(c.px - mx) < Math.abs(px[best].px - mx)) best = i; });
+    return best;
+  };
+  svg.onmousemove = e => {
+    const c = px[nearest(e)];
+    const cross = document.getElementById("balCross");
+    cross.setAttribute("x1", c.px); cross.setAttribute("x2", c.px);
+    cross.setAttribute("visibility", "visible");
+    tip.innerHTML = `<b>${c.p.today ? "Today (" + fmtDate(c.p.date) + ")" : fmtDate(c.p.date)}</b><br>
+      Balance: <b>$${fmt$(c.p.bal)}</b><br>Loans on foot: ${c.p.n}<br>Blended rate: ${c.p.wacc.toFixed(2)}%`;
+    tip.style.display = "block";
+    const wrapW = svg.parentElement.clientWidth;
+    tip.style.left = (c.px + 190 > wrapW ? c.px - 185 : c.px + 12) + "px";
+    tip.style.top = Math.max(4, c.py - 70) + "px";
+  };
+  svg.onmouseleave = () => {
+    tip.style.display = "none";
+    const cross = document.getElementById("balCross");
+    if (cross) cross.setAttribute("visibility", "hidden");
+  };
+  svg.onclick = e => {
+    const c = px[nearest(e)];
+    document.getElementById("waccDate").value = c.p.date;
+    renderWacc();
+    gotoTab("wacc");
+  };
+  renderIntChart();
+}
+
+/* --- monthly interest expense chart (accrual per month, act/365) --- */
+function monthlyInterestSeries(){
+  const ls = loansRef(); if (!ls.length) return [];
+  const t = todayISO();
+  const first = ls.reduce((m,l) => l.start < m ? l.start : m, t);
+  const lastEOM = eomonth(t, 0);
+  const pts = [];
+  let me = eomonth(first, 0);
+  while (true){
+    const prev = eomonth(me, -1);
+    const stop = me > t ? t : me;   // current month → month-to-date
+    let v = 0;
+    for (const l of ls) v += accruedTo(l, stop) - accruedTo(l, prev);
+    pts.push({date: me, stop, v, mtd: me > t});
+    if (me >= lastEOM) break;
+    me = eomonth(me, 1);
+  }
+  return pts;
+}
+function renderIntChart(){
+  const svg = document.getElementById("intChart");
+  const W = svg.clientWidth;
+  if (!W) return;
+  const pts = monthlyInterestSeries();
+  if (pts.length < 2){ svg.innerHTML = ""; return; }
+  const H = 280, mL = 60, mR = 16, mT = 16, mB = 34;
+  const max = Math.max(...pts.map(p => p.v));
+  const pow = Math.pow(10, Math.floor(Math.log10(max || 1)));
+  const niceMax = [1,1.5,2,2.5,3,4,5,6,8,10].map(m => m*pow).find(v => v >= max) || max;
+  const bw = (W - mL - mR)/pts.length;
+  const y = v => mT + (1 - v/niceMax)*(H - mT - mB);
+  let s = "";
+  for (let k = 0; k <= 4; k++){
+    const v = niceMax*k/4;
+    s += `<line x1="${mL}" y1="${y(v)}" x2="${W-mR}" y2="${y(v)}" stroke="#eceff2" stroke-width="1"/>
+          <text x="${mL-8}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="#6b7c8d">${fmtShort$(v)}</text>`;
+  }
+  const kx = Math.max(1, Math.ceil(pts.length/9));
+  pts.forEach((p,i) => {
+    const x = mL + i*bw + bw*0.15, w = Math.max(2, bw*0.7);
+    const top = y(p.v);
+    s += `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(0,(H-mB)-top).toFixed(1)}" rx="2"
+            fill="#2d6670"${p.mtd ? ' opacity="0.45"' : ""}/>`;
+    if (i % kx === 0 || i === pts.length-1)
+      s += `<text x="${(x + w/2).toFixed(1)}" y="${H-mB+18}" text-anchor="middle" font-size="11" fill="#6b7c8d">${fmtMon(p.date)}</text>`;
+  });
+  const last = pts[pts.length-1];
+  s += `<text x="${W-mR}" y="${y(last.v)-8}" text-anchor="end" font-size="12" font-weight="700" fill="#1a2332">${fmtShort$(last.v)}${last.mtd ? " MTD" : ""}</text>`;
+  svg.innerHTML = s;
+  const tip = document.getElementById("intTip");
+  svg.onmousemove = e => {
+    const r = svg.getBoundingClientRect();
+    const i = Math.min(pts.length-1, Math.max(0, Math.floor((e.clientX - r.left - mL)/bw)));
+    if (e.clientX - r.left < mL){ tip.style.display = "none"; return; }
+    const p = pts[i];
+    tip.innerHTML = `<b>${fmtMon(p.date)}${p.mtd ? " (month to date)" : ""}</b><br>Interest expense: <b>$${fmt$(p.v)}</b>`;
+    tip.style.display = "block";
+    const px2 = mL + i*bw + bw/2;
+    tip.style.left = (px2 + 180 > W ? px2 - 175 : px2 + 10) + "px";
+    tip.style.top = Math.max(4, y(p.v) - 56) + "px";
+  };
+  svg.onmouseleave = () => { tip.style.display = "none"; };
+  svg.onclick = e => {
+    const r = svg.getBoundingClientRect();
+    const i = Math.min(pts.length-1, Math.max(0, Math.floor((e.clientX - r.left - mL)/bw)));
+    const p = pts[i];
+    document.getElementById("accDate").value = p.mtd ? p.stop : p.date;
+    renderAccruals();
+    gotoTab("accruals");
+  };
+}
+window.addEventListener("resize", () => renderWaccChart());
+function renderWacc(){
+  const el = document.getElementById("waccDate");
+  if (!el.value) el.value = todayISO();
+  const asOf = el.value;
+  const rows = waccRows(asOf);
+  const totBal = rows.reduce((s,r) => s + r.bal, 0);
+  const totAnnual = rows.reduce((s,r) => s + r.annual, 0);
+  const totDaily = rows.reduce((s,r) => s + r.daily, 0);
+  const wacc = totBal ? totAnnual/totBal*100 : 0;
+
+  // headline readout beside the date picker, with movement vs today
+  const now = waccStatsAt(todayISO());
+  document.getElementById("waccHeadline").textContent = totBal ? fmtPct(wacc) : "—";
+  const deltaEl = document.getElementById("waccDelta");
+  if (!totBal || !now.bal || asOf === todayISO()){
+    deltaEl.textContent = asOf === todayISO() ? "— (this is today)" : "—";
+    deltaEl.style.color = "var(--mid)";
+  } else {
+    const d = wacc - now.wacc;
+    deltaEl.textContent = (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(2) + " pts vs " + fmtPct(now.wacc) + " today";
+    deltaEl.style.color = Math.abs(d) < 0.005 ? "var(--mid)" : (d > 0 ? "var(--danger)" : "var(--ok)");
+  }
+  document.getElementById("waccBook").textContent = totBal
+    ? `$${fmt$(totBal)} across ${rows.length} loans · $${fmt$(totDaily)}/day`
+    : "no loans on foot at this date";
+
+  let html = `<thead><tr><th>Investor</th><th>Entity</th><th class="r">Balance</th><th class="r">Rate</th>
+    <th class="r">Weight</th><th class="r">Contribution</th><th class="r">Daily Interest</th><th class="r">Annual Interest</th></tr></thead><tbody>`;
+  for (const r of rows){
+    const w = totBal ? r.bal/totBal*100 : 0;
+    html += `<tr>
+      <td><a class="rowlink" onclick="openEditor('${r.l.id}')">${esc(r.l.investor)}</a>${r.expired ? ' <span class="badge b-expired">expired</span>' : ""}${r.l.status === "finalised" ? ' <span class="badge b-final">Finalised</span>' : ""}</td>
+      <td>${esc(r.l.entity||"")}</td>
+      <td class="r">${fmt$(r.bal)}</td>
+      <td class="r">${fmtPct(r.rate)}</td>
+      <td class="r">${w.toFixed(1)}%</td>
+      <td class="r">${(r.rate*w/100).toFixed(2)}%</td>
+      <td class="r">${fmt$(r.daily)}</td>
+      <td class="r">${fmt$(r.annual)}</td>
+    </tr>`;
+  }
+  html += `</tbody><tfoot><tr class="total"><td colspan="2">Blended — ${rows.length} loans</td>
+    <td class="r">${fmt$(totBal)}</td><td class="r">${fmtPct(wacc)}</td><td class="r">100%</td><td class="r">${fmtPct(wacc)}</td>
+    <td class="r">${fmt$(totDaily)}</td><td class="r">${fmt$(totAnnual)}</td></tr></tfoot>`;
+  document.getElementById("waccTable").innerHTML = html;
+
+  const ents = {};
+  for (const r of rows){
+    const e = (r.l.entity||"").trim() || "(no entity)";
+    if (!ents[e]) ents[e] = {bal:0, annual:0, daily:0, n:0};
+    ents[e].bal += r.bal; ents[e].annual += r.annual; ents[e].daily += r.daily; ents[e].n++;
+  }
+  let eh = `<thead><tr><th>Entity</th><th class="r">Loans</th><th class="r">Balance</th><th class="r">Blended Rate</th><th class="r">Daily Interest</th><th class="r">Annual Interest</th></tr></thead><tbody>`;
+  for (const [name, v] of Object.entries(ents).sort((a,b) => b[1].bal - a[1].bal)){
+    eh += `<tr><td>${esc(name)}</td><td class="r">${v.n}</td><td class="r">${fmt$(v.bal)}</td>
+      <td class="r">${fmtPct(v.bal ? v.annual/v.bal*100 : 0)}</td><td class="r">${fmt$(v.daily)}</td><td class="r">${fmt$(v.annual)}</td></tr>`;
+  }
+  eh += `</tbody>`;
+  document.getElementById("waccEntityTable").innerHTML = eh;
+  renderWaccChart();
+}
+function exportWaccCSV(){
+  const asOf = document.getElementById("waccDate").value;
+  const rows = [...document.getElementById("waccTable").querySelectorAll("tr")].map(tr =>
+    [...tr.children].map(td => `"${td.innerText.replace(/"/g,'""').replace(/\n/g," ")}"`).join(","));
+  const blob = new Blob([rows.join("\r\n")], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `flux-blended-rate-${asOf}.csv`;
+  a.click();
+}
+
+/* ============================================================
+   CASHFLOW FORECAST TAB — assumes no rollovers
+   ============================================================ */
+function cashflowItems(){
+  const t = todayISO();
+  const items = [];
+  for (const l of loansRef()){
+    if (l.status !== "current") continue;
+    const end = loanEnd(l);
+    const exp = l.expect || "";
+    let interest = finalInterest(l), principal = balanceOn(l, end), label, rolled = false;
+    if (l.rolledInto){
+      // rollover already created: cash required = what the successor doesn't absorb
+      rolled = true;
+      const succ = loansRef().find(x => x.id === l.rolledInto);
+      const owed = balanceOn(l, end) + finalInterest(l);
+      const shortfall = succ ? Math.max(0, owed - (+succ.principal || 0)) : owed;
+      interest = Math.min(finalInterest(l), shortfall);
+      principal = shortfall - interest;
+      label = "Expiry — rolls forward into new loan" + (shortfall > 0.005 ? " (net cash out)" : " (no cash required)");
+    }
+    else if (exp === "rollP"){ principal = 0; label = "Expiry — interest paid out, principal rolls forward"; }
+    else if (exp === "rollPI"){ interest = 0; principal = 0; label = "Expiry — P&I rolls forward (no cash required)"; }
+    else if (exp === "payout"){ label = "Expiry — full payout of principal + interest"; }
+    else label = "Expiry — principal + final interest (action TBC, assumed payout)";
+    items.push({date:end, loan:l, label, interest, principal, overdue:end < t, expiry:true, rolled});
+    if (FREQ_MONTHS[l.freq]){
+      for (const sd of scheduleDates(l)){
+        if (sd >= end || sd < t) continue;
+        items.push({date:sd, loan:l, label:FREQ_LABEL[l.freq] + " interest payment",
+                    interest:periodicAmount(l, sd), principal:0, overdue:false});
+      }
+    }
+    for (const e of (l.events||[])){
+      if (e.type === "principal_repayment" && e.date >= t && e.date < end)
+        items.push({date:e.date, loan:l, label:"Scheduled principal repayment" + (e.note ? " — " + e.note : ""),
+                    interest:0, principal:+e.amount||0, overdue:false});
+    }
+  }
+  items.sort((a,b) => a.date < b.date ? -1 : 1);
+  return items;
+}
+function cashflowGroups(){
+  const months = +document.getElementById("cfHorizon").value;
+  const t = todayISO();
+  const limit = eomonth(edate(t, Math.min(months, 600)), 0);
+  const groups = [], byKey = {};
+  for (const it of cashflowItems()){
+    if (!it.overdue && it.date > limit) continue;
+    const key = it.overdue ? "overdue" : it.date.slice(0,7);
+    if (!byKey[key]){
+      byKey[key] = {key, overdue:it.overdue,
+        label: it.overdue ? "Overdue" : MONS[+it.date.slice(5,7)-1] + " " + it.date.slice(0,4),
+        interest:0, principal:0, total:0, items:[]};
+      groups.push(byKey[key]);
+    }
+    const g = byKey[key];
+    g.interest += it.interest; g.principal += it.principal;
+    g.total += it.interest + it.principal;
+    g.items.push(it);
+  }
+  return groups;
+}
+function expectSelect(l){
+  const opts = [["","TBC — assume full payout"],["payout","Take P&I in full"],
+                ["rollP","Roll principal, take interest"],["rollPI","Roll forward P&I"]];
+  return `<select onchange="setExpect('${l.id}', this.value)" style="font-size:.75rem;padding:.25rem .4rem;${!(l.expect||"") ? "border-color:#e8b04b;background:#fffaf0" : ""}">
+    ${opts.map(([v,t]) => `<option value="${v}"${(l.expect||"")===v?" selected":""}>${t}</option>`).join("")}</select>`;
+}
+function setExpect(id, v){
+  const l = loansRef().find(x => x.id === id);
+  if (!l) return;
+  l.expect = v;
+  save(); renderCashflow();
+}
+function renderCashflow(){
+  const groups = cashflowGroups();
+  let html = `<thead><tr><th>Month</th><th>Investor / item</th><th>Likely action</th><th>Due</th>
+    <th class="r">Interest</th><th class="r">Principal</th><th class="r">Total Cash</th><th class="r">Cumulative</th></tr></thead><tbody>`;
+  let cum = 0, totI = 0, totP = 0, tbc = 0;
+  for (const g of groups){
+    cum += g.total; totI += g.interest; totP += g.principal;
+    html += `<tr class="total"><td>${g.overdue ? '<span class="badge b-expired">Overdue</span>' : esc(g.label)}</td>
+      <td class="muted small">${g.items.length} payment${g.items.length===1?"":"s"}</td><td></td><td></td>
+      <td class="r">${fmt$(g.interest)}</td><td class="r">${fmt$(g.principal)}</td>
+      <td class="r">${fmt$(g.total)}</td><td class="r">${fmt$(cum)}</td></tr>`;
+    for (const it of g.items){
+      if (it.expiry && !it.rolled && !(it.loan.expect||"")) tbc++;
+      html += `<tr><td></td>
+        <td><a class="rowlink" onclick="openEditor('${it.loan.id}')">${esc(it.loan.investor)}</a>
+          <span class="muted small"> — ${esc(it.label)}</span></td>
+        <td>${it.expiry ? (it.rolled ? '<span class="badge b-current">Rolled &#10003;</span>' : expectSelect(it.loan)) : ""}</td>
+        <td${it.overdue ? ' class="warn-txt"' : ""}>${fmtDate(it.date)}</td>
+        <td class="r">${it.interest ? fmt$(it.interest) : ""}</td>
+        <td class="r">${it.principal ? fmt$(it.principal) : ""}</td>
+        <td class="r">${fmt$(it.interest + it.principal)}</td><td></td></tr>`;
+    }
+  }
+  if (!groups.length) html += `<tr><td colspan="8" class="muted">No payments due in this window.</td></tr>`;
+  html += `</tbody><tfoot><tr class="total"><td colspan="4">Total cash required${tbc ? ` <span class="warn-txt small">(${tbc} expir${tbc===1?"y":"ies"} TBC — assumed full payout)</span>` : ""}</td>
+    <td class="r">${fmt$(totI)}</td><td class="r">${fmt$(totP)}</td><td class="r">${fmt$(totI+totP)}</td><td></td></tr></tfoot>`;
+  document.getElementById("cfTable").innerHTML = html;
+  renderCashflowChart(groups);
+}
+const fmtShort$ = v => v >= 995000 ? "$" + (v/1e6).toFixed(1) + "m" : "$" + Math.round(v/1e3) + "k";
+function renderCashflowChart(groups){
+  const svg = document.getElementById("cfChart");
+  const W = svg.clientWidth;
+  if (!W) return;                                   // tab hidden — re-rendered on tab switch
+  if (!groups.length){ svg.innerHTML = ""; return; }
+  const H = 260, mL = 60, mR = 16, mT = 14, mB = 34;
+  const max = Math.max(...groups.map(g => g.total));
+  const pow = Math.pow(10, Math.floor(Math.log10(max || 1)));
+  const niceMax = [1,1.5,2,2.5,3,4,5,6,8,10].map(m => m*pow).find(v => v >= max) || max;
+  const bw = (W - mL - mR)/groups.length;
+  const y = v => mT + (1 - v/niceMax)*(H - mT - mB);
+  let s = "";
+  for (let k = 0; k <= 4; k++){
+    const v = niceMax*k/4;
+    s += `<line x1="${mL}" y1="${y(v)}" x2="${W-mR}" y2="${y(v)}" stroke="#eceff2" stroke-width="1"/>
+          <text x="${mL-8}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="#6b7c8d">${fmtShort$(v)}</text>`;
+  }
+  const kx = Math.max(1, Math.ceil(groups.length/12));
+  groups.forEach((g,i) => {
+    const x = mL + i*bw + bw*0.15, w = Math.max(3, bw*0.7);
+    const top = y(g.total);
+    s += `<rect x="${x}" y="${top}" width="${w}" height="${Math.max(0,(H-mB)-top)}" rx="3"
+            fill="${g.overdue ? "#e67e22" : "#2d6670"}" data-i="${i}"/>`;
+    if (i % kx === 0 || i === groups.length-1)
+      s += `<text x="${x + w/2}" y="${H-mB+18}" text-anchor="middle" font-size="11" fill="#6b7c8d">${g.overdue ? "Overdue" : esc(g.label.slice(0,3) + " " + g.label.slice(-2))}</text>`;
+  });
+  svg.innerHTML = s;
+  const tip = document.getElementById("cfTip");
+  svg.onmousemove = e => {
+    const r = svg.getBoundingClientRect();
+    const i = Math.min(groups.length-1, Math.max(0, Math.floor((e.clientX - r.left - mL)/bw)));
+    const g = groups[i];
+    if (!g || e.clientX - r.left < mL){ tip.style.display = "none"; return; }
+    tip.innerHTML = `<b>${esc(g.label)}</b><br>Interest: $${fmt$(g.interest)}<br>Principal: $${fmt$(g.principal)}<br>Total: <b>$${fmt$(g.total)}</b><br>${g.items.length} payment${g.items.length===1?"":"s"}`;
+    tip.style.display = "block";
+    const px = mL + i*bw + bw/2;
+    tip.style.left = (px + 190 > W ? px - 185 : px + 10) + "px";
+    tip.style.top = Math.max(4, y(g.total) - 80) + "px";
+  };
+  svg.onmouseleave = () => { tip.style.display = "none"; };
+}
+function exportCashflowCSV(){
+  const rows = [...document.getElementById("cfTable").querySelectorAll("tr")].map(tr =>
+    [...tr.children].map(td => `"${td.innerText.replace(/"/g,'""').replace(/\n/g," ")}"`).join(","));
+  const blob = new Blob([rows.join("\r\n")], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `flux-cashflow-forecast-${todayISO()}.csv`;
+  a.click();
+}
+
+/* ============================================================
+   UPCOMING TAB
+   ============================================================ */
+function renderUpcoming(){
+  const t = todayISO();
+  const horizon = +document.getElementById("upHorizon").value;
+  const limit = iso(new Date(d(t).getTime() + horizon*DAY));
+  const items = [];
+  for (const l of loansRef()){
+    if (l.status !== "current") continue;
+    const end = loanEnd(l);
+    if (end <= limit){
+      if (l.rolledInto){
+        const succ = loansRef().find(x => x.id === l.rolledInto);
+        const owed = balanceOn(l, end) + finalInterest(l);
+        const net = succ ? Math.max(0, owed - (+succ.principal || 0)) : owed;
+        items.push({date:end, loan:l, what:"Loan rolls forward" + (net > 0.005 ? " — net cash due" : " — no cash required"),
+          amount: net, overdue: false});
+      } else {
+        items.push({date:end, loan:l, what:"Loan expiry — principal + final interest due",
+          amount: balanceOn(l, end) + finalInterest(l), overdue: end < t});
+      }
+    }
+    const rem = l.reminderMonths ? edate(end, -l.reminderMonths) : null;
+    if (rem && rem >= t && rem <= limit) items.push({date:rem, loan:l, what:`Send reminder letter (${l.reminderMonths} months before expiry)`, amount:null});
+    if (FREQ_MONTHS[l.freq]){
+      for (const sd of scheduleDates(l)){
+        if (sd >= end || sd < t || sd > limit) continue;
+        items.push({date:sd, loan:l, what:`${FREQ_LABEL[l.freq]} interest payment due`, amount: periodicAmount(l, sd)});
+      }
+    }
+    for (const e of (l.events||[])){
+      if (e.type === "principal_repayment" && e.date >= t && e.date <= limit)
+        items.push({date:e.date, loan:l, what:"Scheduled principal repayment" + (e.note ? ` — ${e.note}` : ""), amount:+e.amount});
+    }
+  }
+  items.sort((a,b) => a.date < b.date ? -1 : 1);
+  let html = `<thead><tr><th>Date</th><th>Investor</th><th>Entity</th><th>What</th><th class="r">Est. Amount</th></tr></thead><tbody>`;
+  if (!items.length) html += `<tr><td colspan="5" class="muted">Nothing due in this window.</td></tr>`;
+  for (const it of items){
+    html += `<tr>
+      <td${it.overdue ? ' class="warn-txt"' : ""}>${fmtDate(it.date)}${it.overdue ? " (overdue)" : ""}</td>
+      <td><a class="rowlink" onclick="openEditor('${it.loan.id}')">${esc(it.loan.investor)}</a></td>
+      <td>${esc(it.loan.entity||"")}</td>
+      <td>${esc(it.what)}</td>
+      <td class="r">${it.amount === null ? "" : fmt$(it.amount)}</td>
+    </tr>`;
+  }
+  html += `</tbody>`;
+  document.getElementById("upTable").innerHTML = html;
+}
+
+/* ============================================================
+   EDITOR
+   ============================================================ */
+let editingId = null;
+let rollSourceId = null;   // set while composing a roll-forward loan
+
+// Contractual payout amounts at expiry (shared by Upcoming, Cashflow, Roll forward)
+function finalInterest(l){
+  const end = loanEnd(l);
+  return FREQ_MONTHS[l.freq] ? periodicAmount(l, end)
+    : Math.max(0, contractInterest(l) - interestPaidTo(l, end));
+}
+
+function rollForward(){
+  if (!editingId) return;
+  const src = loansRef().find(x => x.id === editingId);
+  if (!src) return;
+  const end = loanEnd(src);
+  const rolledPrincipal = Math.round((balanceOn(src, end) + finalInterest(src)) * 100) / 100;
+  closeEditor();
+  rollSourceId = src.id;
+  openEditor();   // fresh add-mode form, then prefill from the source loan
+  document.getElementById("edTitle").textContent = "Roll Forward — " + src.investor;
+  document.getElementById("edInvestor").value = src.investor;
+  document.getElementById("edEntity").value = src.entity || "";
+  document.getElementById("edStart").value = end;
+  document.getElementById("edPrincipal").value = rolledPrincipal;
+  document.getElementById("edRate").value = src.rate;
+  document.getElementById("edTerm").value = src.termMonths;
+  document.getElementById("edFreq").value = src.freq;
+  document.getElementById("edReminder").value = src.reminderMonths != null ? src.reminderMonths : 3;
+  document.getElementById("edNotes").value = "Rolled forward from loan invested " + fmtDate(src.start) + " (expired " + fmtDate(end) + ").";
+  syncEnd();
+  document.getElementById("edAccruedHint").textContent =
+    "Principal prefilled as P&I roll: $" + fmt$(balanceOn(src, end)) + " balance + $" + fmt$(finalInterest(src)) +
+    " final interest. If the interest is being paid out (or the rate/term changed), just edit the fields. Saving marks the old loan Finalised.";
+}
+
+function openEditor(id){
+  editingId = id || null;
+  const l = id ? loansRef().find(x => x.id === id) : null;
+  document.getElementById("edTitle").textContent = l ? "Edit Loan — " + l.investor : "Add Loan";
+  document.getElementById("edInvestor").value = l ? l.investor : "";
+  document.getElementById("edEntity").value = l ? (l.entity||"") : "Flux Property Group";
+  document.getElementById("edStart").value = l ? l.start : "";
+  document.getElementById("edPrincipal").value = l ? l.principal : "";
+  document.getElementById("edRate").value = l ? l.rate : "";
+  document.getElementById("edTerm").value = l ? l.termMonths : 12;
+  document.getElementById("edEnd").value = l ? loanEnd(l) : "";
+  document.getElementById("edFreq").value = l ? l.freq : "maturity";
+  document.getElementById("edReminder").value = l ? (l.reminderMonths != null ? l.reminderMonths : 3) : 3;
+  document.getElementById("edStatus").value = l ? l.status : "current";
+  document.getElementById("edExpect").value = l ? (l.expect || "") : "";
+  document.getElementById("edNotes").value = l ? (l.notes||"") : "";
+  document.getElementById("edDelete").style.display = l ? "" : "none";
+  document.getElementById("edRoll").style.display = (l && l.status === "current") ? "" : "none";
+  document.getElementById("edEvents").innerHTML = "";
+  for (const e of ((l && l.events) || [])) addEventRow(e);
+  const hint = document.getElementById("edAccruedHint");
+  hint.textContent = l ? `Accrued unpaid interest today: $${fmt$(accruedTo(l, todayISO()) - interestPaidTo(l, todayISO()))}` : "";
+  document.getElementById("editorOverlay").classList.add("on");
+}
+function closeEditor(){ rollSourceId = null; document.getElementById("editorOverlay").classList.remove("on"); }
+
+function syncEnd(){
+  const s = document.getElementById("edStart").value;
+  const t = +document.getElementById("edTerm").value;
+  if (s && t) document.getElementById("edEnd").value = edate(s, t);
+}
+function addEventRow(e){
+  const div = document.createElement("div");
+  div.className = "evrow";
+  div.innerHTML = `
+    <input type="date" class="evDate" value="${(e && e.date)||""}">
+    <select class="evType">
+      ${Object.entries(EV_LABEL).map(([k,v]) => `<option value="${k}"${e && e.type===k?" selected":""}>${v}</option>`).join("")}
+    </select>
+    <input type="number" step="0.01" class="evAmt" placeholder="amount" value="${e && e.amount != null ? e.amount : ""}">
+    <input class="evNote" placeholder="note" value="${esc(e && e.note || "")}">
+    <button class="btn btn-danger btn-sm" style="padding:.3rem .5rem" onclick="this.parentElement.remove()">&times;</button>`;
+  document.getElementById("edEvents").appendChild(div);
+}
+function collectEvents(){
+  return [...document.querySelectorAll("#edEvents .evrow")].map(r => ({
+    date: r.querySelector(".evDate").value,
+    type: r.querySelector(".evType").value,
+    amount: r.querySelector(".evAmt").value === "" ? null : +r.querySelector(".evAmt").value,
+    note: r.querySelector(".evNote").value
+  })).filter(e => e.date);
+}
+function saveLoan(){
+  const investor = document.getElementById("edInvestor").value.trim();
+  const start = document.getElementById("edStart").value;
+  const principal = +document.getElementById("edPrincipal").value;
+  const rate = +document.getElementById("edRate").value;
+  const term = +document.getElementById("edTerm").value;
+  if (!investor || !start || !principal || !rate || !term){
+    alert("Investor, date of investment, principal, rate and term are required."); return;
+  }
+  const endInput = document.getElementById("edEnd").value;
+  const auto = edate(start, term);
+  const loan = {
+    id: editingId || uid(),
+    investor, start, principal, rate, termMonths: term,
+    endOverride: (endInput && endInput !== auto) ? endInput : null,
+    entity: document.getElementById("edEntity").value.trim(),
+    freq: document.getElementById("edFreq").value,
+    reminderMonths: +document.getElementById("edReminder").value || 0,
+    status: document.getElementById("edStatus").value,
+    expect: document.getElementById("edExpect").value,
+    notes: document.getElementById("edNotes").value.trim(),
+    events: collectEvents()
+  };
+  const i = loansRef().findIndex(x => x.id === loan.id);
+  if (i >= 0) store.loans[i] = loan; else store.loans.push(loan);
+  if (rollSourceId && loan.id !== rollSourceId){
+    const src = loansRef().find(x => x.id === rollSourceId);
+    if (src && src.status === "current"){
+      src.rolledInto = loan.id;    // stays current until expiry; normalizeLoans() finalises then
+      src.expect = "";
+      if (loanEnd(src) < todayISO()) src.status = "finalised";
+      src.notes = ((src.notes || "") + " Rolled forward into new loan commencing " + fmtDate(loan.start) + ".").trim();
+    }
+  }
+  save(); closeEditor(); renderAll();
+}
+function deleteLoan(){
+  if (!editingId) return;
+  const l = loansRef().find(x => x.id === editingId);
+  if (!confirm(`Delete the loan for ${l.investor}? (Consider marking it Finalised instead to keep history.)`)) return;
+  store.loans = loansRef().filter(x => x.id !== editingId);
+  save(); closeEditor(); renderAll();
+}
+
+/* ============================================================
+   SHELL
+   ============================================================ */
+function switchTab(el){
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === el));
+  document.querySelectorAll(".tc").forEach(x => x.classList.remove("on"));
+  document.getElementById("tab-" + el.dataset.tab).classList.add("on");
+  if (el.dataset.tab === "history") renderWaccChart();   // charts can't size themselves while hidden
+  if (el.dataset.tab === "cashflow") renderCashflow();
+}
+function renderAll(){ renderKPIs(); renderRegister(); renderAccruals(); renderWacc(); renderCashflow(); renderUpcoming(); }
+
+(function init(){
+  loadLocal();
+  parseTokenFromHash();
+  const now = new Date();
+  document.getElementById("accDate").value = eomonth(iso(now), now.getUTCDate() >= 28 ? 0 : -1);
+  if (NEEDS_SETUP){
+    document.getElementById("setupNotes").innerHTML =
+      '<div class="banner"><b>One-time setup (LF Advisory):</b> register a single-page app in Flux\'s Microsoft Entra tenant ' +
+      '(delegated permissions Files.ReadWrite, Sites.ReadWrite.All, User.Read; SPA redirect URI = this page\'s URL), then set ' +
+      '<code>tenantId</code> and <code>clientId</code> in the CFG block at the top of this file\'s script and redeploy.</div>';
+  }
+  if (!store.loans.length){
+    banner("No loans loaded yet — sign in with Microsoft to load the shared data file, or import the JSON exported from LF Advisory's copy (Data &amp; Settings &rarr; Import).");
+  }
+  renderAll();
+  odInit();
+})();
+</script></script>
+</body>
+</html>
