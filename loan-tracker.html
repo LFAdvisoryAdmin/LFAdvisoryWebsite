@@ -166,6 +166,10 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
         <div class="cg"><label>Search</label><input type="search" id="regSearch" placeholder="Investor…" oninput="renderRegister()" style="width:220px"></div>
         <div class="cg" style="margin-left:auto;justify-content:flex-end"><span class="muted small" id="regCount"></span></div>
       </div>
+      <div class="hint" style="margin-top:0">
+        <b>Quick edit</b> (right-hand column) fixes loan terms in the row. Click an <b>investor's name</b> for the full editor —
+        events (repayments, interest payments, capitalisations), notes and delete.
+      </div>
       <div class="tbl-wrap"><table id="regTable"></table></div>
     </div>
   </div>
@@ -678,6 +682,37 @@ function gotoRegister(filter){
 /* ============================================================
    REGISTER TAB
    ============================================================ */
+let inlineEditId = null;   // loan id currently in quick-edit mode
+function startInline(id){ inlineEditId = id; renderRegister(); }
+function cancelInline(){ inlineEditId = null; renderRegister(); }
+function ilSyncEnd(){
+  const s = document.getElementById("il_start").value;
+  const t = +document.getElementById("il_term").value;
+  if (s && t) document.getElementById("il_end").value = edate(s, t);
+}
+function saveInline(id){
+  const l = loansRef().find(x => x.id === id);
+  if (!l) return;
+  const g = k => document.getElementById("il_" + k);
+  const investor = g("investor").value.trim();
+  const start = g("start").value;
+  const principal = +g("principal").value;
+  const rate = +g("rate").value;
+  const term = +g("term").value;
+  if (!investor || !start || !principal || !rate || !term){
+    alert("Investor, date of investment, principal, rate and term are required."); return;
+  }
+  const end = g("end").value;
+  l.investor = investor;
+  l.entity = g("entity").value.trim();
+  l.start = start; l.principal = principal; l.rate = rate; l.termMonths = term;
+  l.endOverride = (end && end !== edate(start, term)) ? end : null;
+  l.freq = g("freq").value;
+  l.status = g("status").value;
+  l.notes = g("notes").value.trim();
+  inlineEditId = null;
+  save(); renderAll();
+}
 function renderRegister(){
   const filter = document.getElementById("regFilter").value;
   const q = document.getElementById("regSearch").value.trim().toLowerCase();
@@ -703,6 +738,30 @@ function renderRegister(){
     const acc = l.status === "current" ? accruedTo(l, t) - interestPaidTo(l, t) : 0;
     const expired = l.status === "current" && end < t;
     if (l.status === "current"){ totP += +l.principal; totB += bal; totI += contractInterest(l); totA += acc; }
+    if (l.id === inlineEditId){
+      html += `<tr style="background:#f0f8fa">
+        <td><input id="il_investor" value="${esc(l.investor)}" style="width:100%;min-width:190px;margin-bottom:.3rem">
+            <input id="il_notes" value="${esc(l.notes||"")}" placeholder="notes / payout details" style="width:100%;font-size:.75rem"></td>
+        <td><input id="il_entity" list="entityList" value="${esc(l.entity||"")}" style="width:150px"></td>
+        <td><input type="date" id="il_start" value="${l.start}" style="width:145px" onchange="ilSyncEnd()"></td>
+        <td class="r"><input type="number" step="0.01" id="il_principal" value="${l.principal}" style="width:115px;text-align:right"></td>
+        <td class="r muted">${fmt$(bal)}</td>
+        <td class="r"><input type="number" step="0.01" id="il_rate" value="${l.rate}" style="width:70px;text-align:right"> %</td>
+        <td class="r"><input type="number" step="1" id="il_term" value="${l.termMonths}" style="width:60px;text-align:right" onchange="ilSyncEnd()"></td>
+        <td><input type="date" id="il_end" value="${end}" style="width:145px"></td>
+        <td><select id="il_freq" style="width:120px">${Object.entries(FREQ_LABEL).map(([k,v]) => `<option value="${k}"${l.freq===k?" selected":""}>${v}</option>`).join("")}</select></td>
+        <td class="r muted">—</td>
+        <td class="r muted">—</td>
+        <td><select id="il_status" style="width:105px">
+              <option value="current"${l.status==="current"?" selected":""}>Current</option>
+              <option value="finalised"${l.status==="finalised"?" selected":""}>Finalised</option></select>
+          <div class="btn-group" style="margin-top:.35rem">
+            <button class="btn btn-primary btn-sm" onclick="saveInline('${l.id}')">Save</button>
+            <button class="btn btn-outline btn-sm" onclick="cancelInline()">Cancel</button>
+          </div></td>
+      </tr>`;
+      continue;
+    }
     html += `<tr>
       <td><a class="rowlink" onclick="openEditor('${l.id}')">${esc(l.investor)}</a>${l.notes ? `<div class="small muted">${esc(l.notes)}</div>` : ""}</td>
       <td>${esc(l.entity||"")}</td>
@@ -715,7 +774,8 @@ function renderRegister(){
       <td><span class="badge b-freq">${FREQ_LABEL[l.freq]||esc(l.freq)}</span></td>
       <td class="r">${fmt$(contractInterest(l))}</td>
       <td class="r">${l.status==="current" ? fmt$(acc) : ""}</td>
-      <td>${expired ? '<span class="badge b-expired">Past expiry</span>' : `<span class="badge ${l.status === "current" ? "b-current" : "b-final"}">${l.status === "current" ? "Current" : "Finalised"}</span>`}</td>
+      <td>${expired ? '<span class="badge b-expired">Past expiry</span>' : `<span class="badge ${l.status === "current" ? "b-current" : "b-final"}">${l.status === "current" ? "Current" : "Finalised"}</span>`}
+        <div class="small" style="margin-top:.2rem"><a class="rowlink" onclick="startInline('${l.id}')">Quick edit</a></div></td>
     </tr>`;
   }
   html += `</tbody>`;
