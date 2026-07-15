@@ -260,10 +260,11 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
         </div>
       </div>
       <div class="hint">
-        Cash required month by month, assuming <b>no rollovers</b> — every loan pays out principal + final interest at expiry,
-        periodic interest is paid on its contractual dates (flat amounts), and scheduled principal repayments fall on their dates.
-        Expired loans not yet finalised appear as <b>Overdue</b>. To model a rollover, open the loan and use <b>Roll forward</b> —
-        the payout moves to the new expiry.
+        Cash required month by month. Each expiry uses the loan's <b>likely action</b> (set it in the table):
+        <b>take P&amp;I in full</b> = full payout &middot; <b>roll principal, take interest</b> = interest only &middot;
+        <b>roll forward P&amp;I</b> = no cash required. Loans still <b>TBC</b> (amber dropdown) are assumed full payout.
+        Periodic interest and scheduled repayments fall on their contractual dates. Expired-not-finalised loans appear as <b>Overdue</b>.
+        Once a rollover is actually agreed, open the loan and use <b>Roll forward</b> to create the new loan.
       </div>
       <div id="cfChartWrap" style="position:relative">
         <svg id="cfChart" style="width:100%;height:260px;display:block"></svg>
@@ -354,6 +355,14 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
         <select id="edStatus">
           <option value="current">Current</option>
           <option value="finalised">Finalised (paid out / rolled over)</option>
+        </select>
+      </div>
+      <div class="fg"><label>Likely action at expiry</label>
+        <select id="edExpect">
+          <option value="">TBC — assume full payout</option>
+          <option value="payout">Take principal + interest in full</option>
+          <option value="rollP">Roll forward principal, take interest</option>
+          <option value="rollPI">Roll forward P&amp;I</option>
         </select>
       </div>
     </div>
@@ -1177,8 +1186,13 @@ function cashflowItems(){
   for (const l of loansRef()){
     if (l.status !== "current") continue;
     const end = loanEnd(l);
-    items.push({date:end, loan:l, label:"Expiry — principal + final interest",
-                interest:finalInterest(l), principal:balanceOn(l, end), overdue:end < t});
+    const exp = l.expect || "";
+    let interest = finalInterest(l), principal = balanceOn(l, end), label;
+    if (exp === "rollP"){ principal = 0; label = "Expiry — interest paid out, principal rolls forward"; }
+    else if (exp === "rollPI"){ interest = 0; principal = 0; label = "Expiry — P&I rolls forward (no cash required)"; }
+    else if (exp === "payout"){ label = "Expiry — full payout of principal + interest"; }
+    else label = "Expiry — principal + final interest (action TBC, assumed payout)";
+    items.push({date:end, loan:l, label, interest, principal, overdue:end < t, expiry:true});
     if (FREQ_MONTHS[l.freq]){
       for (const sd of scheduleDates(l)){
         if (sd >= end || sd < t) continue;
@@ -1216,29 +1230,43 @@ function cashflowGroups(){
   }
   return groups;
 }
+function expectSelect(l){
+  const opts = [["","TBC — assume full payout"],["payout","Take P&I in full"],
+                ["rollP","Roll principal, take interest"],["rollPI","Roll forward P&I"]];
+  return `<select onchange="setExpect('${l.id}', this.value)" style="font-size:.75rem;padding:.25rem .4rem;${!(l.expect||"") ? "border-color:#e8b04b;background:#fffaf0" : ""}">
+    ${opts.map(([v,t]) => `<option value="${v}"${(l.expect||"")===v?" selected":""}>${t}</option>`).join("")}</select>`;
+}
+function setExpect(id, v){
+  const l = loansRef().find(x => x.id === id);
+  if (!l) return;
+  l.expect = v;
+  save(); renderCashflow();
+}
 function renderCashflow(){
   const groups = cashflowGroups();
-  let html = `<thead><tr><th>Month</th><th>Investor / item</th><th>Due</th>
+  let html = `<thead><tr><th>Month</th><th>Investor / item</th><th>Likely action</th><th>Due</th>
     <th class="r">Interest</th><th class="r">Principal</th><th class="r">Total Cash</th><th class="r">Cumulative</th></tr></thead><tbody>`;
-  let cum = 0, totI = 0, totP = 0;
+  let cum = 0, totI = 0, totP = 0, tbc = 0;
   for (const g of groups){
     cum += g.total; totI += g.interest; totP += g.principal;
     html += `<tr class="total"><td>${g.overdue ? '<span class="badge b-expired">Overdue</span>' : esc(g.label)}</td>
-      <td class="muted small">${g.items.length} payment${g.items.length===1?"":"s"}</td><td></td>
+      <td class="muted small">${g.items.length} payment${g.items.length===1?"":"s"}</td><td></td><td></td>
       <td class="r">${fmt$(g.interest)}</td><td class="r">${fmt$(g.principal)}</td>
       <td class="r">${fmt$(g.total)}</td><td class="r">${fmt$(cum)}</td></tr>`;
     for (const it of g.items){
+      if (it.expiry && !(it.loan.expect||"")) tbc++;
       html += `<tr><td></td>
         <td><a class="rowlink" onclick="openEditor('${it.loan.id}')">${esc(it.loan.investor)}</a>
           <span class="muted small"> — ${esc(it.label)}</span></td>
+        <td>${it.expiry ? expectSelect(it.loan) : ""}</td>
         <td${it.overdue ? ' class="warn-txt"' : ""}>${fmtDate(it.date)}</td>
         <td class="r">${it.interest ? fmt$(it.interest) : ""}</td>
         <td class="r">${it.principal ? fmt$(it.principal) : ""}</td>
         <td class="r">${fmt$(it.interest + it.principal)}</td><td></td></tr>`;
     }
   }
-  if (!groups.length) html += `<tr><td colspan="7" class="muted">No payments due in this window.</td></tr>`;
-  html += `</tbody><tfoot><tr class="total"><td colspan="3">Total cash required</td>
+  if (!groups.length) html += `<tr><td colspan="8" class="muted">No payments due in this window.</td></tr>`;
+  html += `</tbody><tfoot><tr class="total"><td colspan="4">Total cash required${tbc ? ` <span class="warn-txt small">(${tbc} expir${tbc===1?"y":"ies"} TBC — assumed full payout)</span>` : ""}</td>
     <td class="r">${fmt$(totI)}</td><td class="r">${fmt$(totP)}</td><td class="r">${fmt$(totI+totP)}</td><td></td></tr></tfoot>`;
   document.getElementById("cfTable").innerHTML = html;
   renderCashflowChart(groups);
@@ -1391,6 +1419,7 @@ function openEditor(id){
   document.getElementById("edFreq").value = l ? l.freq : "maturity";
   document.getElementById("edReminder").value = l ? (l.reminderMonths != null ? l.reminderMonths : 3) : 3;
   document.getElementById("edStatus").value = l ? l.status : "current";
+  document.getElementById("edExpect").value = l ? (l.expect || "") : "";
   document.getElementById("edNotes").value = l ? (l.notes||"") : "";
   document.getElementById("edDelete").style.display = l ? "" : "none";
   document.getElementById("edRoll").style.display = (l && l.status === "current") ? "" : "none";
@@ -1447,6 +1476,7 @@ function saveLoan(){
     freq: document.getElementById("edFreq").value,
     reminderMonths: +document.getElementById("edReminder").value || 0,
     status: document.getElementById("edStatus").value,
+    expect: document.getElementById("edExpect").value,
     notes: document.getElementById("edNotes").value.trim(),
     events: collectEvents()
   };
