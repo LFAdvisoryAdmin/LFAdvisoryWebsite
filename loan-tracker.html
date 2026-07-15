@@ -212,6 +212,16 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
         <div id="waccTip" style="position:absolute;display:none;pointer-events:none;background:#1a2332;color:#fff;border-radius:6px;padding:.45rem .65rem;font-size:.75rem;line-height:1.55;white-space:nowrap;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.25)"></div>
       </div>
     </div>
+    <div class="card">
+      <div class="card-head"><span>Historical Loan Balance</span></div>
+      <div class="hint" style="margin-top:0">
+        Total principal outstanding at each month end — same loans as the WACC curve above. <b>Click a point</b> to open that date in the Blended Rate tab.
+      </div>
+      <div id="balChartWrap" style="position:relative">
+        <svg id="balChart" style="width:100%;height:280px;display:block"></svg>
+        <div id="balTip" style="position:absolute;display:none;pointer-events:none;background:#1a2332;color:#fff;border-radius:6px;padding:.45rem .65rem;font-size:.75rem;line-height:1.55;white-space:nowrap;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.25)"></div>
+      </div>
+    </div>
   </div>
 
   <!-- ================= WACC / BLENDED RATE ================= -->
@@ -1125,6 +1135,75 @@ function renderWaccChart(){
   svg.onclick = e => {
     if (!_waccChartPts.length) return;
     const c = _waccChartPts[nearest(e)];
+    document.getElementById("waccDate").value = c.p.date;
+    renderWacc();
+    gotoTab("wacc");
+  };
+  renderBalChart(pts);
+}
+
+/* --- historical loan balance chart (below the WACC curve) --- */
+function renderBalChart(pts){
+  const svg = document.getElementById("balChart");
+  const W = svg.clientWidth;
+  if (!W) return;
+  if (!pts) pts = waccSeries();
+  if (pts.length < 2){ svg.innerHTML = ""; return; }
+  const H = 280, mL = 60, mR = 30, mT = 16, mB = 34;
+  const max = Math.max(...pts.map(p => p.bal));
+  const pow = Math.pow(10, Math.floor(Math.log10(max || 1)));
+  const niceMax = [1,1.5,2,2.5,3,4,5,6,8,10].map(m => m*pow).find(v => v >= max) || max;
+  const x = i => mL + i*(W - mL - mR)/(pts.length - 1);
+  const y = v => mT + (1 - v/niceMax)*(H - mT - mB);
+  let s = "";
+  for (let k = 0; k <= 4; k++){
+    const v = niceMax*k/4;
+    s += `<line x1="${mL}" y1="${y(v)}" x2="${W-mR}" y2="${y(v)}" stroke="#eceff2" stroke-width="1"/>
+          <text x="${mL-8}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="#6b7c8d">${fmtShort$(v)}</text>`;
+  }
+  const kx = Math.max(1, Math.ceil(pts.length/9));
+  pts.forEach((p,i) => {
+    if (i % kx === 0 || i === pts.length-1)
+      s += `<text x="${x(i)}" y="${H-mB+18}" text-anchor="middle" font-size="11" fill="#6b7c8d">${p.today ? "Today" : fmtMon(p.date)}</text>`;
+  });
+  s += `<line id="balCross" x1="0" y1="${mT}" x2="0" y2="${H-mB}" stroke="#b9c4cc" stroke-width="1" visibility="hidden"/>`;
+  const lineD = pts.map((p,i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(p.bal).toFixed(1)).join(" ");
+  s += `<path d="${lineD} L ${x(pts.length-1).toFixed(1)} ${H-mB} L ${x(0).toFixed(1)} ${H-mB} Z" fill="#2d6670" opacity="0.08"/>`;
+  s += `<path d="${lineD}" fill="none" stroke="#2d6670" stroke-width="2"/>`;
+  pts.forEach((p,i) => {
+    s += `<circle cx="${x(i)}" cy="${y(p.bal)}" r="3.5" fill="${p.today ? "#2d6670" : "#fff"}" stroke="#2d6670" stroke-width="2"/>`;
+  });
+  const last = pts[pts.length-1];
+  s += `<text x="${x(pts.length-1)}" y="${y(last.bal)-12}" text-anchor="end" font-size="12" font-weight="700" fill="#1a2332">${fmtShort$(last.bal)}</text>`;
+  svg.innerHTML = s;
+  const px = pts.map((p,i) => ({px:x(i), py:y(p.bal), p}));
+  const tip = document.getElementById("balTip");
+  const nearest = e => {
+    const r = svg.getBoundingClientRect();
+    const mx = e.clientX - r.left;
+    let best = 0;
+    px.forEach((c,i) => { if (Math.abs(c.px - mx) < Math.abs(px[best].px - mx)) best = i; });
+    return best;
+  };
+  svg.onmousemove = e => {
+    const c = px[nearest(e)];
+    const cross = document.getElementById("balCross");
+    cross.setAttribute("x1", c.px); cross.setAttribute("x2", c.px);
+    cross.setAttribute("visibility", "visible");
+    tip.innerHTML = `<b>${c.p.today ? "Today (" + fmtDate(c.p.date) + ")" : fmtDate(c.p.date)}</b><br>
+      Balance: <b>$${fmt$(c.p.bal)}</b><br>Loans on foot: ${c.p.n}<br>Blended rate: ${c.p.wacc.toFixed(2)}%`;
+    tip.style.display = "block";
+    const wrapW = svg.parentElement.clientWidth;
+    tip.style.left = (c.px + 190 > wrapW ? c.px - 185 : c.px + 12) + "px";
+    tip.style.top = Math.max(4, c.py - 70) + "px";
+  };
+  svg.onmouseleave = () => {
+    tip.style.display = "none";
+    const cross = document.getElementById("balCross");
+    if (cross) cross.setAttribute("visibility", "hidden");
+  };
+  svg.onclick = e => {
+    const c = px[nearest(e)];
     document.getElementById("waccDate").value = c.p.date;
     renderWacc();
     gotoTab("wacc");
