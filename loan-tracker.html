@@ -33,9 +33,10 @@ nav{position:fixed;top:0;left:0;right:0;z-index:1000;display:flex;align-items:ce
 .container{max-width:1420px;margin:0 auto;padding:2rem 1.5rem}
 
 /* Tiles */
-.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;margin-bottom:1.5rem}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:1rem;margin-bottom:1.5rem}
 @media(max-width:1000px){.tiles{grid-template-columns:repeat(2,1fr)}}
-.tile{background:var(--white);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07);padding:1.2rem 1.5rem;border-left:4px solid var(--primary)}
+.tile{background:var(--white);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07);padding:1.2rem 1.5rem;border-left:4px solid var(--primary);cursor:pointer;transition:box-shadow .15s,transform .15s}
+.tile:hover{box-shadow:0 4px 14px rgba(0,0,0,.14);transform:translateY(-1px)}
 .tile.t2{border-left-color:var(--accent)}.tile.t3{border-left-color:var(--secondary)}.tile.t4{border-left-color:var(--warn)}.tile.t5{border-left-color:var(--danger)}
 .tile-lbl{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--mid);margin-bottom:.25rem}
 .tile-val{font-family:var(--head);font-size:1.45rem;font-weight:800;color:var(--dark);font-variant-numeric:tabular-nums}
@@ -137,6 +138,7 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
   <div class="tabs">
     <div class="tab on" data-tab="register" onclick="switchTab(this)">Loan Register</div>
     <div class="tab" data-tab="accruals" onclick="switchTab(this)">Monthly Accruals</div>
+    <div class="tab" data-tab="wacc" onclick="switchTab(this)">Blended Rate</div>
     <div class="tab" data-tab="upcoming" onclick="switchTab(this)">Upcoming</div>
     <div class="tab" data-tab="data" onclick="switchTab(this)">Data &amp; Settings</div>
   </div>
@@ -155,6 +157,8 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
         <div class="cg"><label>Show</label>
           <select id="regFilter" onchange="renderRegister()">
             <option value="current">Current loans</option>
+            <option value="expiring60">Expiring &le; 60 days</option>
+            <option value="expired">Past expiry</option>
             <option value="finalised">Finalised loans</option>
             <option value="all">All loans</option>
           </select>
@@ -186,6 +190,26 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
         Expired loans that have not been finalised keep their principal and accrued interest on the balance sheet until marked finalised.
       </div>
       <div class="tbl-wrap"><table id="accTable"></table></div>
+    </div>
+  </div>
+
+  <!-- ================= WACC / BLENDED RATE ================= -->
+  <div class="tc" id="tab-wacc">
+    <div class="card">
+      <div class="card-head">
+        <span>Blended Rate (WACC) — Current Loans</span>
+        <div class="btn-group"><button class="btn btn-outline btn-sm" onclick="exportWaccCSV()">Export CSV</button></div>
+      </div>
+      <div class="ctrl-bar">
+        <div class="cg"><label>As at</label><input type="date" id="waccDate" onchange="renderWacc()"></div>
+      </div>
+      <div class="hint">
+        Weighted by outstanding balance at the selected date (includes expired loans not yet finalised — the money is still out).
+        Contribution = rate &times; weight. Daily interest = balance &times; rate &divide; 365.
+      </div>
+      <div class="tbl-wrap"><table id="waccTable"></table></div>
+      <div class="card-head" style="margin-top:1.8rem"><span>By Entity</span></div>
+      <div class="tbl-wrap"><table id="waccEntityTable"></table></div>
     </div>
   </div>
 
@@ -628,14 +652,27 @@ function renderKPIs(){
   const cur = loansRef().filter(l => l.status === "current");
   const principal = cur.reduce((s,l) => s + balanceOn(l, t), 0);
   const accrual = cur.reduce((s,l) => s + accruedTo(l, t) - interestPaidTo(l, t), 0);
+  const daily = cur.reduce((s,l) => s + balanceOn(l, t) * l.rate/100/365, 0);
+  const wacc = principal ? cur.reduce((s,l) => s + balanceOn(l, t) * l.rate/100, 0) / principal * 100 : 0;
   const next60 = cur.filter(l => { const e = loanEnd(l); return e >= t && daysDiff(t, e) <= 60; }).length;
   const expired = cur.filter(l => loanEnd(l) < t).length;
   document.getElementById("kpis").innerHTML = `
-    <div class="tile"><div class="tile-lbl">Principal Outstanding</div><div class="tile-val">$${fmt$(principal)}</div><div class="tile-sub">current loans, today</div></div>
-    <div class="tile t2"><div class="tile-lbl">Interest Accrued &amp; Unpaid</div><div class="tile-val">$${fmt$(accrual)}</div><div class="tile-sub">as at today</div></div>
-    <div class="tile t3"><div class="tile-lbl">Current Loans</div><div class="tile-val">${cur.length}</div><div class="tile-sub">on the register</div></div>
-    <div class="tile t4"><div class="tile-lbl">Expiring &le; 60 Days</div><div class="tile-val">${next60}</div><div class="tile-sub">letters &amp; instructions</div></div>
-    <div class="tile t5"><div class="tile-lbl">Past Expiry</div><div class="tile-val${expired ? ' neg' : ''}">${expired}</div><div class="tile-sub">finalise or roll over</div></div>`;
+    <div class="tile" onclick="gotoRegister('current')"><div class="tile-lbl">Principal Outstanding</div><div class="tile-val">$${fmt$(principal)}</div><div class="tile-sub">current loans, today</div></div>
+    <div class="tile t3" onclick="gotoTab('wacc')"><div class="tile-lbl">Blended Rate (WACC)</div><div class="tile-val">${fmtPct(wacc)}</div><div class="tile-sub">weighted by balance</div></div>
+    <div class="tile t3" onclick="gotoTab('wacc')"><div class="tile-lbl">Daily Interest</div><div class="tile-val">$${fmt$(daily)}</div><div class="tile-sub">per day at current balances</div></div>
+    <div class="tile t2" onclick="gotoTab('accruals')"><div class="tile-lbl">Interest Accrued &amp; Unpaid</div><div class="tile-val">$${fmt$(accrual)}</div><div class="tile-sub">as at today</div></div>
+    <div class="tile" onclick="gotoRegister('current')"><div class="tile-lbl">Current Loans</div><div class="tile-val">${cur.length}</div><div class="tile-sub">on the register</div></div>
+    <div class="tile t4" onclick="gotoRegister('expiring60')"><div class="tile-lbl">Expiring &le; 60 Days</div><div class="tile-val">${next60}</div><div class="tile-sub">letters &amp; instructions</div></div>
+    <div class="tile t5" onclick="gotoRegister('expired')"><div class="tile-lbl">Past Expiry</div><div class="tile-val${expired ? ' neg' : ''}">${expired}</div><div class="tile-sub">finalise or roll over</div></div>`;
+}
+function gotoTab(name){
+  switchTab(document.querySelector('.tab[data-tab="' + name + '"]'));
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function gotoRegister(filter){
+  document.getElementById('regFilter').value = filter;
+  renderRegister();
+  gotoTab('register');
 }
 
 /* ============================================================
@@ -645,7 +682,15 @@ function renderRegister(){
   const filter = document.getElementById("regFilter").value;
   const q = document.getElementById("regSearch").value.trim().toLowerCase();
   const t = todayISO();
-  let list = loansRef().filter(l => filter === "all" || l.status === filter);
+  let list = loansRef().filter(l => {
+    if (filter === "all") return true;
+    if (filter === "current" || filter === "finalised") return l.status === filter;
+    if (l.status !== "current") return false;
+    const end = loanEnd(l);
+    if (filter === "expiring60") return end >= t && daysDiff(t, end) <= 60;
+    if (filter === "expired") return end < t;
+    return true;
+  });
   if (q) list = list.filter(l => (l.investor + " " + (l.entity||"")).toLowerCase().includes(q));
   list.sort((a,b) => loanEnd(a) < loanEnd(b) ? -1 : 1);
 
@@ -675,7 +720,7 @@ function renderRegister(){
   }
   html += `</tbody>`;
   if (filter !== "finalised"){
-    html += `<tfoot><tr class="total"><td colspan="3">Total — current loans</td><td class="r">${fmt$(totP)}</td>
+    html += `<tfoot><tr class="total"><td colspan="3">Total — listed current loans</td><td class="r">${fmt$(totP)}</td>
       <td class="r">${fmt$(totB)}</td><td></td><td></td><td></td><td></td>
       <td class="r">${fmt$(totI)}</td><td class="r">${fmt$(totA)}</td><td></td></tr></tfoot>`;
   }
@@ -758,6 +803,74 @@ function exportAccrualsCSV(){
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `flux-interest-accruals-${me}.csv`;
+  a.click();
+}
+
+/* ============================================================
+   WACC / BLENDED RATE TAB
+   ============================================================ */
+function waccRows(asOf){
+  return loansRef()
+    .filter(l => l.status === "current" && l.start <= asOf)
+    .map(l => {
+      const bal = balanceOn(l, minISO(asOf, loanEnd(l)));
+      return {l, bal, rate:+l.rate, daily: bal*l.rate/100/365, annual: bal*l.rate/100, expired: loanEnd(l) < asOf};
+    })
+    .filter(r => r.bal > 0.005)
+    .sort((a,b) => b.bal - a.bal);
+}
+function renderWacc(){
+  const el = document.getElementById("waccDate");
+  if (!el.value) el.value = todayISO();
+  const asOf = el.value;
+  const rows = waccRows(asOf);
+  const totBal = rows.reduce((s,r) => s + r.bal, 0);
+  const totAnnual = rows.reduce((s,r) => s + r.annual, 0);
+  const totDaily = rows.reduce((s,r) => s + r.daily, 0);
+  const wacc = totBal ? totAnnual/totBal*100 : 0;
+
+  let html = `<thead><tr><th>Investor</th><th>Entity</th><th class="r">Balance</th><th class="r">Rate</th>
+    <th class="r">Weight</th><th class="r">Contribution</th><th class="r">Daily Interest</th><th class="r">Annual Interest</th></tr></thead><tbody>`;
+  for (const r of rows){
+    const w = totBal ? r.bal/totBal*100 : 0;
+    html += `<tr>
+      <td><a class="rowlink" onclick="openEditor('${r.l.id}')">${esc(r.l.investor)}</a>${r.expired ? ' <span class="badge b-expired">expired</span>' : ""}</td>
+      <td>${esc(r.l.entity||"")}</td>
+      <td class="r">${fmt$(r.bal)}</td>
+      <td class="r">${fmtPct(r.rate)}</td>
+      <td class="r">${w.toFixed(1)}%</td>
+      <td class="r">${(r.rate*w/100).toFixed(2)}%</td>
+      <td class="r">${fmt$(r.daily)}</td>
+      <td class="r">${fmt$(r.annual)}</td>
+    </tr>`;
+  }
+  html += `</tbody><tfoot><tr class="total"><td colspan="2">Blended — ${rows.length} loans</td>
+    <td class="r">${fmt$(totBal)}</td><td class="r">${fmtPct(wacc)}</td><td class="r">100%</td><td class="r">${fmtPct(wacc)}</td>
+    <td class="r">${fmt$(totDaily)}</td><td class="r">${fmt$(totAnnual)}</td></tr></tfoot>`;
+  document.getElementById("waccTable").innerHTML = html;
+
+  const ents = {};
+  for (const r of rows){
+    const e = (r.l.entity||"").trim() || "(no entity)";
+    if (!ents[e]) ents[e] = {bal:0, annual:0, daily:0, n:0};
+    ents[e].bal += r.bal; ents[e].annual += r.annual; ents[e].daily += r.daily; ents[e].n++;
+  }
+  let eh = `<thead><tr><th>Entity</th><th class="r">Loans</th><th class="r">Balance</th><th class="r">Blended Rate</th><th class="r">Daily Interest</th><th class="r">Annual Interest</th></tr></thead><tbody>`;
+  for (const [name, v] of Object.entries(ents).sort((a,b) => b[1].bal - a[1].bal)){
+    eh += `<tr><td>${esc(name)}</td><td class="r">${v.n}</td><td class="r">${fmt$(v.bal)}</td>
+      <td class="r">${fmtPct(v.bal ? v.annual/v.bal*100 : 0)}</td><td class="r">${fmt$(v.daily)}</td><td class="r">${fmt$(v.annual)}</td></tr>`;
+  }
+  eh += `</tbody>`;
+  document.getElementById("waccEntityTable").innerHTML = eh;
+}
+function exportWaccCSV(){
+  const asOf = document.getElementById("waccDate").value;
+  const rows = [...document.getElementById("waccTable").querySelectorAll("tr")].map(tr =>
+    [...tr.children].map(td => `"${td.innerText.replace(/"/g,'""').replace(/\n/g," ")}"`).join(","));
+  const blob = new Blob([rows.join("\r\n")], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `flux-blended-rate-${asOf}.csv`;
   a.click();
 }
 
@@ -904,7 +1017,7 @@ function switchTab(el){
   document.querySelectorAll(".tc").forEach(x => x.classList.remove("on"));
   document.getElementById("tab-" + el.dataset.tab).classList.add("on");
 }
-function renderAll(){ renderKPIs(); renderRegister(); renderAccruals(); renderUpcoming(); }
+function renderAll(){ renderKPIs(); renderRegister(); renderAccruals(); renderWacc(); renderUpcoming(); }
 
 (function init(){
   const had = loadLocal();
