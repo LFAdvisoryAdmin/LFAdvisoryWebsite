@@ -140,6 +140,7 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
     <div class="tab" data-tab="accruals" onclick="switchTab(this)">Monthly Accruals</div>
     <div class="tab" data-tab="wacc" onclick="switchTab(this)">Blended Rate</div>
     <div class="tab" data-tab="history" onclick="switchTab(this)">WACC History</div>
+    <div class="tab" data-tab="cashflow" onclick="switchTab(this)">Cashflow</div>
     <div class="tab" data-tab="upcoming" onclick="switchTab(this)">Upcoming</div>
     <div class="tab" data-tab="data" onclick="switchTab(this)">Data &amp; Settings</div>
   </div>
@@ -242,6 +243,36 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
     </div>
   </div>
 
+  <!-- ================= CASHFLOW FORECAST ================= -->
+  <div class="tc" id="tab-cashflow">
+    <div class="card">
+      <div class="card-head">
+        <span>Cashflow Forecast — Loan Payouts</span>
+        <div class="btn-group"><button class="btn btn-outline btn-sm" onclick="exportCashflowCSV()">Export CSV</button></div>
+      </div>
+      <div class="ctrl-bar">
+        <div class="cg"><label>Horizon</label>
+          <select id="cfHorizon" onchange="renderCashflow()">
+            <option value="12" selected>Next 12 months</option>
+            <option value="24">Next 24 months</option>
+            <option value="999">All future</option>
+          </select>
+        </div>
+      </div>
+      <div class="hint">
+        Cash required month by month, assuming <b>no rollovers</b> — every loan pays out principal + final interest at expiry,
+        periodic interest is paid on its contractual dates (flat amounts), and scheduled principal repayments fall on their dates.
+        Expired loans not yet finalised appear as <b>Overdue</b>. To model a rollover, open the loan and use <b>Roll forward</b> —
+        the payout moves to the new expiry.
+      </div>
+      <div id="cfChartWrap" style="position:relative">
+        <svg id="cfChart" style="width:100%;height:260px;display:block"></svg>
+        <div id="cfTip" style="position:absolute;display:none;pointer-events:none;background:#1a2332;color:#fff;border-radius:6px;padding:.45rem .65rem;font-size:.75rem;line-height:1.55;white-space:nowrap;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.25)"></div>
+      </div>
+      <div class="tbl-wrap" style="margin-top:1rem"><table id="cfTable"></table></div>
+    </div>
+  </div>
+
   <!-- ================= UPCOMING ================= -->
   <div class="tc" id="tab-upcoming">
     <div class="card">
@@ -340,6 +371,7 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
 
     <div class="modal-foot">
       <button class="btn btn-danger btn-sm" id="edDelete" onclick="deleteLoan()">Delete loan</button>
+      <button class="btn btn-outline btn-sm" id="edRoll" onclick="rollForward()">Roll forward &rarr;</button>
       <span style="flex:1"></span>
       <button class="btn btn-outline" onclick="closeEditor()">Cancel</button>
       <button class="btn btn-primary" onclick="saveLoan()">Save loan</button>
@@ -1137,6 +1169,133 @@ function exportWaccCSV(){
 }
 
 /* ============================================================
+   CASHFLOW FORECAST TAB — assumes no rollovers
+   ============================================================ */
+function cashflowItems(){
+  const t = todayISO();
+  const items = [];
+  for (const l of loansRef()){
+    if (l.status !== "current") continue;
+    const end = loanEnd(l);
+    items.push({date:end, loan:l, label:"Expiry — principal + final interest",
+                interest:finalInterest(l), principal:balanceOn(l, end), overdue:end < t});
+    if (FREQ_MONTHS[l.freq]){
+      for (const sd of scheduleDates(l)){
+        if (sd >= end || sd < t) continue;
+        items.push({date:sd, loan:l, label:FREQ_LABEL[l.freq] + " interest payment",
+                    interest:periodicAmount(l, sd), principal:0, overdue:false});
+      }
+    }
+    for (const e of (l.events||[])){
+      if (e.type === "principal_repayment" && e.date >= t && e.date < end)
+        items.push({date:e.date, loan:l, label:"Scheduled principal repayment" + (e.note ? " — " + e.note : ""),
+                    interest:0, principal:+e.amount||0, overdue:false});
+    }
+  }
+  items.sort((a,b) => a.date < b.date ? -1 : 1);
+  return items;
+}
+function cashflowGroups(){
+  const months = +document.getElementById("cfHorizon").value;
+  const t = todayISO();
+  const limit = eomonth(edate(t, Math.min(months, 600)), 0);
+  const groups = [], byKey = {};
+  for (const it of cashflowItems()){
+    if (!it.overdue && it.date > limit) continue;
+    const key = it.overdue ? "overdue" : it.date.slice(0,7);
+    if (!byKey[key]){
+      byKey[key] = {key, overdue:it.overdue,
+        label: it.overdue ? "Overdue" : MONS[+it.date.slice(5,7)-1] + " " + it.date.slice(0,4),
+        interest:0, principal:0, total:0, items:[]};
+      groups.push(byKey[key]);
+    }
+    const g = byKey[key];
+    g.interest += it.interest; g.principal += it.principal;
+    g.total += it.interest + it.principal;
+    g.items.push(it);
+  }
+  return groups;
+}
+function renderCashflow(){
+  const groups = cashflowGroups();
+  let html = `<thead><tr><th>Month</th><th>Investor / item</th><th>Due</th>
+    <th class="r">Interest</th><th class="r">Principal</th><th class="r">Total Cash</th><th class="r">Cumulative</th></tr></thead><tbody>`;
+  let cum = 0, totI = 0, totP = 0;
+  for (const g of groups){
+    cum += g.total; totI += g.interest; totP += g.principal;
+    html += `<tr class="total"><td>${g.overdue ? '<span class="badge b-expired">Overdue</span>' : esc(g.label)}</td>
+      <td class="muted small">${g.items.length} payment${g.items.length===1?"":"s"}</td><td></td>
+      <td class="r">${fmt$(g.interest)}</td><td class="r">${fmt$(g.principal)}</td>
+      <td class="r">${fmt$(g.total)}</td><td class="r">${fmt$(cum)}</td></tr>`;
+    for (const it of g.items){
+      html += `<tr><td></td>
+        <td><a class="rowlink" onclick="openEditor('${it.loan.id}')">${esc(it.loan.investor)}</a>
+          <span class="muted small"> — ${esc(it.label)}</span></td>
+        <td${it.overdue ? ' class="warn-txt"' : ""}>${fmtDate(it.date)}</td>
+        <td class="r">${it.interest ? fmt$(it.interest) : ""}</td>
+        <td class="r">${it.principal ? fmt$(it.principal) : ""}</td>
+        <td class="r">${fmt$(it.interest + it.principal)}</td><td></td></tr>`;
+    }
+  }
+  if (!groups.length) html += `<tr><td colspan="7" class="muted">No payments due in this window.</td></tr>`;
+  html += `</tbody><tfoot><tr class="total"><td colspan="3">Total cash required</td>
+    <td class="r">${fmt$(totI)}</td><td class="r">${fmt$(totP)}</td><td class="r">${fmt$(totI+totP)}</td><td></td></tr></tfoot>`;
+  document.getElementById("cfTable").innerHTML = html;
+  renderCashflowChart(groups);
+}
+const fmtShort$ = v => v >= 995000 ? "$" + (v/1e6).toFixed(1) + "m" : "$" + Math.round(v/1e3) + "k";
+function renderCashflowChart(groups){
+  const svg = document.getElementById("cfChart");
+  const W = svg.clientWidth;
+  if (!W) return;                                   // tab hidden — re-rendered on tab switch
+  if (!groups.length){ svg.innerHTML = ""; return; }
+  const H = 260, mL = 60, mR = 16, mT = 14, mB = 34;
+  const max = Math.max(...groups.map(g => g.total));
+  const pow = Math.pow(10, Math.floor(Math.log10(max || 1)));
+  const niceMax = [1,1.5,2,2.5,3,4,5,6,8,10].map(m => m*pow).find(v => v >= max) || max;
+  const bw = (W - mL - mR)/groups.length;
+  const y = v => mT + (1 - v/niceMax)*(H - mT - mB);
+  let s = "";
+  for (let k = 0; k <= 4; k++){
+    const v = niceMax*k/4;
+    s += `<line x1="${mL}" y1="${y(v)}" x2="${W-mR}" y2="${y(v)}" stroke="#eceff2" stroke-width="1"/>
+          <text x="${mL-8}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="#6b7c8d">${fmtShort$(v)}</text>`;
+  }
+  const kx = Math.max(1, Math.ceil(groups.length/12));
+  groups.forEach((g,i) => {
+    const x = mL + i*bw + bw*0.15, w = Math.max(3, bw*0.7);
+    const top = y(g.total);
+    s += `<rect x="${x}" y="${top}" width="${w}" height="${Math.max(0,(H-mB)-top)}" rx="3"
+            fill="${g.overdue ? "#e67e22" : "#2d6670"}" data-i="${i}"/>`;
+    if (i % kx === 0 || i === groups.length-1)
+      s += `<text x="${x + w/2}" y="${H-mB+18}" text-anchor="middle" font-size="11" fill="#6b7c8d">${g.overdue ? "Overdue" : esc(g.label.slice(0,3) + " " + g.label.slice(-2))}</text>`;
+  });
+  svg.innerHTML = s;
+  const tip = document.getElementById("cfTip");
+  svg.onmousemove = e => {
+    const r = svg.getBoundingClientRect();
+    const i = Math.min(groups.length-1, Math.max(0, Math.floor((e.clientX - r.left - mL)/bw)));
+    const g = groups[i];
+    if (!g || e.clientX - r.left < mL){ tip.style.display = "none"; return; }
+    tip.innerHTML = `<b>${esc(g.label)}</b><br>Interest: $${fmt$(g.interest)}<br>Principal: $${fmt$(g.principal)}<br>Total: <b>$${fmt$(g.total)}</b><br>${g.items.length} payment${g.items.length===1?"":"s"}`;
+    tip.style.display = "block";
+    const px = mL + i*bw + bw/2;
+    tip.style.left = (px + 190 > W ? px - 185 : px + 10) + "px";
+    tip.style.top = Math.max(4, y(g.total) - 80) + "px";
+  };
+  svg.onmouseleave = () => { tip.style.display = "none"; };
+}
+function exportCashflowCSV(){
+  const rows = [...document.getElementById("cfTable").querySelectorAll("tr")].map(tr =>
+    [...tr.children].map(td => `"${td.innerText.replace(/"/g,'""').replace(/\n/g," ")}"`).join(","));
+  const blob = new Blob([rows.join("\r\n")], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `flux-cashflow-forecast-${todayISO()}.csv`;
+  a.click();
+}
+
+/* ============================================================
    UPCOMING TAB
    ============================================================ */
 function renderUpcoming(){
@@ -1148,10 +1307,8 @@ function renderUpcoming(){
     if (l.status !== "current") continue;
     const end = loanEnd(l);
     if (end <= limit){
-      const finalInt = FREQ_MONTHS[l.freq] ? periodicAmount(l, end)
-        : Math.max(0, contractInterest(l) - interestPaidTo(l, end));
       items.push({date:end, loan:l, what:"Loan expiry — principal + final interest due",
-        amount: balanceOn(l, end) + finalInt, overdue: end < t});
+        amount: balanceOn(l, end) + finalInterest(l), overdue: end < t});
     }
     const rem = l.reminderMonths ? edate(end, -l.reminderMonths) : null;
     if (rem && rem >= t && rem <= limit) items.push({date:rem, loan:l, what:`Send reminder letter (${l.reminderMonths} months before expiry)`, amount:null});
@@ -1186,6 +1343,39 @@ function renderUpcoming(){
    EDITOR
    ============================================================ */
 let editingId = null;
+let rollSourceId = null;   // set while composing a roll-forward loan
+
+// Contractual payout amounts at expiry (shared by Upcoming, Cashflow, Roll forward)
+function finalInterest(l){
+  const end = loanEnd(l);
+  return FREQ_MONTHS[l.freq] ? periodicAmount(l, end)
+    : Math.max(0, contractInterest(l) - interestPaidTo(l, end));
+}
+
+function rollForward(){
+  if (!editingId) return;
+  const src = loansRef().find(x => x.id === editingId);
+  if (!src) return;
+  const end = loanEnd(src);
+  const rolledPrincipal = Math.round((balanceOn(src, end) + finalInterest(src)) * 100) / 100;
+  closeEditor();
+  rollSourceId = src.id;
+  openEditor();   // fresh add-mode form, then prefill from the source loan
+  document.getElementById("edTitle").textContent = "Roll Forward — " + src.investor;
+  document.getElementById("edInvestor").value = src.investor;
+  document.getElementById("edEntity").value = src.entity || "";
+  document.getElementById("edStart").value = end;
+  document.getElementById("edPrincipal").value = rolledPrincipal;
+  document.getElementById("edRate").value = src.rate;
+  document.getElementById("edTerm").value = src.termMonths;
+  document.getElementById("edFreq").value = src.freq;
+  document.getElementById("edReminder").value = src.reminderMonths != null ? src.reminderMonths : 3;
+  document.getElementById("edNotes").value = "Rolled forward from loan invested " + fmtDate(src.start) + " (expired " + fmtDate(end) + ").";
+  syncEnd();
+  document.getElementById("edAccruedHint").textContent =
+    "Principal prefilled as P&I roll: $" + fmt$(balanceOn(src, end)) + " balance + $" + fmt$(finalInterest(src)) +
+    " final interest. If the interest is being paid out (or the rate/term changed), just edit the fields. Saving marks the old loan Finalised.";
+}
 
 function openEditor(id){
   editingId = id || null;
@@ -1203,13 +1393,14 @@ function openEditor(id){
   document.getElementById("edStatus").value = l ? l.status : "current";
   document.getElementById("edNotes").value = l ? (l.notes||"") : "";
   document.getElementById("edDelete").style.display = l ? "" : "none";
+  document.getElementById("edRoll").style.display = (l && l.status === "current") ? "" : "none";
   document.getElementById("edEvents").innerHTML = "";
   for (const e of ((l && l.events) || [])) addEventRow(e);
   const hint = document.getElementById("edAccruedHint");
   hint.textContent = l ? `Accrued unpaid interest today: $${fmt$(accruedTo(l, todayISO()) - interestPaidTo(l, todayISO()))}` : "";
   document.getElementById("editorOverlay").classList.add("on");
 }
-function closeEditor(){ document.getElementById("editorOverlay").classList.remove("on"); }
+function closeEditor(){ rollSourceId = null; document.getElementById("editorOverlay").classList.remove("on"); }
 
 function syncEnd(){
   const s = document.getElementById("edStart").value;
@@ -1261,6 +1452,13 @@ function saveLoan(){
   };
   const i = loansRef().findIndex(x => x.id === loan.id);
   if (i >= 0) store.loans[i] = loan; else store.loans.push(loan);
+  if (rollSourceId && loan.id !== rollSourceId){
+    const src = loansRef().find(x => x.id === rollSourceId);
+    if (src && src.status === "current"){
+      src.status = "finalised";
+      src.notes = ((src.notes || "") + " Rolled forward into new loan commencing " + fmtDate(loan.start) + ".").trim();
+    }
+  }
   save(); closeEditor(); renderAll();
 }
 function deleteLoan(){
@@ -1278,9 +1476,10 @@ function switchTab(el){
   document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === el));
   document.querySelectorAll(".tc").forEach(x => x.classList.remove("on"));
   document.getElementById("tab-" + el.dataset.tab).classList.add("on");
-  if (el.dataset.tab === "history") renderWaccChart();   // chart can't size itself while hidden
+  if (el.dataset.tab === "history") renderWaccChart();   // charts can't size themselves while hidden
+  if (el.dataset.tab === "cashflow") renderCashflow();
 }
-function renderAll(){ renderKPIs(); renderRegister(); renderAccruals(); renderWacc(); renderUpcoming(); }
+function renderAll(){ renderKPIs(); renderRegister(); renderAccruals(); renderWacc(); renderCashflow(); renderUpcoming(); }
 
 (function init(){
   const had = loadLocal();
