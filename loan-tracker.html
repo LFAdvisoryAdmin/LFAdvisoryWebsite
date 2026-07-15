@@ -139,7 +139,7 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
     <div class="tab on" data-tab="register" onclick="switchTab(this)">Loan Register</div>
     <div class="tab" data-tab="accruals" onclick="switchTab(this)">Monthly Accruals</div>
     <div class="tab" data-tab="wacc" onclick="switchTab(this)">Blended Rate</div>
-    <div class="tab" data-tab="history" onclick="switchTab(this)">WACC History</div>
+    <div class="tab" data-tab="history" onclick="switchTab(this)">Graphs</div>
     <div class="tab" data-tab="cashflow" onclick="switchTab(this)">Cashflow</div>
     <div class="tab" data-tab="upcoming" onclick="switchTab(this)">Upcoming</div>
     <div class="tab" data-tab="data" onclick="switchTab(this)">Data &amp; Settings</div>
@@ -220,6 +220,17 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
       <div id="balChartWrap" style="position:relative">
         <svg id="balChart" style="width:100%;height:280px;display:block"></svg>
         <div id="balTip" style="position:absolute;display:none;pointer-events:none;background:#1a2332;color:#fff;border-radius:6px;padding:.45rem .65rem;font-size:.75rem;line-height:1.55;white-space:nowrap;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.25)"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><span>Monthly Interest Expense</span></div>
+      <div class="hint" style="margin-top:0">
+        Interest accrued each month across all loans on foot (daily actual/365 — the amount that hits the P&amp;L, matching the
+        Monthly Accruals sheet). The current month shows month-to-date in a lighter bar. <b>Click a bar</b> to open that month in Monthly Accruals.
+      </div>
+      <div id="intChartWrap" style="position:relative">
+        <svg id="intChart" style="width:100%;height:280px;display:block"></svg>
+        <div id="intTip" style="position:absolute;display:none;pointer-events:none;background:#1a2332;color:#fff;border-radius:6px;padding:.45rem .65rem;font-size:.75rem;line-height:1.55;white-space:nowrap;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.25)"></div>
       </div>
     </div>
   </div>
@@ -1207,6 +1218,79 @@ function renderBalChart(pts){
     document.getElementById("waccDate").value = c.p.date;
     renderWacc();
     gotoTab("wacc");
+  };
+  renderIntChart();
+}
+
+/* --- monthly interest expense chart (accrual per month, act/365) --- */
+function monthlyInterestSeries(){
+  const ls = loansRef(); if (!ls.length) return [];
+  const t = todayISO();
+  const first = ls.reduce((m,l) => l.start < m ? l.start : m, t);
+  const lastEOM = eomonth(t, 0);
+  const pts = [];
+  let me = eomonth(first, 0);
+  while (true){
+    const prev = eomonth(me, -1);
+    const stop = me > t ? t : me;   // current month → month-to-date
+    let v = 0;
+    for (const l of ls) v += accruedTo(l, stop) - accruedTo(l, prev);
+    pts.push({date: me, stop, v, mtd: me > t});
+    if (me >= lastEOM) break;
+    me = eomonth(me, 1);
+  }
+  return pts;
+}
+function renderIntChart(){
+  const svg = document.getElementById("intChart");
+  const W = svg.clientWidth;
+  if (!W) return;
+  const pts = monthlyInterestSeries();
+  if (pts.length < 2){ svg.innerHTML = ""; return; }
+  const H = 280, mL = 60, mR = 16, mT = 16, mB = 34;
+  const max = Math.max(...pts.map(p => p.v));
+  const pow = Math.pow(10, Math.floor(Math.log10(max || 1)));
+  const niceMax = [1,1.5,2,2.5,3,4,5,6,8,10].map(m => m*pow).find(v => v >= max) || max;
+  const bw = (W - mL - mR)/pts.length;
+  const y = v => mT + (1 - v/niceMax)*(H - mT - mB);
+  let s = "";
+  for (let k = 0; k <= 4; k++){
+    const v = niceMax*k/4;
+    s += `<line x1="${mL}" y1="${y(v)}" x2="${W-mR}" y2="${y(v)}" stroke="#eceff2" stroke-width="1"/>
+          <text x="${mL-8}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="#6b7c8d">${fmtShort$(v)}</text>`;
+  }
+  const kx = Math.max(1, Math.ceil(pts.length/9));
+  pts.forEach((p,i) => {
+    const x = mL + i*bw + bw*0.15, w = Math.max(2, bw*0.7);
+    const top = y(p.v);
+    s += `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(0,(H-mB)-top).toFixed(1)}" rx="2"
+            fill="#2d6670"${p.mtd ? ' opacity="0.45"' : ""}/>`;
+    if (i % kx === 0 || i === pts.length-1)
+      s += `<text x="${(x + w/2).toFixed(1)}" y="${H-mB+18}" text-anchor="middle" font-size="11" fill="#6b7c8d">${fmtMon(p.date)}</text>`;
+  });
+  const last = pts[pts.length-1];
+  s += `<text x="${W-mR}" y="${y(last.v)-8}" text-anchor="end" font-size="12" font-weight="700" fill="#1a2332">${fmtShort$(last.v)}${last.mtd ? " MTD" : ""}</text>`;
+  svg.innerHTML = s;
+  const tip = document.getElementById("intTip");
+  svg.onmousemove = e => {
+    const r = svg.getBoundingClientRect();
+    const i = Math.min(pts.length-1, Math.max(0, Math.floor((e.clientX - r.left - mL)/bw)));
+    if (e.clientX - r.left < mL){ tip.style.display = "none"; return; }
+    const p = pts[i];
+    tip.innerHTML = `<b>${fmtMon(p.date)}${p.mtd ? " (month to date)" : ""}</b><br>Interest expense: <b>$${fmt$(p.v)}</b>`;
+    tip.style.display = "block";
+    const px2 = mL + i*bw + bw/2;
+    tip.style.left = (px2 + 180 > W ? px2 - 175 : px2 + 10) + "px";
+    tip.style.top = Math.max(4, y(p.v) - 56) + "px";
+  };
+  svg.onmouseleave = () => { tip.style.display = "none"; };
+  svg.onclick = e => {
+    const r = svg.getBoundingClientRect();
+    const i = Math.min(pts.length-1, Math.max(0, Math.floor((e.clientX - r.left - mL)/bw)));
+    const p = pts[i];
+    document.getElementById("accDate").value = p.mtd ? p.stop : p.date;
+    renderAccruals();
+    gotoTab("accruals");
   };
 }
 window.addEventListener("resize", () => renderWaccChart());
