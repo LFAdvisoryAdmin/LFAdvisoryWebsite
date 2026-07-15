@@ -139,6 +139,7 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
     <div class="tab on" data-tab="register" onclick="switchTab(this)">Loan Register</div>
     <div class="tab" data-tab="accruals" onclick="switchTab(this)">Monthly Accruals</div>
     <div class="tab" data-tab="wacc" onclick="switchTab(this)">Blended Rate</div>
+    <div class="tab" data-tab="history" onclick="switchTab(this)">WACC History</div>
     <div class="tab" data-tab="upcoming" onclick="switchTab(this)">Upcoming</div>
     <div class="tab" data-tab="data" onclick="switchTab(this)">Data &amp; Settings</div>
   </div>
@@ -197,19 +198,23 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
     </div>
   </div>
 
-  <!-- ================= WACC / BLENDED RATE ================= -->
-  <div class="tc" id="tab-wacc">
+  <!-- ================= WACC HISTORY (chart) ================= -->
+  <div class="tc" id="tab-history">
     <div class="card">
       <div class="card-head"><span>Historical Blended Rate (WACC)</span></div>
       <div class="hint" style="margin-top:0">
         Month-end blended rate across all loans on foot at each date — finalised loans count up to their expiry, so
-        <b>finalise old loans rather than deleting them</b> to keep the history accurate. Hover for detail; <b>click a point</b> to load that date in the table below.
+        <b>finalise old loans rather than deleting them</b> to keep the history accurate. Hover for detail; <b>click a point</b> to open that date in the Blended Rate tab.
       </div>
       <div id="waccChartWrap" style="position:relative">
-        <svg id="waccChart" style="width:100%;height:280px;display:block"></svg>
+        <svg id="waccChart" style="width:100%;height:300px;display:block"></svg>
         <div id="waccTip" style="position:absolute;display:none;pointer-events:none;background:#1a2332;color:#fff;border-radius:6px;padding:.45rem .65rem;font-size:.75rem;line-height:1.55;white-space:nowrap;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,.25)"></div>
       </div>
     </div>
+  </div>
+
+  <!-- ================= WACC / BLENDED RATE ================= -->
+  <div class="tc" id="tab-wacc">
     <div class="card">
       <div class="card-head">
         <span>Loan Book at a Date</span>
@@ -498,7 +503,7 @@ async function getSiteId(token){
 }
 async function odInit(){
   const token = getStoredToken();
-  if(!token){ setSync('offline'); return; }
+  if(!token){ setSync('offline'); ensureHistory(); renderAll(); return; }
   try{
     setSync('loading');
     const siteId = await getSiteId(token);
@@ -528,6 +533,7 @@ async function odInit(){
     console.error('[Sync] load error:', e);
     setSync(getStoredToken() ? 'error' : 'offline');
   }
+  ensureHistory();   // after the merge, so it appends to the freshest copy
   renderAll();
 }
 function queueSave(){ if(!_loaded) return; clearTimeout(_saveTimer); _saveTimer = setTimeout(odSave, 1200); }
@@ -654,10 +660,73 @@ function seedLoans(){
         notes:"One-third share of Chris DJ Electrical $200K loan; annual interest $10,000, P&I at end 17/06/28."}),
   ];
 }
+/* Historical finalised loans from the register's "INVESTOR LOANS - FINALISED"
+   section (INVESTORS LOAN SUMMARY 200526.xlsx). One entry per loan leg —
+   per-payment tracker rows (Graham/Intrinsic/Donna/Gubeka instalment lines)
+   are consolidated, and legs already in the tracker are skipped. These feed
+   the WACC history; principals/dates per the register. */
+function seedFinalised(){
+  const mk = o => Object.assign({id: uid(), entity:"Flux Property Group", freq:"maturity",
+                                 reminderMonths:0, status:"finalised", events:[], notes:""}, o);
+  return [
+    mk({investor:"Maree Hall", entity:"Flux Holdings Pty Ltd", start:"2021-03-18", principal:100000, rate:10, termMonths:12, notes:"Rolled over — P&I reinvested."}),
+    mk({investor:"Vaughn Sutcliffe", entity:"Flux Holdings Pty Ltd", start:"2021-05-05", principal:150000, rate:10, termMonths:12, notes:"Interest and loan reinvested."}),
+    mk({investor:"Davgan Lending", entity:"Flux Property", start:"2021-06-07", principal:400000, rate:11, termMonths:12, notes:"Paid out in full 07/06/22."}),
+    mk({investor:"Samual William Hooper LOAN 1", entity:"Flux Property", start:"2021-11-19", principal:200000, rate:11, termMonths:12, notes:"Interest paid out 18/11/22; loan value reinvested."}),
+    mk({investor:"Kim Sutcliffe (Bell)", entity:"Flux Property $100k, Hendra Ventures $200k", start:"2022-02-01", principal:300000, rate:10, termMonths:12, notes:"Interest paid out; loan reinvested 12 months."}),
+    mk({investor:"Maree Hall", entity:"Flux Holdings Pty Ltd", start:"2022-03-18", principal:110000, rate:10, termMonths:12, notes:"Rolled over — P&I reinvested."}),
+    mk({investor:"Donna Djatschenko", entity:"Flux Property", start:"2022-03-29", principal:300000, rate:12, termMonths:12, endOverride:"2023-03-28", notes:"Interest rolled; reinvested at 15%."}),
+    mk({investor:"Vaughn Sutcliffe", entity:"Flux Holdings Pty Ltd", start:"2022-04-05", principal:165000, rate:10, termMonths:12, notes:"Rolled over."}),
+    mk({investor:"Burnett Property Group", entity:"Flux Property", start:"2022-05-03", principal:105000, rate:10, termMonths:12, notes:"Paid out $115,500."}),
+    mk({investor:"Samual William Hooper LOAN 1", entity:"Flux Property", start:"2022-11-19", principal:200000, rate:11, termMonths:12, notes:"13/11/23 — paid out $150K + interest; $50K rolled with interest-only $5,500 paid."}),
+    mk({investor:"Kim Sutcliffe (Bell)", start:"2023-02-01", principal:300000, rate:10, termMonths:12, notes:"$100K withdrawn Feb 24; $200K reinvested."}),
+    mk({investor:"Terry McBride", entity:"Flux Property", start:"2023-02-24", principal:100000, rate:12, termMonths:12, notes:"Interest capitalised; $112K reinvested + $100K new = $212K."}),
+    mk({investor:"Maree Hall", start:"2023-03-18", principal:121000, rate:10, termMonths:12, notes:"Confirmed reinvesting."}),
+    mk({investor:"Donna Djatschenko", entity:"Flux Property", start:"2023-03-28", principal:336000, rate:15, termMonths:12, freq:"quarterly", notes:"15% paid quarterly ($12,600/qtr)."}),
+    mk({investor:"Vaughan Sutcliffe", entity:"Flux Property", start:"2023-04-05", principal:181500, rate:10, termMonths:12, notes:"Reinvested capital and interest."}),
+    mk({investor:"Bauhinia Buildings Pty Ltd", start:"2023-05-03", principal:150000, rate:8, termMonths:12, notes:"Reinvested capital and interest."}),
+    mk({investor:"Gubeka Investments", entity:"Flux Property", start:"2023-05-08", principal:600000, rate:18, termMonths:18, freq:"semiannual", notes:"Interest paid in 3 × 6-monthly instalments of $36,000; paid out 07/11/24."}),
+    mk({investor:"Samual William Hooper LOAN 1-MUM", entity:"Flux Property", start:"2023-11-19", principal:50000, rate:11, termMonths:12, notes:"P&I $55,500 paid out 19/11/24."}),
+    mk({investor:"Kim Sutcliffe (Bell)", start:"2024-02-02", principal:200000, rate:10, termMonths:12, notes:"$25K + $20K interest withdrawn; $175K reinvested."}),
+    mk({investor:"Samual William Hooper LOAN 2", start:"2024-02-19", principal:200000, rate:11, termMonths:12, notes:"P&I $222,000 paid out 19/02/25."}),
+    mk({investor:"Terry McBride", entity:"Flux Property", start:"2024-02-24", principal:212000, rate:12, termMonths:12, notes:"Rolled over and renewed."}),
+    mk({investor:"Maree Manuel", entity:"Flux Property", start:"2024-03-18", principal:133100, rate:10, termMonths:12, notes:"Reinvested P&I."}),
+    mk({investor:"SWHooper Pty Ltd ATF Hoops SMSF", start:"2024-03-19", principal:150000, rate:11, termMonths:12, notes:"$16,500 interest paid out; $150K rolled."}),
+    mk({investor:"Vaughan Sutcliffe", entity:"Flux Property", start:"2024-04-05", principal:199650, rate:10, termMonths:12, notes:"Rolled P&I."}),
+    mk({investor:"Bauhinia Buildings Pty Ltd", start:"2024-05-03", principal:162000, rate:8, termMonths:12, notes:"Rolled P&I — new signed contract."}),
+    mk({investor:"David Pearce Property", start:"2024-11-18", principal:125000, rate:12, termMonths:12, notes:"P&I withdrawn 18/11/25."}),
+    mk({investor:"Wendy Hooper", start:"2024-11-26", principal:50000, rate:11, termMonths:12, notes:"Interest paid 26/11/25; principal reinvested."}),
+    mk({investor:"Intrinsic Finance (Alpha)", start:"2024-12-04", principal:600000, rate:18, termMonths:18, freq:"quarterly", endOverride:"2026-05-29", notes:"Quarterly interest (~$27,769) paid Feb/May/Aug/Nov 25 + Feb 26; rolled into current leg 29/05/26."}),
+    mk({investor:"Christine Morris", start:"2025-01-30", principal:200000, rate:12, termMonths:12, freq:"annual", notes:"Year 1 of 24-month loan; $24,000 interest paid 30/01/26."}),
+    mk({investor:"Tom Circosta", start:"2025-01-30", principal:200000, rate:12, termMonths:12, notes:"Rolled P&I into $224,000."}),
+    mk({investor:"Kim Sutcliffe (Bell)", start:"2025-02-02", principal:175000, rate:10, termMonths:12, notes:"Interest paid 02/02/26; principal rolled."}),
+    mk({investor:"Ginelle Dale", start:"2025-02-07", principal:320000, rate:10, termMonths:16, endOverride:"2026-06-10", notes:"Paid out 10/06/26 (interest $41,906.85); $360K reinvested 17/06/26."}),
+    mk({investor:"Krista Louise Chapman (Tom & Krista)", start:"2025-02-17", principal:165000, rate:12, termMonths:12, freq:"semiannual", notes:"$9,900 interest paid 17/08/25 and 17/02/26; principal rolled."}),
+    mk({investor:"Terry McBride", entity:"Flux Property", start:"2025-02-24", principal:237440, rate:12, termMonths:12, notes:"Rolled P&I into $265,932.80 (TJM)."}),
+    mk({investor:"SWHooper Pty Ltd ATF Hoops SMSF", start:"2025-03-19", principal:150000, rate:11, termMonths:6, notes:"6-month extension; rolled P&I into $158,250."}),
+    mk({investor:"Vaughan Sutcliffe", entity:"Flux Property", start:"2025-04-05", principal:219615, rate:10, termMonths:12, notes:"Rolled P&I into $241,576.50."}),
+    mk({investor:"MIRTAP Financial Services Pty Ltd", start:"2025-04-15", principal:500000, rate:13, termMonths:12, freq:"semiannual", notes:"$32,500 interest paid bi-annually (15/10/25, 15/04/26); rolled at 15%."}),
+    mk({investor:"Bauhinia Buildings Pty Ltd", start:"2025-05-03", principal:174960, rate:8, termMonths:13, notes:"Rolled P&I into $190,123.20."}),
+    mk({investor:"Vaughan Sutcliffe", start:"2025-05-14", principal:50000, rate:10, termMonths:12, notes:"Rolled P&I into $55,000."}),
+    mk({investor:"SWHooper Pty Ltd ATF Hoops SF", start:"2025-08-17", principal:211000, rate:11, termMonths:6, notes:"Rolled P&I into $222,605."}),
+  ];
+}
+// One-time additive migration: appends the historical finalised loans to an
+// existing dataset without touching edits. Runs after the SharePoint merge.
+function ensureHistory(){
+  if (store.histV1) return;
+  const key = l => l.investor + "|" + l.start + "|" + l.principal;
+  const have = new Set(store.loans.map(key));
+  const add = seedFinalised().filter(h => !have.has(key(h)));
+  store.loans.push(...add);
+  store.histV1 = true;
+  save();
+  if (add.length) banner("Added " + add.length + " historical finalised loans from the register (they feed the WACC history — see Register &rarr; Finalised loans). Review dates/amounts against the register.");
+}
 function loadSeed(confirmFirst){
   if (confirmFirst && !confirm("Replace current data (including the shared SharePoint copy) with the starting data imported from the June 2026 workbook?")) return;
-  store.loans = seedLoans(); save(); renderAll();
-  banner("Starting data loaded from the June 2026 workbook (" + store.loans.length + " current loans). <b>Review each loan</b> — rollovers, payment histories and the compounding Intrinsic facility were imported in simplified form.");
+  store.loans = seedLoans().concat(seedFinalised()); store.histV1 = true; save(); renderAll();
+  banner("Starting data loaded: current loans from the June 2026 workbook plus the register's historical finalised loans (" + store.loans.length + " total). <b>Review each loan</b> — rollovers, payment histories and the compounding Intrinsic facility were imported in simplified form.");
 }
 
 /* ============================================================
@@ -674,7 +743,7 @@ function renderKPIs(){
   const expired = cur.filter(l => loanEnd(l) < t).length;
   document.getElementById("kpis").innerHTML = `
     <div class="tile" onclick="gotoRegister('current')"><div class="tile-lbl">Principal Outstanding</div><div class="tile-val">$${fmt$(principal)}</div><div class="tile-sub">current loans, today</div></div>
-    <div class="tile t3" onclick="gotoTab('wacc')"><div class="tile-lbl">Blended Rate (WACC)</div><div class="tile-val">${fmtPct(wacc)}</div><div class="tile-sub">weighted by balance</div></div>
+    <div class="tile t3" onclick="gotoTab('history')"><div class="tile-lbl">Blended Rate (WACC)</div><div class="tile-val">${fmtPct(wacc)}</div><div class="tile-sub">weighted by balance</div></div>
     <div class="tile t3" onclick="gotoTab('wacc')"><div class="tile-lbl">Daily Interest</div><div class="tile-val">$${fmt$(daily)}</div><div class="tile-sub">per day at current balances</div></div>
     <div class="tile t2" onclick="gotoTab('accruals')"><div class="tile-lbl">Interest Accrued &amp; Unpaid</div><div class="tile-val">$${fmt$(accrual)}</div><div class="tile-sub">as at today</div></div>
     <div class="tile" onclick="gotoRegister('current')"><div class="tile-lbl">Current Loans</div><div class="tile-val">${cur.length}</div><div class="tile-sub">on the register</div></div>
@@ -979,7 +1048,7 @@ function renderWaccChart(){
     const c = _waccChartPts[nearest(e)];
     document.getElementById("waccDate").value = c.p.date;
     renderWacc();
-    document.getElementById("waccTable").scrollIntoView({behavior:"smooth", block:"start"});
+    gotoTab("wacc");
   };
 }
 window.addEventListener("resize", () => renderWaccChart());
@@ -1181,7 +1250,7 @@ function switchTab(el){
   document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === el));
   document.querySelectorAll(".tc").forEach(x => x.classList.remove("on"));
   document.getElementById("tab-" + el.dataset.tab).classList.add("on");
-  if (el.dataset.tab === "wacc") renderWaccChart();   // chart can't size itself while hidden
+  if (el.dataset.tab === "history") renderWaccChart();   // chart can't size itself while hidden
 }
 function renderAll(){ renderKPIs(); renderRegister(); renderAccruals(); renderWacc(); renderUpcoming(); }
 
