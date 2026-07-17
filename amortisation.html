@@ -198,6 +198,7 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
     <div class="tab" data-tab="consol" onclick="switchTab(this)">Consolidated</div>
     <div class="tab" data-tab="summary" onclick="switchTab(this)">Liability Summary</div>
     <div class="tab" data-tab="journal" onclick="switchTab(this)">Monthly Journal</div>
+    <div class="tab" data-tab="qjournal" onclick="switchTab(this)">Quarterly Journal</div>
     <div class="tab" data-tab="estab" onclick="switchTab(this)">Establishment Journal</div>
   </div>
 
@@ -269,6 +270,24 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
     <div class="alert a-warn" id="jnlCheck" style="margin-top:1rem"></div>
     <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:.5rem">
       <button class="btn btn-outline" onclick="exportJournalPDF()">📄 Export PDF</button>
+    </div>
+  </div>
+
+  <!-- TAB: QUARTERLY JOURNAL -->
+  <div class="tc" id="tc-qjournal">
+    <div class="alert a-info" id="qjnlNote">–</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="tbl-wrap">
+        <table class="jnl-tbl">
+          <thead><tr><th>Account</th><th>Code</th><th>Description</th><th class="r">Debit</th><th class="r">Credit</th></tr></thead>
+          <tbody id="qjnlBody"></tbody>
+          <tfoot id="qjnlFoot"></tfoot>
+        </table>
+      </div>
+    </div>
+    <div class="alert a-warn" id="qjnlCheck" style="margin-top:1rem"></div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:.5rem">
+      <button class="btn btn-outline" onclick="exportJournalPDF(3)">📄 Export PDF</button>
     </div>
   </div>
 
@@ -690,10 +709,11 @@ function positionAt(rows, p){
   const curNet=r2(curHP-curUI), ncNet=r2(ncHP-ncUI);
   return { curHP,curUI,curNet, ncHP,ncUI,ncNet, total:r2(curNet+ncNet), clos };
 }
-// interest & net cash falling in the reporting month itself
-function monthActivity(rows, p){
+// interest & net cash falling in (from, to] — one month for the monthly
+// journal, three for the quarterly
+function periodActivity(rows, from, to){
   let interest=0, net=0;
-  rows.forEach(r => { if(r.monthEnd.getTime()===p.getTime()){ interest+=r.interest; net+=r.net; } });
+  rows.forEach(r => { const t=r.monthEnd.getTime(); if(t > from.getTime() && t <= to.getTime()){ interest+=r.interest; net+=r.net; } });
   return { interest:r2(interest), net:r2(net) };
 }
 
@@ -710,7 +730,7 @@ function recalcAll(){
   renderAll();
   persist(false);
 }
-function renderAll(){ renderTiles(); renderLoans(); syncSchedLoanSelect(); renderSchedule(); renderConsol(); renderSummary(); renderJournal(); renderEstab(); }
+function renderAll(){ renderTiles(); renderLoans(); syncSchedLoanSelect(); renderSchedule(); renderConsol(); renderSummary(); renderJournal(); renderQJournal(); renderEstab(); }
 
 // ─── Tiles ───────────────────────────────────────────────────────────────────
 function renderTiles(){
@@ -845,18 +865,24 @@ function renderSummary(){
 }
 
 // ─── Journal tab ─────────────────────────────────────────────────────────────
-function buildJournal(){
-  const p = periodDate(), prev = eomAdd(p,-1);
+function buildJournal(months){
+  months = months || 1;
+  const p = periodDate(), prev = eomAdd(p, -months);
   const lines = [];
   let totNet=0;
   const intByAcct = {};   // interest expense grouped by facility override code ('' = global acct)
   loans.forEach(L => {
     const rows = L._rows||[];
-    // No monthly journal before the contract's first instalment month — the
-    // set-up entry lives on the Establishment Journal tab instead.
+    // No journal before the contract's first instalment month — the set-up
+    // entry lives on the Establishment Journal tab instead.
     if(!rows.length || p.getTime() < rows[0].monthEnd.getTime()) return;
-    const now = positionAt(rows, p), was = positionAt(rows, prev);
-    const act = monthActivity(L._rows||[], p);
+    // A facility established inside the period measures from its establishment
+    // basis (the month-end before its first instalment), so establishment
+    // entry + this journal chain exactly.
+    const basis = eomAdd(rows[0].monthEnd, -1);
+    const wasME = basis.getTime() > prev.getTime() ? basis : prev;
+    const now = positionAt(rows, p), was = positionAt(rows, wasME);
+    const act = periodActivity(rows, wasME, p);
     const iKey = (L.aIexp||'').trim();
     if(!intByAcct[iKey]) intByAcct[iKey] = { amt:0, names:[] };
     intByAcct[iKey].amt = r2(intByAcct[iKey].amt + act.interest);
@@ -879,25 +905,29 @@ function buildJournal(){
   if(Math.abs(totNet) > 0.005) lines.push({ name:'Finance repayments — bank / clearing', code:settings.bankAcct, dm: r2(-totNet) });
   return lines;
 }
-function renderJournal(){
+function renderJournalTab(months, noteId, bodyId, footId, checkId){
   const p = periodDate();
-  $('jnlNote').innerHTML = `<strong>Monthly journal for ${periodLabel()}.</strong> Movement in each liability account plus interest expense, computed as this month-end's position less last month-end's. Facilities whose first instalment falls after this month are excluded — post their set-up entry from the Establishment Journal tab. Review the bank / clearing line against how the repayment is coded before posting.`;
-  const lines = buildJournal();
-  const body=$('jnlBody'), foot=$('jnlFoot');
-  if(!lines.length){ body.innerHTML='<tr><td colspan="5" class="empty">No movement for this period.</td></tr>'; foot.innerHTML=''; $('jnlCheck').textContent=''; return; }
+  const desc = months===1 ? `${p.toLocaleString('en-AU',{month:'short',year:'numeric'})} movement` : `Qtr to ${fmtDate(p)}`;
+  $(noteId).innerHTML = months===1
+    ? `<strong>Monthly journal for ${periodLabel()}.</strong> Movement in each liability account plus interest expense, computed as this month-end's position less last month-end's. Facilities whose first instalment falls after this month are excluded — post their set-up entry from the Establishment Journal tab. Review the bank / clearing line against how the repayment is coded before posting.`
+    : `<strong>Quarterly journal for the 3 months ended ${fmtDate(p)}.</strong> Set the Reporting Month-end to the client's quarter end — one entry covers the quarter's movement in each liability account plus the quarter's interest expense, instead of three monthly postings. Facilities established mid-quarter measure from their establishment basis, so this follows straight after the Establishment Journal. Review the bank / clearing line against how repayments are coded before posting.`;
+  const lines = buildJournal(months);
+  const body=$(bodyId), foot=$(footId), ck=$(checkId);
+  if(!lines.length){ body.innerHTML='<tr><td colspan="5" class="empty">No movement for this period.</td></tr>'; foot.innerHTML=''; ck.textContent=''; return; }
   let dr=0, cr=0;
   body.innerHTML = lines.map(l => {
     const d = l.dm>0?l.dm:0, c = l.dm<0?-l.dm:0; dr+=d; cr+=c;
-    return `<tr><td>${esc(l.name)}</td><td>${l.code?`<code>${esc(l.code)}</code>`:'—'}</td><td>${p.toLocaleString('en-AU',{month:'short',year:'numeric'})} movement</td>
+    return `<tr><td>${esc(l.name)}</td><td>${l.code?`<code>${esc(l.code)}</code>`:'—'}</td><td>${desc}</td>
       <td class="r dr-amt">${d?fmt$(d):'—'}</td><td class="r cr-amt">${c?fmt$(c):'—'}</td></tr>`;
   }).join('');
   dr=r2(dr); cr=r2(cr);
   foot.innerHTML = `<tr><td colspan="3" style="text-transform:uppercase;letter-spacing:.06em">Totals</td><td class="r">${fmt$(dr)}</td><td class="r">${fmt$(cr)}</td></tr>`;
   const diff = r2(dr-cr);
-  const ck = $('jnlCheck');
   if(Math.abs(diff) < 0.02){ ck.className='alert a-ok'; ck.textContent = `✅ Journal balances — debits ${fmt$(dr)} = credits ${fmt$(cr)}.`; }
   else { ck.className='alert a-err'; ck.textContent = `⚠ Out of balance by ${fmt$(diff)} — check account codes and pasted figures.`; }
 }
+function renderJournal(){ renderJournalTab(1, 'jnlNote', 'jnlBody', 'jnlFoot', 'jnlCheck'); }
+function renderQJournal(){ renderJournalTab(3, 'qjnlNote', 'qjnlBody', 'qjnlFoot', 'qjnlCheck'); }
 
 // ─── Establishment journal tab ───────────────────────────────────────────────
 // Dr Financed asset (balancing item, no code) + Dr unexpired interest,
@@ -1463,11 +1493,12 @@ function exportSummaryPDF(){
   row('Total liability','total',true);
   doc.save(`HP_Liability_Summary_${slug(currentClient)?slug(currentClient)+'_':''}${periodLabel().replace(/ /g,'_')}.pdf`);
 }
-function exportJournalPDF(){
+function exportJournalPDF(months){
+  months = months||1;
   if(!loans.length){ alert('Add a facility first.'); return; }
   const { jsPDF }=window.jspdf; const doc=new jsPDF(); const W=210;
-  pdfHeader(doc,W,'HP / LEASE MONTHLY JOURNAL');
-  const lines=buildJournal();
+  pdfHeader(doc,W, months===1 ? 'HP / LEASE MONTHLY JOURNAL' : 'HP / LEASE QUARTERLY JOURNAL');
+  const lines=buildJournal(months);
   let y=36; doc.setFont(undefined,'bold'); doc.setFontSize(8.5);
   doc.text('Account',14,y); doc.text('Code',120,y); doc.text('Debit',170,y,{align:'right'}); doc.text('Credit',196,y,{align:'right'});
   y+=3; doc.setLineWidth(0.4); doc.line(14,y,196,y); y+=6; doc.setFont(undefined,'normal'); doc.setFontSize(7.5);
@@ -1483,7 +1514,7 @@ function exportJournalPDF(){
   });
   y+=1; doc.setLineWidth(0.4); doc.line(14,y,196,y); y+=6; doc.setFont(undefined,'bold');
   doc.text('TOTALS',14,y); doc.text(fmt$(r2(dr)).replace('$',''),170,y,{align:'right'}); doc.text(fmt$(r2(cr)).replace('$',''),196,y,{align:'right'});
-  doc.save(`HP_Journal_${slug(currentClient)?slug(currentClient)+'_':''}${periodLabel().replace(/ /g,'_')}.pdf`);
+  doc.save(`HP_Journal_${months===3?'Qtr_':''}${slug(currentClient)?slug(currentClient)+'_':''}${periodLabel().replace(/ /g,'_')}.pdf`);
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
