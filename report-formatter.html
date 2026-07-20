@@ -571,6 +571,7 @@ function transformSummary(raw, cfg){
   const eng = new Totals(raw.columns.length);
   const closing = closingOpens(raw.rows);
   const rows = [];
+  let lastTotal = null;
   for (const rr of raw.rows) {
     if (rr.kind === 'blank') continue;
     const label = rr.label || '';
@@ -581,9 +582,15 @@ function transformSummary(raw, cfg){
       if (!dup && !dropSections.has(label.toLowerCase()))
         rows.push({kind:'section', label:renamed.toUpperCase(), values:null});
     } else if (rr.kind === 'group_total') {
-      const total = eng.closeGroup(label);
-      if (eng.openCount(label.slice(6).trim()) > 0) continue;  // inner dup total
-      rows.push({kind:'total', label:renamed, values:rounded(total),
+      const total = rounded(eng.closeGroup(label));
+      // nested same-named groups: emit the inner subtotal; drop a later
+      // same-named total only when its figures are identical (redundant
+      // duplicate). When the outer differs (Portis) both stay.
+      if (lastTotal !== null && lastTotal[0] === renamed.toLowerCase()
+          && lastTotal[1].length === total.length
+          && lastTotal[1].every((v,i)=>v===total[i])) continue;
+      lastTotal = [renamed.toLowerCase(), total];
+      rows.push({kind:'total', label:renamed, values:total,
                  xeroValues: rr.computed ? rounded(rr.values) : null});
     } else if (rr.computed && isPercent(label)) {
       rows.push({kind:'percent', label:renamed, values:percentValues(rr), computed:true});
@@ -834,10 +841,31 @@ function checkSummaryVsDetail(summary, detail, fails){
 
   const sSecs = sectionsOf(summary, new Set(['account']));
   const dSecs = sectionsOf(detail, new Set(['total']));
+  // deep layouts render sub-group totals as account-kind rows — drop them
+  // from the aggregate or their member accounts are counted twice
+  const dAccs = {};
+  for (const [name, rows] of sectionsOf(detail, new Set(['account'])))
+    dAccs[name] = rows.filter(([l]) => !(l||'').toLowerCase().startsWith('total '));
   const pairs = [], sLeft = sSecs.slice(), dLeft = dSecs.slice();
   for (const sec of sLeft.slice()) {   // match by name first
     const m = dLeft.find(d => d[0].toUpperCase() === sec[0].toUpperCase());
     if (m) { pairs.push([sec, m]); sLeft.splice(sLeft.indexOf(sec),1); dLeft.splice(dLeft.indexOf(m),1); }
+  }
+  // scope mismatch: a Summary section the Detail nests inside another
+  // section (Portis: COGS lives under Detail's Revenue). Fold its accounts
+  // into the pair whose Detail side carries its 'Total X' row so the
+  // aggregate comparison spans the same accounts on both sides.
+  const merged = new Set();
+  for (const sec of sLeft.slice()) {
+    const tot = ('total ' + sec[0]).toLowerCase();
+    for (const [sSec, dSec] of pairs) {
+      if (dSec[1].some(([dl]) => (dl||'').toLowerCase() === tot)) {
+        sSec[1].push(...sec[1]);
+        merged.add(sSec);
+        sLeft.splice(sLeft.indexOf(sec),1);
+        break;
+      }
+    }
   }
   const nPair = Math.min(sLeft.length, dLeft.length);
   for (let k=0;k<nPair;k++) pairs.push([sLeft[k], dLeft[k]]);  // leftovers in order
@@ -846,12 +874,17 @@ function checkSummaryVsDetail(summary, detail, fails){
   for (const m of dLeft.slice(nPair))
     fails.push(`WARN: Detail section '${m[0]}' has no Summary counterpart — cross-check skipped`);
 
-  for (const [[sName,sRows],[dName,dRows]] of pairs) {
-    if (sRows.length !== dRows.length) {
+  for (const pair of pairs) {
+    const [[sName,sRows],[dName,dRows]] = pair;
+    // a folded-in section breaks positional order — aggregate only
+    if (sRows.length !== dRows.length || merged.has(pair[0])) {
       const diffs = [];
+      // aggregate from Detail's account rows when the section has them:
+      // nested sub-group totals double-count in a straight sum of total rows
+      const bRows = (dAccs[dName] && dAccs[dName].length) ? dAccs[dName] : dRows;
       for (const [label,si,di] of shared) {
         const a = sRows.reduce((t,[,v])=>t+(v[si]||0),0);
-        const b = dRows.reduce((t,[,v])=>t+(v[di]||0),0);
+        const b = bRows.reduce((t,[,v])=>t+(v[di]||0),0);
         if (Math.abs(a-b) > TOL) diffs.push(`${label}: ${fmt$(a)} vs ${fmt$(b)}`);
       }
       if (diffs.length) fails.push(`section '${sName}'/'${dName}': aggregates disagree — ${diffs.slice(0,MAX_PER_ROW).join('; ')}`);
@@ -991,6 +1024,7 @@ const CLIENT_CONFIGS = {
   'tactic administration services': { client_name: 'Tactic Administration Services Pty Ltd' },
   'tallboy flooring': { client_name: 'Tallboy Flooring Pty Ltd' },
   'tactic leasing advisory': { client_name: 'Tactic Leasing Advisory Pty Ltd' },
+  'portis global': { client_name: 'Portis Global Pty Ltd' },
 };
 function clientConfigFor(orgName){
   const low = String(orgName||'').toLowerCase();
