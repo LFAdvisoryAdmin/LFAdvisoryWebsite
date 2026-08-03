@@ -671,12 +671,20 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                     <label>Leave Balances (Last Month)</label>
                     <input type="file" id="leaveLast" accept=".xlsx,.xls">
                     <small>Will auto-load from previous reconciliation if available</small>
+                    <small id="leaveLastAutoStatus" style="display:block;margin-top:.25rem;font-size:.75rem"></small>
                 </div>
 
                 <div class="input-group">
                     <label>Employee Contact Details</label>
                     <input type="file" id="employeeContacts" accept=".xlsx,.xls">
                     <small>Required for multi-state payroll tax calculation</small>
+                </div>
+
+                <div class="input-group">
+                    <label>Trial Balance (Opening Check)</label>
+                    <input type="file" id="trialBalance" accept=".xlsx,.xls,.csv">
+                    <small>Xero Trial Balance as at the prior month-end — checks carried-forward provision balances against the ledger</small>
+                    <small id="tbLoadStatus" style="display:none;margin-top:.25rem;font-size:.75rem"></small>
                 </div>
             </div>
 
@@ -971,7 +979,26 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 <button class="btn btn-success" onclick="saveLSLSettings()" style="width: 100%; margin-top: 1rem;">💾 Save LSL Settings</button>
             </div>
         </div>
-        
+
+        <!-- Trial Balance Carried-Forward Check Modal -->
+        <div id="tbReconModal" class="modal">
+            <div class="modal-content" style="max-width: 820px;">
+                <div class="modal-header">
+                    <h2>⚖️ Trial Balance — Carried-Forward Check</h2>
+                    <button class="close-btn" onclick="closeTbReconModal()">×</button>
+                </div>
+                <div class="alert alert-info" style="margin: 0 0 1rem;">
+                    The opening balances the reconciliation is about to use <strong>don't match the ledger</strong>.
+                    Choose how to allocate each variance across departments, then apply so this month's movement ties to the Trial Balance.
+                </div>
+                <div id="tbReconBody"></div>
+                <div style="display:flex; gap:.75rem; justify-content:flex-end; margin-top:1.5rem; flex-wrap:wrap;">
+                    <button class="btn btn-secondary" onclick="ignoreTbAllocation();" style="width:auto; padding:.6rem 1.2rem;">Ignore &amp; continue</button>
+                    <button class="btn btn-success" onclick="applyTbAllocation();" style="width:auto; padding:.6rem 1.2rem;">Apply adjustments &amp; continue</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Instructions Modal -->
         <div id="instructionsModal" class="modal">
             <div class="modal-content" style="max-width: 900px; max-height: 85vh; overflow-y: auto;">
@@ -1432,6 +1459,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
         let leaveThisData = null;
         let leaveLastData = null;
         let contactsData = null;
+        let trialBalanceData = null;
         let journalEntries = [];
         let currentClientData = {};
         let departments = [
@@ -1472,12 +1500,36 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
         });
 
         document.getElementById('leaveLast').addEventListener('change', (e) => {
-            readExcel(e.target.files[0], (data) => { leaveLastData = data; console.log('Leave Last loaded'); });
+            readExcel(e.target.files[0], (data) => {
+                leaveLastData = data;
+                leaveLastSource = 'file';
+                console.log('Leave Last loaded');
+                const fb = document.getElementById('leaveLastAutoStatus');
+                if (fb) { fb.textContent = '✅ Prior month file uploaded'; fb.style.color = '#27ae60'; }
+            });
         });
 
         document.getElementById('employeeContacts').addEventListener('change', (e) => {
             readExcel(e.target.files[0], (data) => { contactsData = data; console.log('Contacts loaded'); });
         });
+
+        document.getElementById('trialBalance').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            const status = document.getElementById('tbLoadStatus');
+            if (!file) { trialBalanceData = null; if (status) status.style.display = 'none'; return; }
+            readExcel(file, (data) => {
+                trialBalanceData = data;
+                console.log('Trial Balance loaded');
+                if (status) {
+                    status.textContent = '✅ Trial Balance loaded (' + file.name + ')';
+                    status.style.color = '#27ae60';
+                    status.style.display = 'block';
+                }
+            });
+        });
+
+        // Track where this-run last-month leave came from: 'file' | 'snapshot' | null
+        let leaveLastSource = null;
 
         function readExcel(file, callback) {
             const reader = new FileReader();
@@ -1489,6 +1541,353 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 callback(jsonData);
             };
             reader.readAsArrayBuffer(file);
+        }
+
+        // ── Chart of Accounts resolver (live DOM input → saved → default) ─────
+        // Mirrors the _coaEl logic inside generateJournalEntriesMultiDept so the
+        // Trial Balance check and the journal use identical GL codes.
+        function getCoA() {
+            const saved = currentClientData.chartOfAccounts || {};
+            const pick = (id, key, def) => {
+                const el = document.getElementById(id);
+                return ((el && el.value.trim()) ? el.value.trim() : (saved[key] || null)) || def;
+            };
+            return {
+                wagesPayable:           pick('coa_wagesPayable',          'wagesPayable',          '21420'),
+                superPayable:           pick('coa_superPayable',          'superPayable',          '52000'),
+                payrollTaxPayable:      pick('coa_payrollTaxPayable',     'payrollTaxPayable',     '21422'),
+                workcoverPrepaid:       pick('coa_workcoverPrepaid',      'workcoverPrepaid',      '11195'),
+                annualLeaveProvision:   pick('coa_annualLeaveProvision',  'annualLeaveProvision',  '21381'),
+                wagesAccrued:           pick('coa_wagesAccrued',          'wagesAccrued',          '21450'),
+                lslCurrentProvision:    pick('coa_lslCurrentProvision',   'lslCurrentProvision',   '21382'),
+                lslNonCurrentProvision: pick('coa_lslNonCurrentProvision','lslNonCurrentProvision','24800')
+            };
+        }
+
+        // The payroll balance-sheet accounts checked against the Trial Balance.
+        // `type`: 'liability' (natural credit) or 'asset' (natural debit).
+        // `dept`: which per-department opening vector the variance can be allocated to
+        //         ('al' | 'lslCurrent' | 'lslNonCurrent' | null = reference-only).
+        function tbCheckAccounts(coa) {
+            return [
+                { key: 'annualLeaveProvision',   code: coa.annualLeaveProvision,   name: 'Annual Leave Provision',     type: 'liability', dept: 'al' },
+                { key: 'lslCurrentProvision',    code: coa.lslCurrentProvision,    name: 'LSL Provision (Current)',    type: 'liability', dept: 'lslCurrent' },
+                { key: 'lslNonCurrentProvision', code: coa.lslNonCurrentProvision, name: 'LSL Provision (Non-Current)',type: 'liability', dept: 'lslNonCurrent' },
+                { key: 'wagesPayable',           code: coa.wagesPayable,           name: 'Wages Payable',              type: 'liability', dept: null },
+                { key: 'superPayable',           code: coa.superPayable,           name: 'Superannuation Payable',     type: 'liability', dept: null },
+                { key: 'payrollTaxPayable',      code: coa.payrollTaxPayable,      name: 'Payroll Tax Payable',        type: 'liability', dept: null },
+                { key: 'wagesAccrued',           code: coa.wagesAccrued,           name: 'Wages Accrued',              type: 'liability', dept: null },
+                { key: 'workcoverPrepaid',       code: coa.workcoverPrepaid,       name: 'Workcover Prepaid',          type: 'asset',     dept: null }
+            ];
+        }
+
+        // ── Trial Balance parser ─────────────────────────────────────────────
+        // Handles both the Xero layout (single "Account" column = "<code> - <name>",
+        // plus Debit / Credit) and the MYOB layout (separate "Account Code" column
+        // and "Debit - Year to date" / "Credit - Year to date"). Returns
+        // { [glCode]: { debit, credit, net } } where net = debit − credit.
+        function parseTrialBalance(rows) {
+            const result = {};
+            if (!rows || !rows.length) return result;
+
+            const norm = s => (s == null ? '' : String(s)).trim().toLowerCase();
+            const toNum = v => {
+                if (v == null || v === '') return 0;
+                if (typeof v === 'number') return v;
+                const n = parseFloat(String(v).replace(/[$,\s]/g, '').replace(/^\((.*)\)$/, '-$1'));
+                return isNaN(n) ? 0 : n;
+            };
+
+            // Locate the header row + the columns we need.
+            let headerRow = -1, codeCol = -1, acctCol = -1, debitCol = -1, creditCol = -1;
+            for (let i = 0; i < Math.min(20, rows.length); i++) {
+                const row = rows[i];
+                if (!row) continue;
+                let c = -1, a = -1, d = -1, cr = -1;
+                for (let j = 0; j < row.length; j++) {
+                    const h = norm(row[j]);
+                    if (!h) continue;
+                    if (h === 'account code' || h === 'code' || h === 'account no' || h === 'account number') c = j;
+                    else if (h === 'account' || h === 'account name' || h === 'name') { if (a === -1) a = j; }
+                    else if (h === 'debit' || h.startsWith('debit')) { if (d === -1) d = j; }
+                    else if (h === 'credit' || h.startsWith('credit')) { if (cr === -1) cr = j; }
+                }
+                if (d !== -1 && cr !== -1 && (a !== -1 || c !== -1)) {
+                    headerRow = i; codeCol = c; acctCol = a; debitCol = d; creditCol = cr;
+                    break;
+                }
+            }
+            if (headerRow === -1) {
+                console.warn('[TB] Could not locate a Debit/Credit header row in the Trial Balance');
+                return result;
+            }
+
+            for (let i = headerRow + 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row) continue;
+
+                // Determine the account code for this row.
+                let code = null, label = '';
+                if (codeCol !== -1 && row[codeCol] != null && String(row[codeCol]).trim() !== '') {
+                    code = String(row[codeCol]).trim();
+                    label = acctCol !== -1 ? String(row[acctCol] || '').trim() : '';
+                } else if (acctCol !== -1 && row[acctCol] != null) {
+                    label = String(row[acctCol]).trim();
+                    // Xero combined cell: "21381 - Annual Leave Provision"
+                    const m = label.match(/^\s*([0-9][0-9A-Za-z.\-\/]*)\s*[-–]\s*(.*)$/);
+                    if (m) { code = m[1].trim(); label = m[2].trim(); }
+                }
+                if (!code) continue;
+                // Skip subtotal / total rows.
+                if (/^total\b/i.test(label) || /^total\b/i.test(String(row[acctCol] || ''))) continue;
+
+                const debit = toNum(row[debitCol]);
+                const credit = toNum(row[creditCol]);
+                if (debit === 0 && credit === 0) continue;
+
+                // Keep the first (or accumulate) entry per code.
+                if (!result[code]) result[code] = { debit: 0, credit: 0, net: 0, label };
+                result[code].debit += debit;
+                result[code].credit += credit;
+                result[code].net = result[code].debit - result[code].credit;
+            }
+            console.log('[TB] Parsed', Object.keys(result).length, 'accounts from Trial Balance');
+            return result;
+        }
+
+        // Return the ledger balance for an account in its natural sign
+        // (liability → credit − debit; asset → debit − credit). null if absent.
+        function tbAccountBalance(tbMap, code, type) {
+            if (!code || !tbMap[code]) return null;
+            const e = tbMap[code];
+            return type === 'asset' ? (e.debit - e.credit) : (e.credit - e.debit);
+        }
+
+        // ── Trial Balance carried-forward check ──────────────────────────────
+        // Transient LSL opening override consulted by calculateLSLProvision.
+        // Set only by applyTbAllocation; kept out of persisted settings so it
+        // never leaks into next month's reconciliation.
+        window._tbLslOpening = null;
+        let _tbVariancesPending = null;   // rows awaiting an allocation decision
+        let _tbLslResult = null;          // LSL calc snapshot (override off) for the check
+
+        const _tbFmt = n => (n == null ? '—' : (n < 0 ? '-$' : '$') +
+            Math.abs(Number(n)).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+
+        // Build the per-account comparison of app opening (expected) vs the TB.
+        function computeTbVariances() {
+            const coa = getCoA();
+            const tbMap = parseTrialBalance(trialBalanceData);
+            const accounts = tbCheckAccounts(coa);
+
+            // AL provision expected = sum of the per-department opening fields.
+            let alExpected = 0;
+            departments.forEach(d => {
+                const el = document.getElementById('opening_' + d.id);
+                alExpected += parseFloat(el && el.value) || 0;
+            });
+
+            // LSL expected = the opening the journal will use (override OFF here).
+            let lslCurExpected = null, lslNonCurExpected = null, lslComputable = false;
+            _tbLslResult = null;
+            try {
+                const lslChk = document.getElementById('lsl_enabled');
+                if (lslChk && lslChk.checked) {
+                    const prev = window._tbLslOpening;
+                    window._tbLslOpening = null;               // ensure true recalculated opening
+                    const lsl = calculateLSLProvision();
+                    window._tbLslOpening = prev;
+                    if (lsl) {
+                        _tbLslResult = lsl;
+                        lslCurExpected = lsl.lastCurrentLiability || 0;
+                        lslNonCurExpected = lsl.lastNonCurrentLiability || 0;
+                        lslComputable = true;
+                    }
+                }
+            } catch (e) { console.warn('[TB] LSL expected not computable:', e); }
+
+            return accounts.map(a => {
+                const tb = tbAccountBalance(tbMap, a.code, a.type);
+                let expected = null, computable = false;
+                if (a.dept === 'al') { expected = alExpected; computable = true; }
+                else if (a.dept === 'lslCurrent') { expected = lslCurExpected; computable = lslComputable; }
+                else if (a.dept === 'lslNonCurrent') { expected = lslNonCurExpected; computable = lslComputable; }
+                const inTb = tb !== null;
+                let variance = null, hasVariance = false;
+                if (inTb && computable && expected !== null) {
+                    variance = tb - expected;
+                    hasVariance = Math.abs(variance) > 1;
+                }
+                return { key: a.key, name: a.name, code: a.code, dept: a.dept,
+                         tb, inTb, expected, computable, variance, hasVariance };
+            });
+        }
+
+        // Serialise the check for the snapshot / results panel.
+        function buildTbRecon(variances, applied) {
+            return {
+                asAt: (document.getElementById('period') || {}).value || '',
+                appliedAt: applied ? new Date().toISOString() : null,
+                applied: !!applied,
+                byAccount: variances.map(v => ({
+                    code: v.code, name: v.name,
+                    expected: v.expected, tb: v.tb,
+                    variance: v.variance, hasVariance: v.hasVariance,
+                    computable: v.computable, inTb: v.inTb,
+                    allocation: v.allocation || null
+                }))
+            };
+        }
+
+        function closeTbReconModal() {
+            document.getElementById('tbReconModal').classList.remove('active');
+        }
+
+        // Proceed without adjusting — still record the (unallocated) variance so
+        // the results panel and snapshot show that it was reviewed and left as-is.
+        function ignoreTbAllocation() {
+            window._tbLslOpening = null;
+            window.lastTbRecon = buildTbRecon(_tbVariancesPending || [], false);
+            closeTbReconModal();
+            continueReconciliation();
+        }
+
+        // Render the modal listing every checked account + allocation controls
+        // for the by-department provisions that carry a variance.
+        function openTbReconModal(variances) {
+            _tbVariancesPending = variances;
+            const deptOpts = departments.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+            let rows = '';
+            variances.forEach(v => {
+                const expTxt = v.dept
+                    ? (v.computable ? _tbFmt(v.expected) : '<span style="color:#e67e22">not computed</span>')
+                    : '<span style="color:#94a3b8">not tracked</span>';
+                const tbTxt = v.inTb ? _tbFmt(v.tb) : '<span style="color:#94a3b8">not in TB</span>';
+                const varTxt = v.hasVariance
+                    ? `<strong style="color:#c0392b">${_tbFmt(v.variance)}</strong>`
+                    : (v.computable && v.inTb ? '<span style="color:#27ae60">ties</span>' : '—');
+                rows += `<tr>
+                    <td style="padding:.4rem .6rem;">${v.name}</td>
+                    <td style="padding:.4rem .6rem;color:#64748b;">${v.code || ''}</td>
+                    <td style="padding:.4rem .6rem;text-align:right;">${expTxt}</td>
+                    <td style="padding:.4rem .6rem;text-align:right;">${tbTxt}</td>
+                    <td style="padding:.4rem .6rem;text-align:right;">${varTxt}</td></tr>`;
+                if (v.hasVariance && v.dept) {
+                    rows += `<tr><td colspan="5" style="padding:.4rem 1rem .9rem;background:#fbfbfd;">
+                        <div style="font-size:.82rem;color:#334155;">
+                          Allocate the ${_tbFmt(v.variance)} variance:
+                          <label style="margin-left:.6rem;cursor:pointer;"><input type="radio" name="tbAlloc_${v.key}" value="prop" checked> Proportionally across departments</label>
+                          <label style="margin-left:1rem;cursor:pointer;"><input type="radio" name="tbAlloc_${v.key}" value="one"> Charge to one department:</label>
+                          <select id="tbAllocDept_${v.key}" style="margin-left:.4rem;padding:.15rem .3rem;">${deptOpts}</select>
+                        </div></td></tr>`;
+                }
+            });
+            document.getElementById('tbReconBody').innerHTML = `
+                <table style="width:100%;border-collapse:collapse;font-size:.85rem;">
+                    <thead><tr style="background:#0a2540;color:#fff;">
+                        <th style="padding:.5rem .6rem;text-align:left;">Account</th>
+                        <th style="padding:.5rem .6rem;text-align:left;">Code</th>
+                        <th style="padding:.5rem .6rem;text-align:right;">Expected (app)</th>
+                        <th style="padding:.5rem .6rem;text-align:right;">Trial Balance</th>
+                        <th style="padding:.5rem .6rem;text-align:right;">Variance</th>
+                    </tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                <p style="font-size:.75rem;color:#94a3b8;margin-top:.6rem;">
+                    Non-departmental accounts (wages payable, super, PAYG, workcover) are shown for reference only — no opening balance is carried for them, so review those directly in Xero.
+                </p>`;
+            document.getElementById('tbReconModal').classList.add('active');
+        }
+
+        // Distribute a variance V across departments and return {deptId: share}.
+        function _tbDistribute(V, weights, method, oneDeptId) {
+            const shares = {};
+            departments.forEach(d => shares[d.id] = 0);
+            if (method === 'one' && oneDeptId) {
+                shares[oneDeptId] = V;
+                return shares;
+            }
+            let total = 0;
+            departments.forEach(d => total += Math.max(0, weights[d.id] || 0));
+            if (total > 0) {
+                departments.forEach(d => shares[d.id] = V * (Math.max(0, weights[d.id] || 0) / total));
+            } else {
+                const even = V / (departments.length || 1);
+                departments.forEach(d => shares[d.id] = even);
+            }
+            return shares;
+        }
+
+        // Apply the chosen allocations, correcting the opening balances so the
+        // reconciliation ties to the ledger, then continue processing.
+        function applyTbAllocation() {
+            const variances = _tbVariancesPending || [];
+            const readChoice = key => ({
+                method: (document.querySelector(`input[name="tbAlloc_${key}"]:checked`) || {}).value || 'prop',
+                oneDeptId: (document.getElementById(`tbAllocDept_${key}`) || {}).value || null
+            });
+
+            // ── Annual Leave provision: adjust the per-department opening fields ──
+            const alVar = variances.find(v => v.dept === 'al' && v.hasVariance);
+            if (alVar) {
+                const c = readChoice(alVar.key);
+                alVar.allocation = { method: c.method, department: c.method === 'one' ? c.oneDeptId : null };
+                const base = {}, weights = {};
+                departments.forEach(d => {
+                    const el = document.getElementById('opening_' + d.id);
+                    base[d.id] = parseFloat(el && el.value) || 0;
+                    weights[d.id] = base[d.id];
+                });
+                const shares = _tbDistribute(alVar.variance, weights, c.method, c.oneDeptId);
+                departments.forEach(d => {
+                    const el = document.getElementById('opening_' + d.id);
+                    if (el) el.value = (base[d.id] + shares[d.id]).toFixed(2);
+                });
+            }
+
+            // ── LSL: pin the opening to the ledger via the transient override ──
+            const lslCurVar = variances.find(v => v.dept === 'lslCurrent' && v.hasVariance);
+            const lslNonVar = variances.find(v => v.dept === 'lslNonCurrent' && v.hasVariance);
+            if ((lslCurVar || lslNonVar) && _tbLslResult) {
+                // Per-department CURRENT-period provision by classification →
+                // the split weights for both baseline and variance.
+                const xgToId = {};
+                departments.forEach(d => xgToId[d.xeroGroup] = d.id);
+                const curW = {}, nonW = {};
+                departments.forEach(d => { curW[d.id] = 0; nonW[d.id] = 0; });
+                let curT = 0, nonT = 0;
+                (_tbLslResult.employeeProvisions || []).forEach(e => {
+                    const id = xgToId[e.department];
+                    if (!id) return;
+                    if (e.isCurrent) { curW[id] += e.provision || 0; curT += e.provision || 0; }
+                    else { nonW[id] += e.provision || 0; nonT += e.provision || 0; }
+                });
+
+                const override = {};
+                departments.forEach(d => override[d.id] = { current: 0, nonCurrent: 0 });
+                // side: [key, weights, weightTotal, expectedOpening, varianceRow]
+                [
+                    ['current',    curW, curT, _tbLslResult.lastCurrentLiability || 0,    lslCurVar],
+                    ['nonCurrent', nonW, nonT, _tbLslResult.lastNonCurrentLiability || 0, lslNonVar]
+                ].forEach(([sideKey, w, wT, expectedSide, varRow]) => {
+                    const base = {};
+                    departments.forEach(d => {
+                        base[d.id] = wT > 0 ? expectedSide * (w[d.id] / wT) : expectedSide / (departments.length || 1);
+                    });
+                    let shares = {}; departments.forEach(d => shares[d.id] = 0);
+                    if (varRow) {
+                        const c = readChoice(varRow.key);
+                        varRow.allocation = { method: c.method, department: c.method === 'one' ? c.oneDeptId : null };
+                        shares = _tbDistribute(varRow.variance, w, c.method, c.oneDeptId);
+                    }
+                    departments.forEach(d => override[d.id][sideKey] = base[d.id] + shares[d.id]);
+                });
+                window._tbLslOpening = override;
+            }
+
+            window.lastTbRecon = buildTbRecon(variances, true);
+            closeTbReconModal();
+            continueReconciliation();
         }
 
         // Department Management
@@ -1888,33 +2287,29 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 
                 // Auto-load last month leave balances from previous snapshot
                 leaveLastData = null;
+                leaveLastSource = null;
+                const priorPeriod = (clientData.lastReconciliation && clientData.lastReconciliation.period) || '';
                 const leaveSrc = clientData.lastReconciliation && clientData.lastReconciliation.leaveThisSnapshot
                     ? clientData.lastReconciliation.leaveThisSnapshot
                     : null;
+                // Ensure the narration element exists
+                let leaveFeedback = document.getElementById('leaveLastAutoStatus');
+                if (!leaveFeedback) {
+                    leaveFeedback = document.createElement('small');
+                    leaveFeedback.id = 'leaveLastAutoStatus';
+                    leaveFeedback.style.cssText = 'display:block;margin-top:.25rem;font-size:.75rem';
+                    const inp = document.getElementById('leaveLast');
+                    if (inp && inp.parentNode) inp.parentNode.appendChild(leaveFeedback);
+                }
                 if (leaveSrc) {
                     leaveLastData = leaveSrc;
-                    // Show indicator that last month leave was auto-loaded
-                    const lastLabel = document.querySelector('label[for="leaveLast"], #leaveLast');
-                    const leaveFeedback = document.getElementById('leaveLastAutoStatus');
-                    if (!leaveFeedback) {
-                        const el = document.createElement('small');
-                        el.id = 'leaveLastAutoStatus';
-                        el.style.cssText = 'color:#27ae60;display:block;margin-top:.25rem;font-size:.75rem';
-                        el.textContent = '✅ Auto-loaded from previous reconciliation';
-                        const inp = document.getElementById('leaveLast');
-                        if (inp && inp.parentNode) inp.parentNode.appendChild(el);
-                    } else {
-                        leaveFeedback.textContent = '✅ Auto-loaded from previous reconciliation';
-                        leaveFeedback.style.color = '#27ae60';
-                    }
+                    leaveLastSource = 'snapshot';
+                    leaveFeedback.textContent = '✅ Prior month data on file' + (priorPeriod ? ' (from ' + priorPeriod + ' reconciliation)' : '');
+                    leaveFeedback.style.color = '#27ae60';
                     console.log('[Leave] Last month leave auto-loaded from snapshot');
                 } else {
-                    // Clear any auto-load indicator
-                    const leaveFeedback = document.getElementById('leaveLastAutoStatus');
-                    if (leaveFeedback) {
-                        leaveFeedback.textContent = 'No previous reconciliation found — upload manually';
-                        leaveFeedback.style.color = '#e67e22';
-                    }
+                    leaveFeedback.textContent = '⚠️ No prior month data — AL & LSL movements can\'t be calculated';
+                    leaveFeedback.style.color = '#e67e22';
                 }
 
                 toggleAccrualFields();
@@ -2204,32 +2599,57 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
         }
 
         // Process Reconciliation - Multi-Department Edition
+        // Validates inputs, runs the prior-month + Trial-Balance carried-forward
+        // checks, then hands off to continueReconciliation() (the TB modal's
+        // Apply/Ignore buttons call continueReconciliation() directly).
         function processReconciliation() {
+            console.log('🔵 processReconciliation() CALLED');
+            if (!transactionData) {
+                console.log('❌ No transaction data - showing alert');
+                alert('Please upload Transaction Listing Details');
+                return;
+            }
+
+            // Fresh run — clear any Trial-Balance state from a previous click.
+            window._tbLslOpening = null;
+            window.lastTbRecon = null;
+
+            // Prior-month leave data: inform when it was auto-pulled, warn when absent.
+            if (leaveLastSource === 'snapshot') {
+                const p = (currentClientData.lastReconciliation && currentClientData.lastReconciliation.period) || 'the prior period';
+                alert('ℹ️ Prior month data pulled\n\nNo "Last Month" leave file was uploaded, so prior-month data was pulled from the ' + p + ' reconciliation on file and used for the Annual Leave & LSL opening balances.');
+            } else if (!leaveLastData && currentClientData && currentClientData.lastReconciliation) {
+                const proceed = confirm(
+                    '⚠️ Missing Last Month Leave Balances\n\n' +
+                    'A prior reconciliation exists for ' + (currentClientData.clientName || 'this client') + ' (' + currentClientData.lastReconciliation.period + '), ' +
+                    'but no last month leave balances file has been uploaded.\n\n' +
+                    'Annual leave movement and LSL provision cannot be calculated without this file.\n\n' +
+                    'Press OK to proceed anyway, or Cancel to go back and upload the file.'
+                );
+                if (!proceed) return;
+            }
+
+            // Trial Balance carried-forward check (non-blocking). If any
+            // by-department provision drifts from the ledger, offer allocation.
+            if (trialBalanceData) {
+                try {
+                    const variances = computeTbVariances();
+                    if (variances.some(v => v.hasVariance && v.dept)) {
+                        openTbReconModal(variances);
+                        return; // modal continues the run
+                    }
+                    window.lastTbRecon = buildTbRecon(variances, false);
+                } catch (e) {
+                    console.error('[TB] carried-forward check failed:', e);
+                }
+            }
+
+            continueReconciliation();
+        }
+
+        // Runs the actual reconciliation computation, display and save.
+        function continueReconciliation() {
             try {
-                console.log('🔵 processReconciliation() CALLED');
-                console.log('Transaction data exists:', !!transactionData);
-                console.log('Departments:', departments);
-                
-                if (!transactionData) {
-                    console.log('❌ No transaction data - showing alert');
-                    alert('Please upload Transaction Listing Details');
-                    return;
-                }
-                
-                console.log('✅ Validation passed, continuing...');
-
-                // Warn if prior reconciliation exists but no last-month leave file uploaded
-                if (!leaveLastData && currentClientData && currentClientData.lastReconciliation) {
-                    const proceed = confirm(
-                        '⚠️ Missing Last Month Leave Balances\n\n' +
-                        'A prior reconciliation exists for ' + (currentClientData.clientName || 'this client') + ' (' + currentClientData.lastReconciliation.period + '), ' +
-                        'but no last month leave balances file has been uploaded.\n\n' +
-                        'Annual leave movement and LSL provision cannot be calculated without this file.\n\n' +
-                        'Press OK to proceed anyway, or Cancel to go back and upload the file.'
-                    );
-                    if (!proceed) return;
-                }
-
             const clientName = document.getElementById('clientName').value.trim();
             const period = document.getElementById('period').value;
             const workcoverAnnual = parseFloat(document.getElementById('workcover').value) || 0;
@@ -2446,6 +2866,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                     lastLSLData: window.lastLSLData,
                     lastPayrollTaxBreakdown: window.lastPayrollTaxBreakdown,
                     lslData: lslData,
+                    tbRecon: window.lastTbRecon || null,
                     chartOfAccounts: currentClientData.chartOfAccounts,
                     lslSettings: currentClientData.lslSettings
                 };
@@ -5168,6 +5589,52 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             return entries;
         }
 
+        // Renders the Trial Balance carried-forward reconciliation for the
+        // results view (from window.lastTbRecon). Empty string when no TB loaded.
+        function tbReconPanelHtml() {
+            const rec = window.lastTbRecon;
+            if (!rec || !rec.byAccount || !rec.byAccount.length) return '';
+            const varRows = rec.byAccount.filter(a => a.hasVariance);
+            const totalVar = varRows.reduce((s, a) => s + Math.abs(a.variance || 0), 0);
+            let banner;
+            if (!varRows.length) {
+                banner = `<div class="alert alert-success"><strong>⚖️ Ties to the ledger</strong><br>All checked balances match the Trial Balance${rec.asAt ? ' as at ' + rec.asAt : ''}.</div>`;
+            } else if (rec.applied) {
+                banner = `<div class="alert alert-info"><strong>⚖️ Carried-forward variance of ${_tbFmt(totalVar)} allocated</strong><br>Opening balances were adjusted so this month's movement ties to the Trial Balance.</div>`;
+            } else {
+                banner = `<div class="alert alert-warning"><strong>⚠️ Carried-forward variance of ${_tbFmt(totalVar)} NOT allocated</strong><br>The reconciliation used the app's opening balances, which differ from the ledger.</div>`;
+            }
+            const rows = rec.byAccount.map(a => {
+                const exp = a.computable ? _tbFmt(a.expected) : (a.expected == null ? '<span style="color:#94a3b8">not tracked</span>' : '<span style="color:#e67e22">not computed</span>');
+                const tb = a.inTb ? _tbFmt(a.tb) : '<span style="color:#94a3b8">not in TB</span>';
+                const vv = a.hasVariance ? `<strong style="color:#c0392b">${_tbFmt(a.variance)}</strong>` : (a.computable && a.inTb ? '<span style="color:#27ae60">ties</span>' : '—');
+                const alloc = a.allocation ? (a.allocation.method === 'one'
+                        ? ('to ' + ((departments.find(d => d.id === a.allocation.department) || {}).name || a.allocation.department))
+                        : 'proportional') : '';
+                return `<tr>
+                    <td>${a.name}</td><td style="color:#64748b">${a.code || ''}</td>
+                    <td style="text-align:right">${exp}</td>
+                    <td style="text-align:right">${tb}</td>
+                    <td style="text-align:right">${vv}</td>
+                    <td style="color:#64748b;font-size:.8rem">${alloc}</td></tr>`;
+            }).join('');
+            return `
+                <div class="section-header">⚖️ Trial Balance Reconciliation</div>
+                ${banner}
+                <div class="card">
+                    <table>
+                        <thead><tr>
+                            <th>Account</th><th>Code</th>
+                            <th style="text-align:right">Expected (app)</th>
+                            <th style="text-align:right">Trial Balance</th>
+                            <th style="text-align:right">Variance</th>
+                            <th>Allocation</th>
+                        </tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>`;
+        }
+
         function displayResultsMultiDept(earningsByDept, leaveMovement, closingAccrual, openingBalances, accrualMovement, payrollTaxByDept, workcoverByDept, period, journalEntries, payrollTaxBreakdown, accrualDays) {
             
             const totalDebit = journalEntries.reduce((sum, entry) => sum + entry.debit, 0);
@@ -5205,6 +5672,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                     Accrual Method: ${document.getElementById('accrualMethod').value}<br>
                     ${accrualDays > 0 ? `Accrual Days: ${accrualDays}` : 'No accrual (arrears/manual)'}
                 </div>
+                ${tbReconPanelHtml()}
 
                 <div class="section-header">📝 Journal Entries</div>
 
@@ -6083,9 +6551,12 @@ By design. AASB 119 paragraphs 11–23 classify AL as a <em>short-term</em> empl
             const rawCurrentTotal = Object.values(currentLSL).reduce((sum, bal) => sum + bal.amount, 0);
             const rawLastTotal = Object.values(lastLSL).reduce((sum, bal) => sum + bal.amount, 0);
 
-            // Check if there are department-level opening balances (for month 1 reconciliation)
-            const openingBalances = settings.openingBalances || {};
-            const hasOpeningBalances = Object.keys(openingBalances).some(deptId => 
+            // Check if there are department-level opening balances (for month 1 reconciliation).
+            // A transient Trial-Balance override (window._tbLslOpening) takes precedence so a
+            // carried-forward true-up can pin the LSL opening to the ledger for this run only
+            // (never persisted, so it can't leak into next month's reconciliation).
+            const openingBalances = window._tbLslOpening || settings.openingBalances || {};
+            const hasOpeningBalances = Object.keys(openingBalances).some(deptId =>
                 openingBalances[deptId].current > 0 || openingBalances[deptId].nonCurrent > 0
             );
 
