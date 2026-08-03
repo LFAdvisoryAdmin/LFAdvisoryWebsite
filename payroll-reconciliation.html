@@ -3786,7 +3786,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 ['','','',''],
                 ['Account','Description','Debit','Credit'],
             ];
-            const jTable = document.querySelector('#output table');
+            const jTable = document.querySelector('#journalTable') || document.querySelector('#output table');
             let totalDr=0, totalCr=0, jCount=0;
             const jDataStart = 6;
             if (jTable) {
@@ -4406,7 +4406,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             drawJournalHeader();
 
             // Pull rows directly from the rendered on-screen journal table
-            const journalTable = document.querySelector('#output table');
+            const journalTable = document.querySelector('#journalTable') || document.querySelector('#output table');
             if (!journalTable) {
                 doc.text('No journal data available — please run reconciliation first.', 20, yPos);
             } else {
@@ -5768,7 +5768,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 <div class="section-header">📝 Journal Entries</div>
 
                 <div class="card">
-                    <table>
+                    <table id="journalTable">
                         <thead>
                             <tr>
                                 <th>Account Code</th>
