@@ -1716,18 +1716,57 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
         const _tbFmt = n => (n == null ? '—' : (n < 0 ? '-$' : '$') +
             Math.abs(Number(n)).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
+        // Sum a leave-balances table's Annual Leave $ by department (Employee
+        // Group -> dept.xeroGroup). AL dollars ARE the AL provision exactly (per
+        // LFA), so this is the true carried-forward AL opening. LSL is NOT summed
+        // here — it stays on the app's AASB 119 discounting engine.
+        function alProvisionByDept(rows, depts) {
+            const out = {};
+            depts.forEach(d => out[d.id] = 0);
+            if (!Array.isArray(rows) || !rows.length) return out;
+            const norm = s => String(s == null ? '' : s).trim().toLowerCase();
+            let hdr = -1, empCol = -1, grpCol = -1, typeCol = -1, amtCol = -1;
+            for (let i = 0; i < Math.min(20, rows.length); i++) {
+                const row = rows[i]; if (!row) continue;
+                for (let j = 0; j < row.length; j++) {
+                    const h = norm(row[j]);
+                    if (h === 'employee' || h === 'employee name') { empCol = j; hdr = i; }
+                    if (h === 'employee group' || h === 'department') grpCol = j;
+                    if (h === 'leave type') typeCol = j;
+                    if (h === 'amount') amtCol = j;
+                }
+                if (hdr !== -1) break;
+            }
+            if (hdr === -1 || grpCol === -1 || typeCol === -1 || amtCol === -1) return out;
+            for (let i = hdr + 1; i < rows.length; i++) {
+                const row = rows[i]; if (!row) continue;
+                const emp = row[empCol];
+                if (!emp || norm(emp) === 'total') break;
+                if (!norm(row[typeCol]).includes('annual leave')) continue;
+                const dept = depts.find(d => d.xeroGroup === row[grpCol]) || depts.find(d => d.catchAll);
+                if (dept) out[dept.id] = Math.round(((out[dept.id] || 0) + (parseFloat(row[amtCol]) || 0)) * 100) / 100;
+            }
+            return out;
+        }
+
         // Build the per-account comparison of app opening (expected) vs the TB.
         function computeTbVariances() {
             const coa = getCoA();
             const tbMap = parseTrialBalance(trialBalanceData);
             const accounts = tbCheckAccounts(coa);
 
-            // AL provision expected = sum of the per-department opening fields.
-            let alExpected = 0;
-            departments.forEach(d => {
-                const el = document.getElementById('opening_' + d.id);
-                alExpected += parseFloat(el && el.value) || 0;
-            });
+            // AL provision expected = last month's Annual Leave balances by
+            // department (AL $ = the provision exactly). This USED to sum the
+            // opening_ fields, but those hold the WAGES accrual (0 under the
+            // arrears method), so 7610 was compared against the wrong figure and
+            // showed the whole balance as a variance. Last month's leave is the
+            // auto-loaded leaveLastData, or the prior rec's stored snapshot.
+            const _lastLeave = leaveLastData
+                || (currentClientData && currentClientData.lastReconciliation
+                    && currentClientData.lastReconciliation.leaveThisSnapshot)
+                || null;
+            const _alByDept = alProvisionByDept(_lastLeave, departments);
+            const alExpected = Object.values(_alByDept).reduce((s, v) => s + v, 0);
 
             // LSL expected = the opening the journal will use (override OFF here).
             let lslCurExpected = null, lslNonCurExpected = null, lslComputable = false;
