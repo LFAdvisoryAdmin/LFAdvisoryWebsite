@@ -1131,6 +1131,10 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             return GRAPH_ENDPOINT + '/sites/' + siteId + '/drive/root:/' + encodeURIComponent(FOLDER_NAME) + '/' + encodeURIComponent(filename) + ':/content';
         }
 
+        // Snapshot of the server's client data as last loaded, so odSave can tell
+        // which clients THIS browser changed and avoid clobbering colleagues' saves.
+        let _clientBaseline = {};
+
         async function odLoad() {
             const token = _odToken || getStoredToken();
             if (!token) {
@@ -1154,6 +1158,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 const fileResp = await fetch(file['@microsoft.graph.downloadUrl']);
                 const data = await fileResp.json();
                 localStorage.setItem('payrollClients', JSON.stringify(data));
+                _clientBaseline = JSON.parse(JSON.stringify(data));
                 updateODStatus('connected');
                 return data;
             } catch(e) {
@@ -1170,11 +1175,38 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             try {
                 const siteId = await getSiteId(token);
                 updateODStatus('saving');
+
+                // Merge-before-write: re-fetch the current server copy and only
+                // overwrite the clients THIS browser actually changed (vs the
+                // baseline loaded from the server). Stops a stale tab from
+                // clobbering another user's save (e.g. wiping their carried-forward
+                // opening balance). On any read failure we fall back to the old
+                // full-overwrite so we never DROP clients.
+                let merged = null;
+                try {
+                    const listResp = await fetch(folderChildrenUrl(siteId), { headers: { Authorization: 'Bearer ' + token } });
+                    if (listResp.ok) {
+                        const items = await listResp.json();
+                        const file = (items.value || []).find(f => f.name === DATA_FILE);
+                        const server = file ? await (await fetch(file['@microsoft.graph.downloadUrl'])).json() : {};
+                        merged = Object.assign({}, server);
+                        Object.keys(clients).forEach(name => {
+                            const changedHere = JSON.stringify(clients[name]) !== JSON.stringify(_clientBaseline[name]);
+                            if (changedHere || !(name in server)) merged[name] = clients[name];
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[OneDrive] merge pre-fetch failed; falling back to full write', e);
+                }
+                if (!merged) merged = clients;
+
                 await fetch(folderFileUrl(siteId, DATA_FILE), {
                     method: 'PUT',
                     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-                    body: JSON.stringify(clients, null, 2)
+                    body: JSON.stringify(merged, null, 2)
                 });
+                localStorage.setItem('payrollClients', JSON.stringify(merged));
+                _clientBaseline = JSON.parse(JSON.stringify(merged));
                 updateODStatus('saved');
             } catch(e) {
                 console.error('[OneDrive] Save error:', e);
