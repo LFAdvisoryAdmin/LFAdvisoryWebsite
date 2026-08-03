@@ -703,6 +703,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 <div class="input-group">
                     <label>Reconciliation Period</label>
                     <input type="text" id="period" placeholder="e.g., December 2025">
+                    <small id="periodHint">Enter the month being reconciled (e.g., December 2025).</small>
                 </div>
 
                 <div class="input-group" id="pastRecGroup">
@@ -714,6 +715,15 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                         <button class="btn btn-secondary" onclick="clearActiveRec()" style="width:auto;padding:.5rem 1rem" title="Clear loaded results and start fresh">🧹 Clear</button>
                     </div>
                     <small>Restores a previously processed reconciliation for the selected client.</small>
+                </div>
+
+                <div class="input-group">
+                    <label>Reporting Frequency</label>
+                    <select id="reportingFrequency" onchange="updatePeriodHint()">
+                        <option value="monthly" selected>Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                    </select>
+                    <small>How often this client is reconciled. Quarterly spreads workcover &amp; payroll-tax thresholds across 3 months.</small>
                 </div>
 
                 <div class="input-group">
@@ -2249,6 +2259,8 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 
                 document.getElementById('clientName').value = clientName;
                 document.getElementById('payrollFrequency').value = clientData.payrollFrequency || 'fortnightly';
+                document.getElementById('reportingFrequency').value = clientData.reportingFrequency || 'monthly';
+                updatePeriodHint();
                 document.getElementById('workcover').value = clientData.workcover || 46329.63;
                 document.getElementById('accrualMethod').value = clientData.accrualMethod || 'standard';
                 
@@ -2327,6 +2339,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
 
             currentClientData.clientName = clientName;
             currentClientData.payrollFrequency = document.getElementById('payrollFrequency').value;
+            currentClientData.reportingFrequency = document.getElementById('reportingFrequency').value;
             currentClientData.workcover = parseFloat(document.getElementById('workcover').value) || 0;
             currentClientData.accrualMethod = document.getElementById('accrualMethod').value;
             currentClientData.autoCalculatePayrollTax = document.getElementById('autoCalculatePayrollTax').checked;
@@ -2685,9 +2698,10 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 const wagesByState = getEmployeeStates(contactsData, transactionData);
                 
                 // Call with new options structure (ready for future contractor/apprentice support)
-                const result = calculatePayrollTax(wagesByState, { 
-                    isGrouped: isGrouped, 
-                    groupWages: groupWages
+                const result = calculatePayrollTax(wagesByState, {
+                    isGrouped: isGrouped,
+                    groupWages: groupWages,
+                    monthsInPeriod: getMonthsInPeriod()  // scale monthly thresholds for quarterly runs
                     // FUTURE: , contractorWages: {...}
                     // FUTURE: , apprenticeWages: {...}
                 });
@@ -2806,12 +2820,13 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
 
             const payrollTaxByDept = {};
             const workcoverByDept = {};
-            const workcoverMonthly = workcoverAnnual / 12;
+            // Charge one period's share of the annual premium (1/12 monthly, 3/12 quarterly)
+            const workcoverForPeriod = workcoverAnnual / 12 * getMonthsInPeriod();
 
             departments.forEach(dept => {
                 const proportion = earningsByDept[dept.id].total / totalWages;
                 payrollTaxByDept[dept.id] = payrollTax * proportion;
-                workcoverByDept[dept.id] = workcoverMonthly * proportion;
+                workcoverByDept[dept.id] = workcoverForPeriod * proportion;
             });
 
             // Calculate LSL provision (AASB 119)
@@ -2866,6 +2881,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                     lastLSLData: window.lastLSLData,
                     lastPayrollTaxBreakdown: window.lastPayrollTaxBreakdown,
                     lslData: lslData,
+                    reportingFrequency: getReportingFrequency(),
                     tbRecon: window.lastTbRecon || null,
                     chartOfAccounts: currentClientData.chartOfAccounts,
                     lslSettings: currentClientData.lslSettings
@@ -3462,6 +3478,9 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             // const apprenticeWages = options.apprenticeWages || {};
             const isGrouped = options.isGrouped || false;
             const groupWages = options.groupWages || 0;
+            // Months in the reconciliation period — thresholds/deductions are monthly
+            // figures, so a quarterly run (3) scales them to cover the whole period.
+            const monthsInPeriod = options.monthsInPeriod || 1;
             
             // STEP 1: Calculate TOTAL Australian wages
             // FUTURE: Add contractor wages, subtract apprentice exemptions, etc.
@@ -3478,18 +3497,19 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 if (employerStates.length > 0) {
                     const primary = employerStates.reduce((a, b) => wagesByState[a] > wagesByState[b] ? a : b);
                     const rate = payrollTaxRates[primary];
-                    const tax = Math.max(0, (groupWages * rate.rate) - rate.deduction);
+                    const periodDeduction = rate.deduction * monthsInPeriod;
+                    const tax = Math.max(0, (groupWages * rate.rate) - periodDeduction);
                     totalTax = tax;
-                    breakdown.push({ 
-                        state: primary, 
-                        stateName: rate.name, 
-                        wages: groupWages, 
+                    breakdown.push({
+                        state: primary,
+                        stateName: rate.name,
+                        wages: groupWages,
                         proportion: 1.0,
-                        deduction: rate.deduction,
-                        taxableWages: groupWages - rate.deduction,
-                        rate: rate.rate, 
-                        tax, 
-                        grouped: true 
+                        deduction: periodDeduction,
+                        taxableWages: groupWages - periodDeduction,
+                        rate: rate.rate,
+                        tax,
+                        grouped: true
                     });
                 }
                 
@@ -3521,8 +3541,8 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                 // STEP 2a: Calculate proportion
                 const proportion = stateWages / totalAustralianWages;
                 
-                // STEP 2b: Calculate proportionate deduction
-                const proportionateDeduction = proportion * rate.threshold;
+                // STEP 2b: Calculate proportionate deduction (threshold scaled to the period)
+                const proportionateDeduction = proportion * rate.threshold * monthsInPeriod;
                 
                 // STEP 2c: Calculate taxable wages
                 const taxableWages = Math.max(0, stateWages - proportionateDeduction);
@@ -3544,7 +3564,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                     wages: stateWages,
                     proportion,
                     percentageOfTotal: proportion * 100,
-                    threshold: rate.threshold,
+                    threshold: rate.threshold * monthsInPeriod,
                     proportionateDeduction,
                     taxableWages,
                     rate: rate.rate,
@@ -5658,7 +5678,7 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             const output = document.getElementById('output');
             
             let html = `
-                <div class="section-header">📊 Reconciliation Complete for ${period}</div>
+                <div class="section-header">📊 Reconciliation Complete for ${period}${getReportingFrequency()==='quarterly' ? ' <span style="font-size:.7em;background:#0891b2;color:#fff;padding:.15em .55em;border-radius:10px;vertical-align:middle;">Quarterly</span>' : ''}</div>
 
                 <div class="alert alert-${balanced ? 'success' : 'warning'}">
                     <strong>${balanced ? '✅ Journal Balanced!' : '⚠️ Journal NOT Balanced'}</strong><br>
@@ -6349,6 +6369,26 @@ By design. AASB 119 paragraphs 11–23 classify AL as a <em>short-term</em> empl
         // Years of service must be measured at the period end being reconciled,
         // not the day the rec happens to be run. Parses the free-text period
         // ("April 2026") to the last day of that month; falls back to today.
+        // Reporting cadence for the active client ('monthly' | 'quarterly').
+        // Prefers the live select, falls back to saved client data.
+        function getReportingFrequency() {
+            const el = document.getElementById('reportingFrequency');
+            return (el && el.value) || currentClientData.reportingFrequency || 'monthly';
+        }
+        // Months covered by one reconciliation run — the multiplier for period-scaled
+        // figures (workcover premium, payroll-tax thresholds, LSL prior-period date).
+        function getMonthsInPeriod() {
+            return getReportingFrequency() === 'quarterly' ? 3 : 1;
+        }
+        // Keep the Period field hint in step with the cadence.
+        function updatePeriodHint() {
+            const hint = document.getElementById('periodHint');
+            if (!hint) return;
+            hint.textContent = getReportingFrequency() === 'quarterly'
+                ? 'Enter the quarter-END month (e.g., June 2026 for the Apr–Jun quarter).'
+                : 'Enter the month being reconciled (e.g., December 2025).';
+        }
+
         function getPeriodEndDate() {
             const raw = (document.getElementById('period')?.value || '').trim();
             if (raw) {
@@ -6468,7 +6508,7 @@ By design. AASB 119 paragraphs 11–23 classify AL as a <em>short-term</em> empl
                 let provisionLast = 0;
                 if (lastLSL[empName]) {
                     const lastMonthDate = new Date(referenceDate);
-                    lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
+                    lastMonthDate.setMonth(lastMonthDate.getMonth() - getMonthsInPeriod());
                     const yearsOfServiceLast = (lastMonthDate - serviceStartDate) / (365.25 * 24 * 60 * 60 * 1000);
                     provisionLast = calculateEmployeeLSLProvision(
                         lastLSL[empName].amount, yearsOfServiceLast, onCostRate, inflationRate, probFactors, g100Rates, empState
@@ -6534,7 +6574,7 @@ By design. AASB 119 paragraphs 11–23 classify AL as a <em>short-term</em> empl
                 }
 
                 const lastMonthDate = new Date(referenceDate);
-                lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
+                lastMonthDate.setMonth(lastMonthDate.getMonth() - getMonthsInPeriod());
                 const yearsOfService = (lastMonthDate - serviceStartDate) / (365.25 * 24 * 60 * 60 * 1000);
 
                 const provision = calculateEmployeeLSLProvision(
