@@ -6480,11 +6480,18 @@ By design. AASB 119 paragraphs 11–23 classify AL as a <em>short-term</em> empl
                 console.log('⚠️ LSL calculation disabled for this client');
                 return null;
             }
-            
-            if (!leaveThisData || !leaveLastData || !remunerationData) {
+
+            // Last month's leave: fall back to the stored prior-rec snapshot if a
+            // "Leave Balances (Last Month)" file wasn't loaded (mirrors the AL
+            // opening check) so the TB check can still surface an LSL discrepancy.
+            const _leaveLast = leaveLastData
+                || (currentClientData.lastReconciliation && currentClientData.lastReconciliation.leaveThisSnapshot)
+                || null;
+
+            if (!leaveThisData || !_leaveLast || !remunerationData) {
                 console.log('❌ Missing data:', {
                     leaveThis: !!leaveThisData,
-                    leaveLast: !!leaveLastData, 
+                    leaveLast: !!_leaveLast,
                     remuneration: !!remunerationData
                 });
                 return null;
@@ -6536,7 +6543,7 @@ By design. AASB 119 paragraphs 11–23 classify AL as a <em>short-term</em> empl
             console.log('\n--- Extracting CURRENT month LSL ---');
             const currentLSL = extractLSLBalances(leaveThisData);
             console.log('\n--- Extracting LAST month LSL ---');
-            const lastLSL = extractLSLBalances(leaveLastData);
+            const lastLSL = extractLSLBalances(_leaveLast);
 
             const referenceDate = getPeriodEndDate();
             const employeeProvisions = [];
@@ -6648,8 +6655,9 @@ By design. AASB 119 paragraphs 11–23 classify AL as a <em>short-term</em> empl
                 lastMonthDate.setMonth(lastMonthDate.getMonth() - getMonthsInPeriod());
                 const yearsOfService = (lastMonthDate - serviceStartDate) / (365.25 * 24 * 60 * 60 * 1000);
 
+                const _lastLslAmt = (lastLSL[empName] && lastLSL[empName].amount) || 0;
                 const provision = calculateEmployeeLSLProvision(
-                    lastLSL[empName].amount, yearsOfService, onCostRate, inflationRate, probFactors, g100Rates, empState
+                    _lastLslAmt, yearsOfService, onCostRate, inflationRate, probFactors, g100Rates, empState
                 );
 
                 if (isCurrentLSLClassification(yearsOfService, vestingYears)) {
