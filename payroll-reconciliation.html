@@ -1769,21 +1769,23 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             const alExpected = Object.values(_alByDept).reduce((s, v) => s + v, 0);
 
             // LSL expected = the opening the journal will use (override OFF here).
+            // Compute it exactly the way the audit does — via calculateLSLProvision,
+            // which self-gates on lslSettings.enabled and returns null if disabled.
+            // (Previously this gated on the #lsl_enabled CHECKBOX, which can read
+            // unchecked while the saved setting is enabled — so LSL showed
+            // "not tracked" here even though the audit computed it.)
             let lslCurExpected = null, lslNonCurExpected = null, lslComputable = false;
             _tbLslResult = null;
             try {
-                const lslChk = document.getElementById('lsl_enabled');
-                if (lslChk && lslChk.checked) {
-                    const prev = window._tbLslOpening;
-                    window._tbLslOpening = null;               // ensure true recalculated opening
-                    const lsl = calculateLSLProvision();
-                    window._tbLslOpening = prev;
-                    if (lsl) {
-                        _tbLslResult = lsl;
-                        lslCurExpected = lsl.lastCurrentLiability || 0;
-                        lslNonCurExpected = lsl.lastNonCurrentLiability || 0;
-                        lslComputable = true;
-                    }
+                const prev = window._tbLslOpening;
+                window._tbLslOpening = null;               // ensure true recalculated opening
+                const lsl = calculateLSLProvision();
+                window._tbLslOpening = prev;
+                if (lsl) {
+                    _tbLslResult = lsl;
+                    lslCurExpected = lsl.lastCurrentLiability || 0;
+                    lslNonCurExpected = lsl.lastNonCurrentLiability || 0;
+                    lslComputable = true;
                 }
             } catch (e) { console.warn('[TB] LSL expected not computable:', e); }
 
