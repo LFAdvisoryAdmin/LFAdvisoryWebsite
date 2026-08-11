@@ -3571,33 +3571,17 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
             console.log('Total Australian wages:', formatCurrency(totalAustralianWages));
             console.log('Wages by state:', wagesByState);
             
-            // Handle grouped employers (simplified for now - future enhancement)
-            if (isGrouped && groupWages > 0) {
-                console.log('Grouped employer calculation - using simplified method');
-                const employerStates = Object.keys(wagesByState).filter(s => wagesByState[s] > 0);
-                if (employerStates.length > 0) {
-                    const primary = employerStates.reduce((a, b) => wagesByState[a] > wagesByState[b] ? a : b);
-                    const rate = payrollTaxRates[primary];
-                    const periodDeduction = rate.deduction * monthsInPeriod;
-                    const tax = Math.max(0, (groupWages * rate.rate) - periodDeduction);
-                    totalTax = tax;
-                    breakdown.push({
-                        state: primary,
-                        stateName: rate.name,
-                        wages: groupWages,
-                        proportion: 1.0,
-                        deduction: periodDeduction,
-                        taxableWages: groupWages - periodDeduction,
-                        rate: rate.rate,
-                        tax,
-                        grouped: true
-                    });
-                }
-                
-                console.log('Total payroll tax:', formatCurrency(totalTax));
-                return { totalTax, breakdown, totalAustralianWages };
-            }
-            
+            // GROUPED EMPLOYERS: this entity still pays payroll tax on ITS OWN wages,
+            // but a grouped employer shares ONE tax-free threshold across the whole group.
+            // Under the proportionate deduction method each entity's share of that
+            // threshold is its wages ÷ TOTAL GROUP wages — so the ONLY change from an
+            // ungrouped run is the proportion denominator: group wages instead of this
+            // entity's own total. (The old branch here taxed the whole group's wages at
+            // the primary state's rate and gave this entity the full threshold — wrong on
+            // both counts; it overstated the liability massively.)
+            const isGroupedCalc = isGrouped && groupWages > 0;
+            const wagesBase = isGroupedCalc ? groupWages : totalAustralianWages;
+
             // STEP 2: Calculate tax for EACH state using proportionate deduction
             const employerStates = Object.keys(wagesByState).filter(s => wagesByState[s] > 0);
             
@@ -3619,8 +3603,9 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                     continue;
                 }
                 
-                // STEP 2a: Calculate proportion
-                const proportion = stateWages / totalAustralianWages;
+                // STEP 2a: Calculate proportion (of the GROUP total when grouped, else
+                // of this entity's own total Australian wages)
+                const proportion = stateWages / wagesBase;
                 
                 // STEP 2b: Calculate proportionate deduction (threshold scaled to the period)
                 const proportionateDeduction = proportion * rate.threshold * monthsInPeriod;
@@ -3649,7 +3634,8 @@ nav.scrolled{box-shadow:0 2px 20px rgba(0,0,0,.08)}
                     proportionateDeduction,
                     taxableWages,
                     rate: rate.rate,
-                    tax: stateTax
+                    tax: stateTax,
+                    grouped: isGroupedCalc
                 });
                 
                 totalTax += stateTax;
