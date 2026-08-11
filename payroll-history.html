@@ -1578,12 +1578,22 @@ function addBalanceSheetBreakdowns(doc) {
                 if (ptData.breakdown) {
                     ptData.breakdown.forEach(state => {
                         checkPage();
+                        // Grouped-employer breakdown items lack percentageOfTotal/threshold/
+                        // proportionateDeduction (they carry proportion + deduction instead),
+                        // so fall back rather than crash on .toFixed of undefined.
+                        const pct = state.percentageOfTotal != null
+                            ? state.percentageOfTotal
+                            : (state.proportion != null ? state.proportion * 100 : 0);
+                        const propDed = state.proportionateDeduction != null
+                            ? state.proportionateDeduction
+                            : (state.deduction || 0);
+                        const money = (v) => `$${(v || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
                         doc.text(state.state, 20, yPos);
-                        doc.text(`$${state.wages.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 50, yPos);
-                        doc.text(`${state.percentageOfTotal.toFixed(2)}%`, 85, yPos);
-                        doc.text(`$${state.threshold.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 115, yPos);
-                        doc.text(`$${state.proportionateDeduction.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 145, yPos);
-                        doc.text(`$${state.tax.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 175, yPos);
+                        doc.text(money(state.wages), 50, yPos);
+                        doc.text(`${pct.toFixed(2)}%`, 85, yPos);
+                        doc.text(state.threshold != null ? money(state.threshold) : '—', 115, yPos);
+                        doc.text(money(propDed), 145, yPos);
+                        doc.text(money(state.tax), 175, yPos);
                         yPos += 6;
                     });
                 }
