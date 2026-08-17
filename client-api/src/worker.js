@@ -72,18 +72,18 @@ export default {
       const file = entry.clientId + '-' + app + '.json';
       let token;
       try { token = await getToken(env); }
-      catch (e) { return json({ error: 'Storage temporarily unavailable.' }, 502); }
+      catch (e) { console.error('token failed:', e && e.stack || e); return json({ error: 'Storage temporarily unavailable.' }, 502); }
 
       if (request.method === 'GET') {
         try { return json((await readFile(env, token, file)) || {}); }
-        catch (e) { return json({ error: 'Could not read your data.' }, 502); }
+        catch (e) { console.error('read failed:', e && e.stack || e); return json({ error: 'Could not read your data.' }, 502); }
       }
       if (request.method === 'PUT') {
         const bodyText = await request.text();
         if (bodyText.length > 5 * 1024 * 1024) return json({ error: 'Data too large.' }, 413);
         try { JSON.parse(bodyText); } catch { return json({ error: 'Invalid JSON body.' }, 400); }
         try { await writeFile(env, token, file, bodyText); return json({ ok: true }); }
-        catch (e) { return json({ error: 'Could not save your data.' }, 502); }
+        catch (e) { console.error('write failed:', e && e.stack || e); return json({ error: 'Could not save your data.' }, 502); }
       }
       return json({ error: 'Method not allowed.' }, 405);
     }
@@ -160,19 +160,45 @@ function b64urlToStr(s) { return new TextDecoder().decode(b64urlToBytes(s)); }
 
 /* ---------- Microsoft Graph (app-only) ---------- */
 let _siteId = null;
+let _token = null, _tokenExp = 0;
+
+const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+// fetch that retries ONCE on a transient failure (HTTP 429/5xx, or a thrown
+// network error). Stops the intermittent 502s from Microsoft rate-limiting.
+async function fetchRetry(url, opts) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetch(url, opts);
+      if (attempt === 0 && (r.status === 429 || r.status >= 500)) { await sleep(400); continue; }
+      return r;
+    } catch (e) {
+      if (attempt === 0) { await sleep(400); continue; }
+      throw e;
+    }
+  }
+}
+
+// Cache the app-only token in the isolate until ~5 min before it expires, so we
+// don't hit the Microsoft token endpoint (and its rate limit) on every request.
 async function getToken(env) {
+  const now = Date.now();
+  if (_token && now < _tokenExp - 300000) return _token;
   const body = new URLSearchParams({
     client_id: env.CLIENT_ID, client_secret: env.CLIENT_SECRET,
     scope: 'https://graph.microsoft.com/.default', grant_type: 'client_credentials'
   });
-  const r = await fetch('https://login.microsoftonline.com/' + env.TENANT_ID + '/oauth2/v2.0/token',
+  const r = await fetchRetry('https://login.microsoftonline.com/' + env.TENANT_ID + '/oauth2/v2.0/token',
     { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
-  if (!r.ok) throw new Error('token ' + r.status);
-  return (await r.json()).access_token;
+  if (!r.ok) throw new Error('token ' + r.status + ' ' + (await r.text()).slice(0, 200));
+  const j = await r.json();
+  _token = j.access_token;
+  _tokenExp = now + (j.expires_in || 3600) * 1000;
+  return _token;
 }
 async function siteId(env, token) {
   if (_siteId) return _siteId;
-  const r = await fetch(GRAPH + '/sites/' + env.SP_HOSTNAME, { headers: { Authorization: 'Bearer ' + token } });
+  const r = await fetchRetry(GRAPH + '/sites/' + env.SP_HOSTNAME, { headers: { Authorization: 'Bearer ' + token } });
   if (!r.ok) throw new Error('site ' + r.status);
   _siteId = (await r.json()).id;
   return _siteId;
@@ -183,16 +209,16 @@ function fileUrl(sid, env, file) {
 }
 async function readFile(env, token, file) {
   const sid = await siteId(env, token);
-  const r = await fetch(fileUrl(sid, env, file), { headers: { Authorization: 'Bearer ' + token } });
+  const r = await fetchRetry(fileUrl(sid, env, file), { headers: { Authorization: 'Bearer ' + token } });
   if (r.status === 404) return null;
-  if (!r.ok) throw new Error('read ' + r.status);
+  if (!r.ok) throw new Error('read ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return r.json();
 }
 async function writeFile(env, token, file, text) {
   const sid = await siteId(env, token);
-  const r = await fetch(fileUrl(sid, env, file),
+  const r = await fetchRetry(fileUrl(sid, env, file),
     { method: 'PUT', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: text });
-  if (!r.ok) throw new Error('write ' + r.status);
+  if (!r.ok) throw new Error('write ' + r.status + ' ' + (await r.text()).slice(0, 200));
 }
 
 function json(obj, status) {
