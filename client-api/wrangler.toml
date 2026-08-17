@@ -1,0 +1,27 @@
+name = "lf-client-api"
+main = "src/worker.js"
+compatibility_date = "2024-11-01"
+
+# Runs on a Worker ROUTE on the live domain (so the Cloudflare Access cookie is
+# same-origin and no CORS is needed). Configure the route in the dashboard or
+# via REST — see the runbook. Documented here for reference:
+#   www.lfadvisory.com.au/client-api/*
+#   lfadvisory.com.au/client-api/*
+# (Workers routes take precedence over Pages for matching paths.)
+
+[vars]
+SP_HOSTNAME = "lfadvisoryptyltd.sharepoint.com"
+FOLDER      = "Client Portal Data"   # client-facing data, kept separate from staff workpapers
+TENANT_ID   = "f869ffc9-81fa-4bbf-94ec-a9bd5ca6b3a3"
+CLIENT_ID   = "981d2ee1-a2a9-4787-8972-b349938ba7ab"   # same Azure app as the mailer (needs Sites.ReadWrite.All app perm)
+
+# Cloudflare Access — fill from your Zero Trust setup (see runbook):
+ACCESS_TEAM = "SETUP_REQUIRED"   # your team name, i.e. <ACCESS_TEAM>.cloudflareaccess.com
+ACCESS_AUD  = "SETUP_REQUIRED"   # the Access application's Application Audience (AUD) tag
+
+# Client registry — one entry per client email (lower-case keys).
+# clientId scopes the data file (<clientId>-<app>.json); apps = what they can open.
+REGISTRY = '{"samantha@fluxproperty.com.au":{"client":"Flux Property Group","clientId":"flux","apps":["loan-tracker"]},"liam@fluxproperty.com.au":{"client":"Flux Property Group","clientId":"flux","apps":["loan-tracker"]}}'
+
+# Secret (set via REST secret_text binding, NOT here):
+#   CLIENT_SECRET = Azure app client secret (same value the mailer uses)

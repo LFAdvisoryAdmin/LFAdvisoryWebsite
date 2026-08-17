@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Client Portal — LF Advisory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;600;700&family=Source+Serif+4:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --teal:#2d6670;--teal-dark:#1e4a52;--teal-mid:#3a7f8c;
+  --olive:#6b7340;--olive-lt:#8a9456;
+  --bg:#e8ece8;--bg-light:#f0f3ef;--ink:#1a1f1a;--mid:#5a6060;--border:#cdd4cc;
+  --panel:#263d3f;
+  --serif:'Source Serif 4',Georgia,serif;
+  --display:'Raleway',system-ui,sans-serif;
+  --sans:'DM Sans',system-ui,sans-serif;
+}
+body{font-family:var(--sans);background:var(--bg-light);color:var(--ink);font-size:16px;line-height:1.6;min-height:100vh}
+.portal-hero{padding:5rem 8vw 3rem;background:var(--panel)}
+.portal-hero .eyebrow{font-family:var(--display);font-size:.68rem;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--olive-lt);margin-bottom:1rem}
+.portal-hero h1{font-family:var(--display);font-size:clamp(1.6rem,3vw,2.2rem);font-weight:300;color:#f0f3ef;line-height:1.2}
+.portal-hero h1 strong{color:var(--olive-lt);font-weight:700}
+.portal-hero p{font-size:.88rem;color:rgba(240,243,239,.5);font-weight:300;margin-top:.6rem}
+.signout-btn{background:transparent;border:1px solid rgba(240,243,239,.18);color:rgba(240,243,239,.45);font-family:var(--display);font-size:.58rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;padding:.4rem .9rem;cursor:pointer;margin-top:1.4rem;display:inline-block;text-decoration:none;border-radius:2px}
+.signout-btn:hover{color:rgba(240,243,239,.75);border-color:rgba(240,243,239,.35)}
+.portal-section{max-width:1100px;margin:0 auto;padding:2.6rem 8vw 3rem}
+.portal-section-label{font-family:var(--display);font-size:.7rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--olive);margin-bottom:1.2rem}
+.portal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:2px;background:var(--border);border:1px solid var(--border)}
+.portal-card{background:var(--bg-light);padding:2.2rem 2rem;display:flex;flex-direction:column;gap:.8rem;cursor:pointer;transition:background .15s;text-decoration:none;color:inherit}
+.portal-card:hover{background:var(--bg)}
+.portal-card-icon{width:44px;height:44px;border-radius:3px;background:rgba(45,102,112,.1);display:flex;align-items:center;justify-content:center;font-size:1.3rem}
+.portal-card-name{font-family:var(--display);font-size:1rem;font-weight:700;color:var(--ink)}
+.portal-card-desc{font-size:.83rem;color:var(--mid);font-weight:300;line-height:1.6;flex:1}
+.portal-card-link{font-family:var(--display);font-size:.6rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);margin-top:auto}
+.state{max-width:560px;margin:5rem auto;padding:0 8vw;text-align:center}
+.state h2{font-family:var(--display);font-weight:300;font-size:1.5rem;color:var(--ink);margin-bottom:.8rem}
+.state h2 strong{font-weight:700;color:var(--teal)}
+.state p{color:var(--mid);font-weight:300;line-height:1.8}
+.state a{color:var(--teal)}
+.spin{width:26px;height:26px;border:2px solid var(--border);border-top-color:var(--teal);border-radius:50%;animation:sp .8s linear infinite;margin:5rem auto}
+@keyframes sp{to{transform:rotate(360deg)}}
+footer{background:var(--ink);color:rgba(240,243,239,.4);padding:2rem 8vw;font-size:.78rem;font-weight:300;text-align:center}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="spin" id="loading"></div>
+</div>
+
+<footer>LF Advisory — secure client portal. If you need help, contact your LF Advisory adviser.</footer>
+
+<script>
+const API = '/client-api';
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function render(html){ document.getElementById('app').innerHTML = html; }
+
+function stateMsg(title, body){
+  render('<div class="state"><h2>'+title+'</h2><p>'+body+'</p></div>');
+}
+
+function firstName(client){
+  // "Flux Property Group" -> "Flux Property Group"; keep the client/entity name as-is.
+  return client || '';
+}
+
+function card(a){
+  return '<a class="portal-card" href="'+esc(a.url)+'">'
+    + '<div class="portal-card-icon">'+esc(a.icon||'📁')+'</div>'
+    + '<div class="portal-card-name">'+esc(a.name)+'</div>'
+    + '<div class="portal-card-desc">'+esc(a.desc||'')+'</div>'
+    + '<div class="portal-card-link">Open &rarr;</div>'
+    + '</a>';
+}
+
+async function init(){
+  let res, data;
+  try{
+    res = await fetch(API+'/me', { credentials:'include', headers:{'Accept':'application/json'} });
+    data = await res.json().catch(()=>({}));
+  }catch(e){
+    stateMsg('Something went wrong', 'We couldn’t reach the portal. Please refresh the page, or try again shortly.');
+    return;
+  }
+
+  if(res.status === 401){
+    // Access session missing/expired — bounce through the Access login.
+    location.href = '/cdn-cgi/access/login' + '?redirect_url=' + encodeURIComponent(location.pathname);
+    return;
+  }
+  if(res.status === 403){
+    stateMsg('Not set up yet', esc(data.error || 'Your account isn’t set up for the portal yet.') + ' Once LF Advisory adds you, refresh this page.');
+    return;
+  }
+  if(!res.ok){
+    stateMsg('Something went wrong', esc(data.error || 'Please try again shortly.'));
+    return;
+  }
+
+  const client = firstName(data.client);
+  const apps = data.apps || [];
+  let html = '';
+  html += '<div class="portal-hero">'
+    + '<div class="eyebrow">Client Portal</div>'
+    + '<h1>Welcome, <strong>'+esc(client)+'</strong></h1>'
+    + '<p>Signed in as '+esc(data.email)+'. Your tools are below.</p>'
+    + '<a class="signout-btn" href="/cdn-cgi/access/logout">Sign out</a>'
+    + '</div>';
+  html += '<div class="portal-section">'
+    + '<div class="portal-section-label">Your tools</div>';
+  if(apps.length){
+    html += '<div class="portal-grid">' + apps.map(card).join('') + '</div>';
+  } else {
+    html += '<p style="color:var(--mid);font-weight:300">No tools are assigned to your account yet. Please contact LF Advisory.</p>';
+  }
+  html += '</div>';
+  render(html);
+}
+
+init();
+</script>
+</body>
+</html>
