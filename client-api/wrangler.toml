@@ -15,9 +15,9 @@ FOLDER      = "Client Portal Data"   # client-facing data, kept separate from st
 TENANT_ID   = "f869ffc9-81fa-4bbf-94ec-a9bd5ca6b3a3"
 CLIENT_ID   = "981d2ee1-a2a9-4787-8972-b349938ba7ab"   # same Azure app as the mailer (needs Sites.ReadWrite.All app perm)
 
-# Cloudflare Access — fill from your Zero Trust setup (see runbook):
-ACCESS_TEAM = "SETUP_REQUIRED"   # your team name, i.e. <ACCESS_TEAM>.cloudflareaccess.com
-ACCESS_AUD  = "SETUP_REQUIRED"   # the Access application's Application Audience (AUD) tag
+# Cloudflare Access (from the Zero Trust setup, 2026-08-17):
+ACCESS_TEAM = "bold-resonance-322f"   # team domain: bold-resonance-322f.cloudflareaccess.com
+ACCESS_AUD  = "e40d5b73a514c5ce78fd6f3347b84cbb36eedba3ea8110d3fec7eaf40d9a1d6e"   # "LF Advisory Client Portal" app AUD
 
 # Client registry — one entry per client email (lower-case keys).
 # clientId scopes the data file (<clientId>-<app>.json); apps = what they can open.

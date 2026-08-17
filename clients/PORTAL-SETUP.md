@@ -73,8 +73,8 @@ Single-file Worker, so the dashboard is easiest (avoids the ARM64 wrangler probl
    | `FOLDER` | `Client Portal Data` |
    | `TENANT_ID` | `f869ffc9-81fa-4bbf-94ec-a9bd5ca6b3a3` |
    | `CLIENT_ID` | `981d2ee1-a2a9-4787-8972-b349938ba7ab` |
-   | `ACCESS_TEAM` | your team name from step 3.1 |
-   | `ACCESS_AUD` | the AUD tag from step 3.5 |
+   | `ACCESS_TEAM` | `bold-resonance-322f` |
+   | `ACCESS_AUD` | `e40d5b73a514c5ce78fd6f3347b84cbb36eedba3ea8110d3fec7eaf40d9a1d6e` |
    | `REGISTRY` | *(the JSON below)* |
    | `CLIENT_SECRET` | **Encrypt** — the Azure secret from step 1.4 |
 
