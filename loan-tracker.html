@@ -319,8 +319,8 @@ footer{text-align:center;color:var(--mid);font-size:.75rem;padding:1.5rem}
     <div class="card">
       <div class="card-head"><span>Data</span></div>
       <p class="hint">
-        Data syncs to SharePoint (<b>LF Advisory Workpapers / lf-advisory-loan-tracker-data.json</b>) via the portal sign-in, with a local copy in this
-        browser as offline fallback. JSON export/import is the backover path for handing the dataset to the client's own environment later.
+        Data syncs to SharePoint (<b>LF Advisory Workpapers / flux-loan-tracker.json</b>) via the portal sign-in, with a local copy in this
+        browser as offline fallback. <b>This is the same file the client portal uses</b>, so changes here and in the client's Investor Loan Tracker stay in sync. JSON export/import is a backup path.
       </p>
       <div class="btn-group" style="margin-bottom:1.5rem">
         <button class="btn btn-primary btn-sm" onclick="exportJSON()">Export data (JSON)</button>
@@ -542,8 +542,11 @@ function scheduleDates(loan){
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const SP_HOSTNAME = 'lfadvisoryptyltd.sharepoint.com';
 const FOLDER = 'LF Advisory Workpapers';
-const DATA_FILE = 'lf-advisory-loan-tracker-data.json';
-const LS_KEY = 'lfa_loan_tracker_v1';
+// Shared with the CLIENT PORTAL edition (clients/loan-tracker.html via the
+// lf-client-api Worker) — both read/write this one file, so staff and client
+// see the same dataset. (Was lf-advisory-loan-tracker-data.json; unified 2026-08-17.)
+const DATA_FILE = 'flux-loan-tracker.json';
+const LS_KEY = 'lfa_loan_tracker_v2';   // bumped with the file switch so a stale local copy can't overwrite the shared file
 let _siteId = sessionStorage.getItem('sp_site_id') || null;
 let _saveTimer = null;
 let _loaded = false;   // block SharePoint writes until the server copy has been read
