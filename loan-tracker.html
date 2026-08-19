@@ -653,7 +653,10 @@ function importJSON(input){
     try{
       const data = JSON.parse(r.result);
       if (!Array.isArray(data.loans)) throw new Error("No loans array in file");
-      store.loans = data.loans; save(); renderAll();
+      // Full-store replace so flags (e.g. histV1) carry over — importing a file
+      // that already includes finalised history won't get it double-appended.
+      store = data; if (!store.version) store.version = 1;
+      save(); normalizeLoans(); ensureHistory(); renderAll();
       banner(`Imported ${store.loans.length} loans from ${esc(f.name)}.`);
     }catch(e){ alert("Could not read that file: " + e.message); }
   };
