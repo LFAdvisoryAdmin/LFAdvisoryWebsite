@@ -827,7 +827,24 @@ function allMonthEnds(){
   loans.forEach(L => (L._rows||[]).forEach(r => set.set(r.monthEnd.getTime(), r.monthEnd)));
   return [...set.values()].sort((a,b)=>a-b);
 }
-function loanAtMonth(L, t){ return (L._rows||[]).find(r => r.monthEnd.getTime()===t); }
+// Aggregate EVERY row falling on this month-end, not just the first. A facility
+// can carry two rows in one month — most often a balloon listed as its own line
+// alongside the final instalment, also a catch-up/arrears instalment — and
+// taking only the first silently dropped the rest from the Consolidated sheet
+// and from the Summary SUMIFS that read off it (the on-screen tiles/Summary use
+// positionAt, which walks every row, so the app read right while the workbook
+// understated the liability).
+function loanAtMonth(L, t){
+  let hit=null, payment=0, exec=0, gst=0, net=0, interest=0, principal=0, clos=null, remaining=null;
+  (L._rows||[]).forEach(r => {
+    if(r.monthEnd.getTime()!==t) return;
+    hit=r; payment+=r.payment; exec+=r.exec; gst+=r.gst; net+=r.net; interest+=r.interest; principal+=r.principal;
+    clos=r.clos; remaining=r.remaining;                 // last row in the month carries the running balances
+  });
+  if(!hit) return undefined;
+  return { ...hit, payment:r2(payment), exec:r2(exec), gst:r2(gst), net:r2(net),
+           interest:r2(interest), principal:r2(principal), clos, remaining };
+}
 function renderConsol(){
   const head=$('consolHead'), body=$('consolBody');
   if(!loans.length){ head.innerHTML=''; body.innerHTML='<tr><td class="empty">No data.</td></tr>'; return; }
@@ -1334,6 +1351,16 @@ function exportXLSX(){
   const wb=XLSX.utils.book_new();
   const p=periodDate();
   const N=loans.length;
+  // Facility sheet names and their Totals row are needed by the Consolidated
+  // sheet tie-out block, so allocate them before either sheet is built.
+  const usedNm={};
+  const shName = loans.map(L=>{
+    let nm=(L.name||'Facility').replace(/[\\\/\?\*\[\]:]/g,'').slice(0,28)||'Facility';
+    let base=nm,k=1; while(usedNm[nm.toLowerCase()]){ nm=(base.slice(0,26)+' '+(++k)); } usedNm[nm.toLowerCase()]=1;
+    return nm;
+  });
+  const shRef    = i => `'${String(shName[i]).replace(/'/g,"''")}'`;
+  const shTotRow = i => 6 + ((loans[i]._rows||[]).length);
 
   // ── Consolidated Schedule (built first; Summary references it) ──────────────
   const CON='Consolidated Schedule';
@@ -1352,14 +1379,45 @@ function exportXLSX(){
     row.push(n(r2(ti)));
     cAoa.push(row);
   });
+  const cWidth=2+N+1+N+1;
+  for(let i=0;i<4;i++) cAoa.push(Array(cWidth).fill(''));   // spacer + Totals / Per facility sheet / Difference
   const cWs=XLSX.utils.aoa_to_sheet(cAoa);
   // totals become live formulas, keeping the computed value as the cache
-  for(let ri=1;ri<cAoa.length;ri++){
+  for(let ri=1;ri<=mes.length;ri++){
     const xlR=ri+1;
     cWs[colL(payTotal)+xlR]=f(`SUM(${colL(payStart)}${xlR}:${colL(payTotal-1)}${xlR})`, NUM, cWs[colL(payTotal)+xlR].v);
     cWs[colL(intTotal)+xlR]=f(`SUM(${colL(intStart)}${xlR}:${colL(intTotal-1)}${xlR})`, NUM, cWs[colL(intTotal)+xlR].v);
   }
-  cWs['!cols']=[{wch:2},{wch:12}].concat(Array(N).fill({wch:15})).concat([{wch:13}]).concat(Array(N).fill({wch:15})).concat([{wch:13}]);
+  // Tie-out: each consolidated column must total to that facility sheet's own
+  // Totals row. A non-nil Difference means a schedule row never reached this
+  // sheet — the failure that used to drop a balloon sharing its month with the
+  // final instalment, understating the Summary that reads off here.
+  const cLast=mes.length+1, rTot=mes.length+3, rFac=rTot+1, rDif=rTot+2;
+  cWs['B'+rTot]=s('Totals'); cWs['B'+rFac]=s('Per facility sheet'); cWs['B'+rDif]=s('Difference — must be nil');
+  let gTn=0, gTi=0;
+  for(let i=0;i<N;i++){
+    const frs=loans[i]._rows||[];
+    const tn=r2(frs.reduce((a,r)=>a+r.net,0)), ti=r2(frs.reduce((a,r)=>a+r.interest,0));
+    gTn=r2(gTn+tn); gTi=r2(gTi+ti);
+    [[payStart+i,tn,'F'],[intStart+i,ti,'G']].forEach(([ci,tv,fc])=>{
+      const c=colL(ci);
+      cWs[c+rTot]=f(`SUM(${c}2:${c}${cLast})`,NUM,tv);
+      cWs[c+rFac]=f(`${shRef(i)}!${fc}${shTotRow(i)}`,NUM,tv);
+      cWs[c+rDif]=f(`${c}${rTot}-${c}${rFac}`,NUM,0);
+    });
+  }
+  [[payTotal,gTn],[intTotal,gTi]].forEach(([ci,tv])=>{
+    const c=colL(ci);
+    cWs[c+rTot]=f(`SUM(${c}2:${c}${cLast})`,NUM,tv);
+    cWs[c+rFac]=f(`SUM(${colL(ci-N)}${rFac}:${colL(ci-1)}${rFac})`,NUM,tv);
+    cWs[c+rDif]=f(`${c}${rTot}-${c}${rFac}`,NUM,0);
+  });
+  setS(cWs,'B'+rTot,BOLD); setS(cWs,'B'+rDif,BOLD);
+  for(let ci=2;ci<=intTotal;ci++){
+    setS(cWs,colL(ci)+rTot,{font:{bold:true},border:{top:{style:'thin'}}});
+    setS(cWs,colL(ci)+rDif,{font:{bold:true},border:{bottom:{style:'double'}}});
+  }
+  cWs['!cols']=[{wch:2},{wch:24}].concat(Array(N).fill({wch:15})).concat([{wch:13}]).concat(Array(N).fill({wch:15})).concat([{wch:13}]);
   for(let ci=2;ci<=intTotal;ci++) setS(cWs,colL(ci)+'1',HEAD);
   XLSX.utils.book_append_sheet(wb,cWs,CON);
 
@@ -1422,10 +1480,8 @@ function exportXLSX(){
   wb.SheetNames = ['Summary', CON].concat(wb.SheetNames.filter(x=>x!=='Summary'&&x!==CON));
 
   // ── One sheet per facility ──────────────────────────────────────────────────
-  const used={};
-  loans.forEach(L=>{
-    let nm=(L.name||'Facility').replace(/[\\\/\?\*\[\]:]/g,'').slice(0,28)||'Facility';
-    let base=nm,k=1; while(used[nm.toLowerCase()]){ nm=(base.slice(0,26)+' '+(++k)); } used[nm.toLowerCase()]=1;
+  loans.forEach((L,li)=>{
+    const nm=shName[li];
     const a=[];
     a.push([(currentClient?currentClient+' — ':'')+L.name+(L.financier?'  ·  '+L.financier:'')]);
     a.push(['Reporting date',dt(p)]);
