@@ -207,15 +207,15 @@ const QUARTERLY = {
   summary: {
     paperSize:9, orientation:'landscape', fitWidth:true, fitRows:true,
     labelWidths:[32],
-    headerHeight:30, headerLabelSize:9.5, headerValueSize:9, footnoteSize:8,
+    headerHeight:30, headerLabelSize:9, headerValueSize:8.5, footnoteSize:7.5,
     kinds:{
-      section:{labelSize:10,labelBold:true,fill:SECTION,dark:true,mergeFull:true,height:17.25},
-      header:{labelSize:9.5,labelBold:true,fill:DARK,dark:true,height:17.25},
-      account:{labelSize:9.5,valueSize:9,labelIndent:2,fill:WHITE,height:15.75},
-      total:{labelSize:10,labelBold:true,valueSize:9.5,valueBold:true,fill:SUBTOTAL,height:17.25},
-      grand:{labelSize:10,labelBold:true,valueSize:9.5,valueBold:true,fill:DARK,dark:true,height:18},
-      percent:{labelSize:9.5,labelItalic:true,valueSize:9,valueItalic:true,labelIndent:2,fill:TEAL_LIGHT,height:15,numberFormat:PCT_FMT},
-      blank:{labelSize:9.5,height:15.75},
+      section:{labelSize:9,labelBold:true,fill:SECTION,dark:true,mergeFull:true,height:17.25},
+      header:{labelSize:8.5,labelBold:true,fill:DARK,dark:true,height:17.25},
+      account:{labelSize:8.5,valueSize:8,labelIndent:2,fill:WHITE,height:15.75},
+      total:{labelSize:9,labelBold:true,valueSize:8.5,valueBold:true,fill:SUBTOTAL,height:17.25},
+      grand:{labelSize:9,labelBold:true,valueSize:8.5,valueBold:true,fill:DARK,dark:true,height:18},
+      percent:{labelSize:8.5,labelItalic:true,valueSize:8,valueItalic:true,labelIndent:2,fill:TEAL_LIGHT,height:15,numberFormat:PCT_FMT},
+      blank:{labelSize:8.5,height:15.75},
     },
   },
   detail: {
@@ -272,7 +272,7 @@ const PAPER_IN = {8:[11.69,16.54], 9:[8.27,11.69]};
 const PX_PER_UNIT = 7, PX_PADDING = 5, DPI = 96;
 const MIN_DATA_WIDTH = 7, FIT_LO = 0.55, FIT_HI = 1.6;
 const ROW_FIT_LO = 0.7, ROW_FIT_HI = 1.25;
-const MIN_ROW_LEAD = 2.5, MIN_ROW_HEIGHT = 10.5;
+const MIN_ROW_LEAD = 3, MIN_ROW_HEIGHT = 10.5;
 // rows 1-3 of the title banner, the white spacer row 4, and the footnote strip
 const FIXED_ROW_POINTS = 22 + 18 + 16 + 15 + 12;
 
@@ -287,7 +287,9 @@ function printablePoints(geom){
   const page = geom.orientation === 'landscape' ? w : h;
   return (page - geom.margins[2] - geom.margins[3]) * 72;
 }
-const round2w = w => Math.round(w*100)/100;
+// half-up to 2 decimals; Python's round() breaks ties to even, so both writers
+// use this explicit rule (17.25 * 0.7 = 12.075 would otherwise disagree by 0.01pt)
+const round2w = w => Math.floor(w*100 + 0.5)/100;
 const minRowHeight = ks => Math.max(Math.max(ks.labelSize, ks.valueSize||0) + MIN_ROW_LEAD, MIN_ROW_HEIGHT);
 
 // Growing is proportional, which preserves the hand-tuned look. Shrinking comes
@@ -1302,12 +1304,12 @@ function buildSheet(ws, clientName, sheet, logoId){
     // underline the header band, but never across a breaker column — a line
     // running through would read as one block again
     if (!unfilled.has(c)) cell.border = HEADER_RULE;
-    if (c < geom.labelCols) cell.alignment = {horizontal:'left',indent: sheet.kind==='balance'?1:0};
+    if (c < geom.labelCols) cell.alignment = {horizontal:'left',vertical:'middle',indent: sheet.kind==='balance'?1:0};
   }
   const acct = ws.getCell(HEADER_ROW, geom.labelCols);
   acct.value = 'Account';
   acct.font = mkFont(geom.headerLabelSize,true,false,INK_ON_DARK);
-  acct.alignment = sheet.kind==='detail' ? {horizontal:'center',wrapText:true} : {horizontal:'left',indent:1};
+  acct.alignment = sheet.kind==='detail' ? {horizontal:'center',vertical:'middle',wrapText:true} : {horizontal:'left',vertical:'middle',indent:1};
   sheet.columns.forEach((col,j)=>{
     const cell = ws.getCell(HEADER_ROW, geom.labelCols+1+j);
     if (col.label != null) cell.value = twoLine(col.label);
@@ -1363,7 +1365,11 @@ function writeRow(ws, r, row, sheet, geom, ncols, unfilled, hscale){
   cell.font = mkFont(ks.labelSize, ks.labelBold, ks.labelItalic, textColor);
   const indent = row.indent != null ? row.indent
     : (ks.labelIndent !== undefined ? ks.labelIndent : 1);
-  cell.alignment = {horizontal:'left', indent};
+  // the reference centres every styled body cell vertically — restored here (the
+  // diff tools only compared horizontal/indent/wrap, so this went unnoticed too).
+  // It matters more now: with rows taller than the type, bottom-aligned text reads
+  // as a gap above the line rather than as leading.
+  cell.alignment = {horizontal:'left', vertical:'middle', indent};
 
   // a group subtotal is ruled above rather than banner-filled, so the group
   // reads as a block the way it does in Xero's own report
@@ -1382,7 +1388,7 @@ function writeRow(ws, r, row, sheet, geom, ncols, unfilled, hscale){
   for (let j=0;j<sheet.columns.length;j++){
     const col = sheet.columns[j];
     const c = ws.getCell(r, geom.labelCols+1+j);
-    if (styleData) { c.font = vfont; c.alignment = {horizontal:'right'}; }
+    if (styleData) { c.font = vfont; c.alignment = {horizontal:'right', vertical:'middle'}; }
     if (col.label == null) continue;      // spacer column
     if (hasValues) {
       const v = vi < values.length ? values[vi] : null;
