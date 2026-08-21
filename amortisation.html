@@ -80,6 +80,9 @@ tfoot td{font-weight:700;font-family:var(--head);background:var(--light);border-
 
 .badge{display:inline-block;padding:.15rem .5rem;border-radius:20px;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
 .b-terms{background:#cce5ff;color:#004085}.b-sched{background:#d4edda;color:#155724}
+.b-closed{background:#e2e3e5;color:#495057}
+tr.row-closed td{opacity:.6}
+tr.row-closed td:first-child,tr.row-closed td:last-child{opacity:1}
 
 .jnl-tbl thead th{background:var(--secondary)}
 .dr-amt{color:var(--dark)}.cr-amt{color:var(--mid)}
@@ -719,6 +722,16 @@ function buildFromPaste(L){
   return { rows, payment:parsed.length?parsed[0].payment:null };
 }
 
+// A facility closed on or before the reporting month-end carries no liability
+// and posts no journal from that month on. BEFORE it, the loan was genuinely
+// still live, so re-running an earlier period still reports it in full — which
+// is why closing truncates nothing and stores only a date.
+function closedAt(L, p){
+  const d = parseDate(L.closedDate);
+  return !!d && eomOf(d).getTime() <= p.getTime();
+}
+function activeLoans(p){ p = p || periodDate(); return loans.filter(L => !closedAt(L, p)); }
+
 // Position at a reporting month-end
 function positionAt(rows, p){
   const p12 = eomAdd(p, 12);
@@ -761,7 +774,7 @@ function renderAll(){ renderTiles(); renderLoans(); syncSchedLoanSelect(); rende
 function renderTiles(){
   const p = periodDate();
   let cur=0,nc=0,tot=0,active=0;
-  loans.forEach(L => {
+  activeLoans(p).forEach(L => {
     const pos = positionAt(L._rows||[], p);
     cur+=pos.curNet; nc+=pos.ncNet; tot+=pos.total;
     if(pos.total > 0.005) active++;
@@ -787,20 +800,27 @@ function renderLoans(){
     const start = rows.length ? fmtDate(rows[0].date) : '—';
     const badge = L.mode==='schedule' ? '<span class="badge b-sched">Pasted</span>' : '<span class="badge b-terms">Terms</span>';
     const errFlag = L._err ? ` <span title="${L._err}" style="color:var(--danger)">⚠</span>` : '';
-    return `<tr>
-      <td><strong>${esc(L.name)}</strong>${errFlag}</td>
+    const cd = parseDate(L.closedDate);
+    const shut = closedAt(L, p);
+    const closedTag = cd ? ` <span class="badge b-closed" title="Closed as at ${fmtDate(cd)}">Closed ${fmtDate(cd)}</span>` : '';
+    const acts = cd
+      ? `<button class="btn btn-outline btn-sm" onclick="reviveLoan('${L.id}')" title="Reopen this facility">↺</button>
+         <button class="btn btn-danger btn-sm" onclick="delLoan('${L.id}')" title="Delete permanently">✕</button>`
+      : `<button class="btn btn-outline btn-sm" onclick="closeLoan('${L.id}')" title="Close this facility">⊘</button>`;
+    return `<tr${shut?' class="row-closed"':''}>
+      <td><strong>${esc(L.name)}</strong>${errFlag}${closedTag}</td>
       <td>${esc(L.financier||'')||'—'}</td>
       <td>${badge}</td>
       <td class="r">${financed?fmt$(financed):'—'}</td>
       <td class="r">${rate}</td>
       <td>${start}</td>
       <td class="r">${term}</td>
-      <td class="r">${fmt$(pos.total)}</td>
-      <td class="r">${fmt$(pos.curNet)}</td>
-      <td class="r">${fmt$(pos.ncNet)}</td>
+      <td class="r">${shut?'—':fmt$(pos.total)}</td>
+      <td class="r">${shut?'—':fmt$(pos.curNet)}</td>
+      <td class="r">${shut?'—':fmt$(pos.ncNet)}</td>
       <td class="r"><div style="display:flex;gap:.3rem;justify-content:flex-end">
         <button class="btn btn-outline btn-sm" onclick="openEdit('${L.id}')" title="Edit">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="delLoan('${L.id}')">✕</button>
+        ${acts}
       </div></td>
     </tr>`;
   }).join('');
@@ -811,7 +831,7 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;',
 function syncSchedLoanSelect(){
   ['schedLoan','estabLoan'].forEach(id => {
     const sel = $(id); const prev = sel.value;
-    sel.innerHTML = loans.map(L => `<option value="${L.id}">${esc(L.name)}</option>`).join('') || '<option value="">— no facilities —</option>';
+    sel.innerHTML = loans.map(L => `<option value="${L.id}">${esc(L.name)}${L.closedDate?' (closed)':''}</option>`).join('') || '<option value="">— no facilities —</option>';
     if(loans.some(L=>L.id===prev)) sel.value = prev;
   });
 }
@@ -821,7 +841,9 @@ function renderSchedule(){
   const body = $('schedBody');
   if(!L || !(L._rows||[]).length){ body.innerHTML = '<tr><td colspan="10" class="empty">No schedule to show — add a facility.</td></tr>'; return; }
   const p = periodDate();
-  let html = `<tr class="open-row"><td>Opening</td><td>—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">${fmt$(+L.principal||0)}</td><td class="r">${fmt$(L._rows[0]?r2((L._rows[0].remaining)+(L._rows[0].net)):'')}</td></tr>`;
+  const cdS = parseDate(L.closedDate);
+  let html = cdS ? `<tr class="sub-row"><td colspan="10">⊘ <strong>Closed as at ${fmtDate(cdS)}</strong> — the full contractual schedule is kept below; the facility carries no liability from ${fmtDate(eomOf(cdS))} on.</td></tr>` : '';
+  html += `<tr class="open-row"><td>Opening</td><td>—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">${fmt$(+L.principal||0)}</td><td class="r">${fmt$(L._rows[0]?r2((L._rows[0].remaining)+(L._rows[0].net)):'')}</td></tr>`;
   let fy=null, fySum=null;
   const flush = () => { if(fySum){ html += fyRow(fy, fySum); } };
   L._rows.forEach(r => {
@@ -847,9 +869,9 @@ function fyRow(fy, s){
 }
 
 // ─── Consolidated tab ────────────────────────────────────────────────────────
-function allMonthEnds(){
+function allMonthEnds(ls){
   const set = new Map();
-  loans.forEach(L => (L._rows||[]).forEach(r => set.set(r.monthEnd.getTime(), r.monthEnd)));
+  (ls||loans).forEach(L => (L._rows||[]).forEach(r => set.set(r.monthEnd.getTime(), r.monthEnd)));
   return [...set.values()].sort((a,b)=>a-b);
 }
 // Aggregate EVERY row falling on this month-end, not just the first. A facility
@@ -872,14 +894,15 @@ function loanAtMonth(L, t){
 }
 function renderConsol(){
   const head=$('consolHead'), body=$('consolBody');
-  if(!loans.length){ head.innerHTML=''; body.innerHTML='<tr><td class="empty">No data.</td></tr>'; return; }
-  const mes = allMonthEnds();
-  head.innerHTML = `<tr><th>Month End</th>${loans.map(L=>`<th class="r">${esc(L.name)}</th>`).join('')}<th class="r">Total Pmt</th>${loans.map(L=>`<th class="r">${esc(L.name)} int</th>`).join('')}<th class="r">Total Int</th></tr>`;
+  if(!activeLoans().length){ head.innerHTML=''; body.innerHTML='<tr><td class="empty">No open facilities at this reporting date.</td></tr>'; return; }
+  const act = activeLoans();
+  const mes = allMonthEnds(act);
+  head.innerHTML = `<tr><th>Month End</th>${act.map(L=>`<th class="r">${esc(L.name)}</th>`).join('')}<th class="r">Total Pmt</th>${act.map(L=>`<th class="r">${esc(L.name)} int</th>`).join('')}<th class="r">Total Int</th></tr>`;
   const p = periodDate().getTime();
   body.innerHTML = mes.map(me => {
     const hi = me.getTime()===p ? ' style="background:#e8f4f8;font-weight:700"' : '';
     let pays=[], ints=[], tp=0, ti=0;
-    loans.forEach(L => { const r=loanAtMonth(L,me.getTime()); const pv=r?r.net:0, iv=r?r.interest:0; tp+=pv; ti+=iv; pays.push(pv?fmtN(pv):'—'); ints.push(iv?fmtN(iv):'—'); });
+    act.forEach(L => { const r=loanAtMonth(L,me.getTime()); const pv=r?r.net:0, iv=r?r.interest:0; tp+=pv; ti+=iv; pays.push(pv?fmtN(pv):'—'); ints.push(iv?fmtN(iv):'—'); });
     return `<tr${hi}><td>${fmtDate(me)}</td>${pays.map(v=>`<td class="r">${v}</td>`).join('')}<td class="r">${fmtN(r2(tp))}</td>${ints.map(v=>`<td class="r">${v}</td>`).join('')}<td class="r">${fmtN(r2(ti))}</td></tr>`;
   }).join('');
 }
@@ -887,22 +910,24 @@ function renderConsol(){
 // ─── Liability Summary tab ───────────────────────────────────────────────────
 function renderSummary(){
   const p = periodDate();
+  const nAct = activeLoans(p).length;
   $('sumNote').innerHTML = `<strong>Liability position at ${fmtDate(p)}.</strong> Current = instalments with a month-end in the 12 months after the reporting date; the balance is non-current. Unexpired interest is shown as a contra to reach the net principal.`;
   const head=$('sumHead'), body=$('sumBody');
-  if(!loans.length){ head.innerHTML=''; body.innerHTML='<tr><td class="empty">No facilities.</td></tr>'; return; }
-  head.innerHTML = `<tr><th>Component</th>${loans.map(L=>`<th class="r">${esc(L.name)}</th>`).join('')}<th class="r">Total</th></tr>`;
-  const pos = loans.map(L => positionAt(L._rows||[], p));
+  if(!nAct){ head.innerHTML=''; body.innerHTML='<tr><td class="empty">No open facilities at this reporting date.</td></tr>'; return; }
+  const act = activeLoans(p);
+  head.innerHTML = `<tr><th>Component</th>${act.map(L=>`<th class="r">${esc(L.name)}</th>`).join('')}<th class="r">Total</th></tr>`;
+  const pos = act.map(L => positionAt(L._rows||[], p));
   const T = k => r2(pos.reduce((a,x)=>a+x[k],0));
   const line = (lbl,k,opt={}) => `<tr${opt.cls?` class="${opt.cls}"`:''}><td>${opt.strong?`<strong>${lbl}</strong>`:lbl}</td>${pos.map(x=>`<td class="r">${opt.strong?`<strong>${fmt$(x[k])}</strong>`:fmt$(x[k])}</td>`).join('')}<td class="r"><strong>${fmt$(T(k))}</strong></td></tr>`;
   body.innerHTML =
     line('Current HP liability','curHP') +
     line('Less: current unexpired interest','curUI') +
     line('Current liability','curNet',{strong:true,cls:'sub-row'}) +
-    `<tr><td colspan="${loans.length+2}" style="height:.4rem;background:#fff"></td></tr>` +
+    `<tr><td colspan="${nAct+2}" style="height:.4rem;background:#fff"></td></tr>` +
     line('Non-current HP liability','ncHP') +
     line('Less: non-current unexpired interest','ncUI') +
     line('Non-current liability','ncNet',{strong:true,cls:'sub-row'}) +
-    `<tr><td colspan="${loans.length+2}" style="height:.4rem;background:#fff"></td></tr>` +
+    `<tr><td colspan="${nAct+2}" style="height:.4rem;background:#fff"></td></tr>` +
     line('Total liability','total',{strong:true,cls:'sub-row'});
 }
 
@@ -930,7 +955,7 @@ function buildJournal(months){
   const intByAcct = {};   // interest expense grouped by facility override code ('' = global acct)
   loans.forEach(L => {
     const rows = L._rows||[];
-    if(!rows.length) return;
+    if(!rows.length || closedAt(L, p)) return;    // closed facilities post nothing
     // Nothing to post up to and including the month the facility is set up —
     // that month is the Establishment Journal's. Note this is NOT "before the
     // first instalment": a facility settled months ahead of its first payment
@@ -1106,9 +1131,14 @@ function glGroups(){
   loans.forEach(L => {
     const codes = { chp:(L.aChp||'').trim(), cui:(L.aCui||'').trim(), nhp:(L.aNhp||'').trim(), nui:(L.aNui||'').trim() };
     const key = [codes.chp,codes.cui,codes.nhp,codes.nui].join('|');
-    if(!map.has(key)) map.set(key, { codes, names:[], curHP:0, curUI:0, ncHP:0, ncUI:0 });
-    const g = map.get(key), pos = positionAt(L._rows||[], p);
-    g.names.push(L.name);
+    if(!map.has(key)) map.set(key, { codes, names:[], closedNames:[], anyOpen:false, curHP:0, curUI:0, ncHP:0, ncUI:0 });
+    const g = map.get(key);
+    // A closed facility stays in the comparison with an EXPECTED NIL, so a
+    // balance Xero is still carrying on it gets surfaced rather than quietly
+    // dropping out of scope. It contributes nothing to the expected figures.
+    if(closedAt(L, p)){ g.closedNames.push(L.name); return; }
+    const pos = positionAt(L._rows||[], p);
+    g.anyOpen = true; g.names.push(L.name);
     g.curHP=r2(g.curHP+pos.curHP); g.curUI=r2(g.curUI+pos.curUI);
     g.ncHP=r2(g.ncHP+pos.ncHP);    g.ncUI=r2(g.ncUI+pos.ncUI);
   });
@@ -1120,7 +1150,7 @@ function tbCompare(){
   const out = { pairs:[], missing:[] };
   if(!tb) return out;
   glGroups().forEach(g => {
-    const label = g.names.join(', ');
+    const label = g.anyOpen ? g.names.join(', ') : g.closedNames.join(', ') + ' (closed)';
     [
       { kind:'HP liability',       a:{ code:g.codes.chp, exp:r2(-g.curHP), lbl:'Current HP liability' },
                                    b:{ code:g.codes.nhp, exp:r2(-g.ncHP),  lbl:'Non-current HP liability' } },
@@ -1133,7 +1163,10 @@ function tbCompare(){
       if(!tbb) out.missing.push(pair.b.code);
       const dA = r2((ta?ta.bal:0) - pair.a.exp), dB = r2((tbb?tbb.bal:0) - pair.b.exp);
       const tot = r2(dA+dB);
-      const status = (Math.abs(dA)<0.02 && Math.abs(dB)<0.02) ? 'ok' : (Math.abs(tot)<0.02 ? 'split' : 'total');
+      const clean = Math.abs(dA)<0.02 && Math.abs(dB)<0.02;
+      // a closed facility whose accounts are already nil is simply not shown
+      if(!g.anyOpen && clean) return;
+      const status = clean ? 'ok' : (!g.anyOpen ? 'residual' : (Math.abs(tot)<0.02 ? 'split' : 'total'));
       out.pairs.push({ label, kind:pair.kind, tot, status,
         a:{ ...pair.a, act:ta?ta.bal:0,   diff:dA, tbName:ta?ta.name:null },
         b:{ ...pair.b, act:tbb?tbb.bal:0, diff:dB, tbName:tbb?tbb.name:null } });
@@ -1170,15 +1203,17 @@ function renderTB(){
     pane.innerHTML = `<div class="alert a-warn" style="margin:0">No facility carries both a current and a non-current GL code, so there's nothing to compare — add the codes with edit ✏️ on the Facilities tab.</div>`;
     return;
   }
-  const badge = k => k==='ok'    ? '<span style="color:var(--ok);font-weight:700">✓ correctly split</span>'
-                   : k==='split' ? '<span style="color:var(--warn);font-weight:700">⚠ misclassified — correction below</span>'
-                                 : '<span style="color:var(--danger);font-weight:700">✕ total differs — not a split issue</span>';
+  const badge = k => k==='ok'       ? '<span style="color:var(--ok);font-weight:700">✓ correctly split</span>'
+                   : k==='split'    ? '<span style="color:var(--warn);font-weight:700">⚠ misclassified — correction below</span>'
+                   : k==='residual' ? '<span style="color:var(--danger);font-weight:700">✕ closed, but Xero still holds a balance</span>'
+                                    : '<span style="color:var(--danger);font-weight:700">✕ total differs — not a split issue</span>';
   const nOK=cmp.pairs.filter(x=>x.status==='ok').length,
         nSplit=cmp.pairs.filter(x=>x.status==='split').length,
+        nRes=cmp.pairs.filter(x=>x.status==='residual').length,
         nTot=cmp.pairs.filter(x=>x.status==='total').length;
-  let html = `<div class="alert ${nTot?'a-err':(nSplit?'a-warn':'a-ok')}">`
+  let html = `<div class="alert ${(nTot||nRes)?'a-err':(nSplit?'a-warn':'a-ok')}">`
     + `Compared ${cmp.pairs.length} account pair${cmp.pairs.length===1?'':'s'} at ${fmtDate(periodDate())}: `
-    + `<strong>${nOK} correct</strong>${nSplit?`, <strong>${nSplit} misclassified</strong>`:''}${nTot?`, <strong>${nTot} with a total difference</strong>`:''}. `
+    + `<strong>${nOK} correct</strong>${nSplit?`, <strong>${nSplit} misclassified</strong>`:''}${nRes?`, <strong>${nRes} left over on a closed facility</strong>`:''}${nTot?`, <strong>${nTot} with a total difference</strong>`:''}. `
     + `Balances read debit-positive, so HP liabilities show negative.`
     + (cmp.missing.length ? `<br>Not found in the trial balance: <code>${[...new Set(cmp.missing)].map(esc).join('</code> <code>')}</code> — treated as nil; check the code mapping if that's wrong.` : '')
     + `</div>`;
@@ -1194,6 +1229,8 @@ function renderTB(){
     });
     if(x.status==='total')
       rows += `<tr><td colspan="5" style="color:var(--danger)">Pair total is out by ${fmt$(x.tot)}, so this isn't a classification error — reconcile the ledger to the schedule before posting anything to these accounts.</td></tr>`;
+    if(x.status==='residual')
+      rows += `<tr><td colspan="5" style="color:var(--danger)">This facility is closed, so both accounts should be nil — Xero still carries ${fmt$(r2(x.a.act+x.b.act))}. Post the final clearing entry (against the payout and interest) to write it off. No correction is proposed here because the amount depends on what you actually paid out.</td></tr>`;
   });
   html += `<div class="tbl-wrap" style="margin-bottom:1rem"><table>`
     + `<thead><tr><th>Account</th><th>Code</th><th class="r">Per trial balance</th><th class="r">Per schedule</th><th class="r">Difference</th></tr></thead>`
@@ -1627,14 +1664,52 @@ function saveLoan(){
     L = { ...base, mode:'schedule', principal:$('sPrincipal').value, openRemaining:$('sRemaining').value, pasted };
   }
   const id = $('editId').value;
-  if(id){ L.id=id; const i=loans.findIndex(x=>x.id===id); L.estabDate=loans[i].estabDate; loans[i]=L; }
+  if(id){ L.id=id; const i=loans.findIndex(x=>x.id===id); L.estabDate=loans[i].estabDate; L.closedDate=loans[i].closedDate; loans[i]=L; }
   else  { L.id='L'+(seq++); loans.push(L); }
   closeAdd();
   const sel=$('schedLoan'); recalcAll(); sel.value=L.id; renderSchedule();
 }
+// Closing is the normal way to retire a facility: it keeps the schedule and
+// every figure for periods before the close, carries nothing from that
+// month-end on, and can be undone. Deletion is only reachable once a facility
+// is closed, so a live loan can never be destroyed in one click.
+function closeLoan(id){
+  const L=loans.find(x=>x.id===id); if(!L) return;
+  const ans = prompt(`Close "${L.name}".
+
+It keeps its schedule and still reports in full for any period BEFORE this date, and carries nothing from that month-end on. Reversible any time with ↺.
+
+Payout / final payment date (dd/mm/yyyy):`, fmtDate(periodDate()));
+  if(ans===null) return;
+  const d = parseDate(String(ans).trim());
+  if(!d){ alert('Could not read that date — please use dd/mm/yyyy.'); return; }
+  const rows = L._rows||[];
+  if(rows.length && d.getTime() < rows[0].date.getTime()
+     && !confirm(`That date (${fmtDate(d)}) is before the first instalment (${fmtDate(rows[0].date)}), so the facility will carry no liability at all. Close it anyway?`)) return;
+  L.closedDate = fmtISO(d);
+  recalcAll();
+  alert(`"${L.name}" closed as at ${fmtDate(d)} — no liability or journal from ${fmtDate(eomOf(d))} on.
+
+Post the final clearing entry to Xero yourself; the Trial Balance Check will flag the accounts while they still hold a balance.`);
+}
+function reviveLoan(id){
+  const L=loans.find(x=>x.id===id); if(!L) return;
+  const d = parseDate(L.closedDate);
+  if(!confirm(`Reopen "${L.name}"?${d?` It was closed as at ${fmtDate(d)}.`:''}`)) return;
+  delete L.closedDate;
+  recalcAll();
+}
 function delLoan(id){
   const L=loans.find(x=>x.id===id); if(!L) return;
-  if(!confirm(`Delete facility "${L.name}"?`)) return;
+  if(!L.closedDate){
+    alert(`Close "${L.name}" first with ⊘.
+
+Closing keeps the schedule and can be undone; deleting can't. Only a closed facility can be deleted.`);
+    return;
+  }
+  if(!confirm(`Permanently delete "${L.name}" and its entire schedule?
+
+This cannot be undone. It is already closed, which is normally enough — deleting also removes it from any earlier period you might re-run.`)) return;
   loans = loans.filter(x=>x.id!==id);
   recalcAll();
 }
@@ -1663,6 +1738,15 @@ function persist(announce){
 function colL(n){ let s=''; while(n>0){ let m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=(n-m-1)/26; } return s; }
 function exportXLSX(){
   if(!loans.length){ alert('Add a facility first.'); return; }
+  // Facilities closed on or before the reporting date are out of the pack
+  // entirely — no Summary column, no Consolidated column, no sheet — so the
+  // cached figures and the live SUMIFS agree and the tie-out block still ties.
+  const loans0 = loans, p0 = periodDate();
+  loans = activeLoans(p0);
+  if(!loans.length){ loans = loans0; alert('Every facility is closed at '+fmtDate(p0)+' — nothing to export.'); return; }
+  try{ buildWorkbook(); } finally { loans = loans0; }
+}
+function buildWorkbook(){
   const ACC='_(* #,##0.00_);_(* (#,##0.00);_(* "-"??_);_(@_)';
   const NUM='#,##0.00', DATEF='dd/mm/yyyy';
   const s=v=>({v:v==null?'':v,t:'s'});
