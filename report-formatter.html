@@ -138,8 +138,9 @@ const LOGO_B64='iVBORw0KGgoAAAANSUhEUgAAAGsAAAB4CAYAAAD1/Qw5AAAWIklEQVR4nO2dfZhU
 const LOGO_W=57, LOGO_H=65; // px ≈ 541080 x 617400 EMU
 
 const GEOMETRY = {
+  // §5.1 — single label column, 19 period columns, A3 landscape, one page
   summary: {
-    labelCols:1, kindCol:{section:1,header:1,account:1,total:1,grand:1,percent:1},
+    labelCols:1, kindCol:{section:1,header:1,account:1,total:1,grand:1,percent:1,group:1,grouptotal:1},
     grandMergeLabels:false, labelWidths:[30],
     headerHeight:27.75, headerLabelSize:8, headerValueSize:7.5,
     paperSize:8, orientation:'landscape', fitHeight:1,
@@ -152,11 +153,15 @@ const GEOMETRY = {
       total:{labelSize:8.5,labelBold:true,valueSize:8,valueBold:true,fill:SUBTOTAL,height:15},
       grand:{labelSize:8.5,labelBold:true,valueSize:8,valueBold:true,fill:DARK,dark:true,height:15.75},
       percent:{labelSize:8,labelItalic:true,valueSize:7.5,valueItalic:true,labelIndent:2,fill:TEAL_LIGHT,height:12.75,numberFormat:PCT_FMT},
+      group:{labelSize:8,labelBold:true,fill:WHITE,labelIndent:2,height:13.5},
+      grouptotal:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:WHITE,labelIndent:2,height:13.5,topRule:true},
       blank:{labelSize:8,height:13.5},
     },
   },
+  // §5.2 — thin col A + label col B, 13 data columns, A4 landscape, multi-page,
+  // figures in plain black (explicit client request)
   detail: {
-    labelCols:2, kindCol:{section:1,header:2,account:2,total:2,grand:2},
+    labelCols:2, kindCol:{section:1,header:2,account:2,total:2,grand:2,group:2,grouptotal:2},
     grandMergeLabels:false, labelWidths:[2,32],
     headerHeight:25.5, headerLabelSize:7.5, headerValueSize:7.5,
     paperSize:9, orientation:'landscape', fitHeight:0,
@@ -165,28 +170,170 @@ const GEOMETRY = {
       section:{labelSize:8,labelBold:true,fill:SECTION,dark:true,mergeFull:true,height:15},
       header:{labelSize:8,labelBold:true,fill:DARK,dark:true,height:13.5},
       account:{labelSize:7.5,valueSize:7.5,fill:WHITE,height:12.75},
-      total:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:SUBTOTAL,height:13.5},
+      total:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:SUBTOTAL,height:13.5,topRule:true},
       grand:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:DARK,dark:true,height:13.5},
+      group:{labelSize:8,labelBold:true,fill:WHITE,labelIndent:2,height:13.5},
+      grouptotal:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:WHITE,labelIndent:2,height:13.5,topRule:true},
       blank:{labelSize:7.5},
     },
   },
+  // §5.3 — thin col A + one wide label column carrying the whole account
+  // hierarchy by indent (sub-section > group > account), date columns with a
+  // spacer, A4 portrait, one page
   balance: {
-    labelCols:3, kindCol:{section:1,grand:1,header:2,total:2,account:3},
-    grandMergeLabels:true, labelWidths:[3,22,28],
+    labelCols:2, kindCol:{section:1,grand:1,header:2,total:2,group:2,grouptotal:2,account:2},
+    grandMergeLabels:true, labelWidths:[3,46],
     headerHeight:24, headerLabelSize:8, headerValueSize:8,
-    paperSize:9, orientation:'portrait', fitHeight:1,
-    margins:[0.5,0.5,0.6,0.5], footnoteSize:7, valueColor:INK,
+    paperSize:9, orientation:'portrait', fitHeight:1, fitWidth:true, fitRows:true,
+    margins:[0.35,0.35,0.5,0.45], footnoteSize:7, valueColor:INK,
     kinds:{
       section:{labelSize:8,labelBold:true,fill:SECTION,dark:true,mergeFull:true,height:15.75},
       header:{labelSize:8,labelBold:true,fill:DARK,dark:true,height:15},
-      account:{labelSize:7.5,valueSize:7.5,fill:WHITE,height:13.5},
-      total:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:SUBTOTAL,height:13.5},
+      group:{labelSize:8,labelBold:true,fill:WHITE,labelIndent:2,height:14.25},
+      account:{labelSize:7.5,valueSize:7.5,fill:WHITE,labelIndent:2,height:13.5},
+      grouptotal:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:WHITE,labelIndent:2,height:14.25,topRule:true},
+      total:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:SUBTOTAL,height:13.5,topRule:true},
       grand:{labelSize:8,labelBold:true,valueSize:8,valueBold:true,fill:DARK,dark:true,height:15},
       blank:{labelSize:7.5},
     },
   },
 };
+
+// A quarterly pack carries roughly a quarter of the columns a monthly one does,
+// so the monthly A3 Summary leaves most of the sheet empty and everything reads
+// small. Quarterly sheets print A4 — Summary landscape, Detail and Balance
+// Sheet portrait — in a larger type size, and fill the page width (fitWidths).
+const QUARTERLY = {
+  summary: {
+    paperSize:9, orientation:'landscape', fitWidth:true, fitRows:true,
+    labelWidths:[32],
+    headerHeight:30, headerLabelSize:9.5, headerValueSize:9, footnoteSize:8,
+    kinds:{
+      section:{labelSize:10,labelBold:true,fill:SECTION,dark:true,mergeFull:true,height:17.25},
+      header:{labelSize:9.5,labelBold:true,fill:DARK,dark:true,height:17.25},
+      account:{labelSize:9.5,valueSize:9,labelIndent:2,fill:WHITE,height:15.75},
+      total:{labelSize:10,labelBold:true,valueSize:9.5,valueBold:true,fill:SUBTOTAL,height:17.25},
+      grand:{labelSize:10,labelBold:true,valueSize:9.5,valueBold:true,fill:DARK,dark:true,height:18},
+      percent:{labelSize:9.5,labelItalic:true,valueSize:9,valueItalic:true,labelIndent:2,fill:TEAL_LIGHT,height:15,numberFormat:PCT_FMT},
+      blank:{labelSize:9.5,height:15.75},
+    },
+  },
+  detail: {
+    orientation:'portrait', fitWidth:true,
+    labelWidths:[2.5,36],
+    headerHeight:27, headerLabelSize:8.5, headerValueSize:8.5, footnoteSize:7.5,
+    kinds:{
+      section:{labelSize:9,labelBold:true,fill:SECTION,dark:true,mergeFull:true,height:16.5},
+      header:{labelSize:9,labelBold:true,fill:DARK,dark:true,height:15},
+      account:{labelSize:8.5,valueSize:8.5,fill:WHITE,height:14.25},
+      total:{labelSize:9,labelBold:true,valueSize:9,valueBold:true,fill:SUBTOTAL,height:15,topRule:true},
+      grand:{labelSize:9,labelBold:true,valueSize:9,valueBold:true,fill:DARK,dark:true,height:15},
+      group:{labelSize:9,labelBold:true,fill:WHITE,labelIndent:2,height:15},
+      grouptotal:{labelSize:9,labelBold:true,valueSize:9,valueBold:true,fill:WHITE,labelIndent:2,height:15,topRule:true},
+      blank:{labelSize:8.5},
+    },
+  },
+  balance: {
+    labelWidths:[3,42],
+    headerHeight:26, headerLabelSize:8.5, headerValueSize:8.5, footnoteSize:7.5,
+    kinds:{
+      section:{labelSize:9,labelBold:true,fill:SECTION,dark:true,mergeFull:true,height:16.5},
+      header:{labelSize:9,labelBold:true,fill:DARK,dark:true,height:16},
+      group:{labelSize:9,labelBold:true,fill:WHITE,labelIndent:2,height:15},
+      account:{labelSize:8.5,valueSize:8.5,fill:WHITE,labelIndent:2,height:14.25},
+      grouptotal:{labelSize:9,labelBold:true,valueSize:9,valueBold:true,fill:WHITE,labelIndent:2,height:15,topRule:true},
+      total:{labelSize:9,labelBold:true,valueSize:9,valueBold:true,fill:SUBTOTAL,height:14.25,topRule:true},
+      grand:{labelSize:9,labelBold:true,valueSize:9,valueBold:true,fill:DARK,dark:true,height:16},
+      blank:{labelSize:8.5},
+    },
+  },
+};
+
+// A sheet kind's geometry with the quarterly variant applied. Kind styles are
+// overridden kind-by-kind, so a variant only restates the kinds whose type
+// size actually changes.
+function geometryFor(kind, periodicity){
+  const geom = GEOMETRY[kind];
+  const over = periodicity === 'quarterly' ? QUARTERLY[kind] : null;
+  if (!over) return geom;
+  const {kinds, ...scalars} = over;
+  return Object.assign({}, geom, scalars, {kinds: Object.assign({}, geom.kinds, kinds||{})});
+}
+
 const HEADER_ROW = 5;
+
+/* ── page fitting ─────────────────────────────────────────────────────────
+   Excel's fit-to-one-page only ever SHRINKS, and it shrinks the type with it:
+   a quarterly pack laid out for twelve monthly columns leaves half an A3 sheet
+   blank at 100%, while the Balance Sheet's wide date columns drag the whole
+   sheet down to ~65%. Setting real widths and row heights holds the print
+   scale at 100%, so the type size we chose is the type size that prints. */
+const PAPER_IN = {8:[11.69,16.54], 9:[8.27,11.69]};
+const PX_PER_UNIT = 7, PX_PADDING = 5, DPI = 96;
+const MIN_DATA_WIDTH = 7, FIT_LO = 0.55, FIT_HI = 1.6;
+const ROW_FIT_LO = 0.7, ROW_FIT_HI = 1.25;
+const MIN_ROW_LEAD = 2.5, MIN_ROW_HEIGHT = 10.5;
+// rows 1-3 of the title banner, the white spacer row 4, and the footnote strip
+const FIXED_ROW_POINTS = 22 + 18 + 16 + 15 + 12;
+
+function printableUnits(geom, ncols){
+  const [w,h] = PAPER_IN[geom.paperSize] || PAPER_IN[9];
+  const page = geom.orientation === 'landscape' ? h : w;
+  const px = (page - geom.margins[0] - geom.margins[1]) * DPI;
+  return (px - PX_PADDING * ncols) / PX_PER_UNIT;
+}
+function printablePoints(geom){
+  const [w,h] = PAPER_IN[geom.paperSize] || PAPER_IN[9];
+  const page = geom.orientation === 'landscape' ? w : h;
+  return (page - geom.margins[2] - geom.margins[3]) * 72;
+}
+const round2w = w => Math.round(w*100)/100;
+const minRowHeight = ks => Math.max(Math.max(ks.labelSize, ks.valueSize||0) + MIN_ROW_LEAD, MIN_ROW_HEIGHT);
+
+// Growing is proportional, which preserves the hand-tuned look. Shrinking comes
+// out of the figure columns first — they carry numbers with room to spare, while
+// the label column carries account names that would silently clip — and only
+// reaches the label columns once the figures bottom out.
+function fitWidths(geom, labelWidths, columns, allowGrow){
+  const dataWidths = columns.map(c=>c.width);
+  const current = labelWidths.reduce((a,b)=>a+b,0) + dataWidths.reduce((a,b)=>a+b,0);
+  if (current <= 0) return [labelWidths, dataWidths];
+  const target = printableUnits(geom, labelWidths.length + columns.length);
+  if (target >= current) {
+    if (!allowGrow) return [labelWidths, dataWidths];
+    const f = Math.min(target/current, FIT_HI);
+    if (f - 1 < 0.005) return [labelWidths, dataWidths];
+    return [labelWidths.map(w=>round2w(w*f)), dataWidths.map(w=>round2w(w*f))];
+  }
+  const over = current - target;
+  const dataTotal = dataWidths.reduce((a,b)=>a+b,0);
+  const figures = columns.filter(c=>c.label != null).map(c=>c.width);
+  const minFig = Math.min(...(figures.length ? figures : dataWidths));
+  const fdFloor = minFig ? Math.min(MIN_DATA_WIDTH/minFig, 1) : 1;
+  const room = dataTotal * (1 - fdFloor);
+  const fd = dataTotal ? Math.max((dataTotal-over)/dataTotal, fdFloor) : 1;
+  const dataOut = dataWidths.map(w=>round2w(w*fd));
+  if (over <= room) return [labelWidths, dataOut];
+  const labelTotal = labelWidths.reduce((a,b)=>a+b,0);
+  const fl = labelTotal ? Math.max((labelTotal-(over-room))/labelTotal, FIT_LO) : 1;
+  return [labelWidths.map(w=>round2w(w*fl)), dataOut];
+}
+
+// One factor for every body row height, so a one-page sheet fills its page
+// depth. Compressing rows keeps the type at full size; the per-row floor in
+// writeRow stops a row clipping its own text.
+function rowScale(geom, rows, allowGrow){
+  let body = 0;
+  for (const r of rows) {
+    const h = r.height != null ? r.height : geom.kinds[r.kind].height;
+    body += (h == null ? 15 : h);
+  }
+  if (body <= 0) return 1;
+  const target = printablePoints(geom) - FIXED_ROW_POINTS - geom.headerHeight;
+  const hi = allowGrow ? ROW_FIT_HI : 1;
+  const f = Math.min(Math.max(target/body, ROW_FIT_LO), hi);
+  return Math.abs(f-1) < 0.01 ? 1 : f;
+}
 
 /* ── formula evaluation ───────────────────────────────────────────────────
    In Xero's exports every computed row (totals, Gross Profit, EBIT, Net
@@ -463,6 +610,38 @@ function periodInfo(label){
   }
   return null;
 }
+// 'monthly' or 'quarterly' for a P&L report. Quarterly layouts label their
+// period columns as quarters ('Jul-Sept 2025') and say "For the 3 months
+// ended ..."; either signal is enough.
+function periodicityFrom(columns, periodLine){
+  const m = /for the\s+(\d+)?\s*month/i.exec(periodLine||'');
+  if (m && m[1] && +m[1] > 1) return 'quarterly';
+  for (const label of (columns||[])) {
+    const p = periodInfo(label);
+    if (p === null) break;
+    if (p.quarter) return 'quarterly';
+  }
+  return 'monthly';
+}
+
+// Fallback for a Balance Sheet, whose columns are 'as at' dates rather than
+// periods: quarterly when the recent comparatives step by 3 months.
+function asAtMonth(label){
+  const m = /(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/.exec(String(label||''));
+  if (!m) return null;
+  const a = monthAbbrOf(m[2]);
+  return a ? [MONTH_NUM[a], +m[3]] : null;
+}
+function bsPeriodicityFrom(columns){
+  const dates = (columns||[]).slice(0,3).map(asAtMonth).filter(Boolean);
+  if (dates.length < 2) return 'monthly';
+  for (let i=0;i<dates.length-1;i++){
+    const gap = (dates[i][1]-dates[i+1][1])*12 + dates[i][0]-dates[i+1][0];
+    if (gap < 2) return 'monthly';
+  }
+  return 'quarterly';
+}
+
 function currentPeriodEnd(periodLine){
   const m = /ended\s+\d{1,2}\s+([A-Za-z]+)\s+(\d{4})/.exec(periodLine||'');
   if (!m) return null;
@@ -563,7 +742,7 @@ function insertBreakers(cols){
   [...new Set(breaks)].sort((a,b)=>b-a).forEach(i => cols.splice(i, 0, {label:null, width:BREAK_WIDTH, highlight:false}));
 }
 
-function transformSummary(raw, cfg){
+function transformSummary(raw, cfg, periodicity){
   const renames = cfg.summary_renames || {};
   const dropSections = new Set((cfg.summary_drop_sections||[]).map(s=>s.toLowerCase()));
   const blankBefore = new Set((cfg.summary_blank_before||[]).map(s=>s.toLowerCase()));
@@ -605,7 +784,8 @@ function transformSummary(raw, cfg){
   }
   ensureOperatingMargin(rows);
   return { kind:'summary', sheetName:'Profit and Loss - Summary',
-    title:'Profit & Loss '+EN_DASH+' Summary', periodLine:raw.periodLine, columns, rows };
+    title:'Profit & Loss '+EN_DASH+' Summary', periodLine:raw.periodLine, columns, rows,
+    periodicity: periodicity || periodicityFrom(raw.columns, raw.periodLine) };
 }
 
 // synthesise an 'Operating margin (%)' row under Operating Profit when the
@@ -636,7 +816,7 @@ function ensureOperatingMargin(rows){
   rows.splice(opI+1, 0, {kind:'percent', label:'Operating margin (%)', values:margin, computed:true});
 }
 
-function transformDetail(raw){
+function transformDetail(raw, cfg, periodicity){
   const columns = buildColumns(raw, 'detail');
   const eng = new Totals(raw.columns.length);
   const closing = closingOpens(raw.rows);
@@ -664,7 +844,8 @@ function transformDetail(raw){
   }
   ensureDetailYtd(columns, rows, raw.periodLine);
   return { kind:'detail', sheetName:'Profit and Loss - Detail',
-    title:'Profit & Loss '+EN_DASH+' Detail', periodLine:raw.periodLine, columns, rows };
+    title:'Profit & Loss '+EN_DASH+' Detail', periodLine:raw.periodLine, columns, rows,
+    periodicity: periodicity || periodicityFrom(raw.columns, raw.periodLine) };
 }
 
 // Some Xero Detail layouts export only the 12 months; the house style
@@ -692,7 +873,11 @@ function ensureDetailYtd(columns, rows, periodLine){
     if (r.values) r.values = r.values.concat([round2(fyIdx.reduce((a,i)=>a+(r.values[i]||0),0))]);
 }
 
-function transformBalance(raw, cfg){
+// BS label indent for an account sitting straight under a sub-section; a group
+// and its members step in from there.
+const ACCOUNT_INDENT = 2;
+
+function transformBalance(raw, cfg, periodicity){
   const nComp = cfg.bs_comparative_columns !== undefined ? +cfg.bs_comparative_columns : 2;
   const columns = raw.columns.map(l => ({label:l, width:13, highlight:false}));
   if (nComp > 0 && nComp < columns.length)
@@ -701,39 +886,56 @@ function transformBalance(raw, cfg){
   const eng = new Totals(raw.columns.length);
   const closing = closingOpens(raw.rows);
   const rows = [];
+  // Xero flattens the BS: a group ("Cash at bank") and an ordinary account both
+  // sit in the same label column, so nesting depth has to be tracked from the
+  // group_open / "Total X" pairs. A section or sub-section boundary closes
+  // everything inside it, so depth resets there — a group whose total Xero
+  // never emits can't leak indentation into the next sub-section.
+  let depth = 0;
   for (const rr of raw.rows) {
     if (rr.kind === 'blank') continue;
     const label = rr.label || '';
     if (rr.kind === 'group_open') {
       eng.openGroup(label, closing.has(rr));
-      if (rr.col === 0) rows.push({kind:'section', label:label.toUpperCase(), values:null});
-      else if (rr.col === 1) rows.push({kind:'header', label, values:null});
-      else rows.push({kind:'account', label, values:null});
+      if (rr.col === 0) { depth = 0; rows.push({kind:'section', label:label.toUpperCase(), values:null}); }
+      else if (rr.col === 1) { depth = 0; rows.push({kind:'header', label, values:null}); }
+      else { rows.push({kind:'group', label, values:null, indent:ACCOUNT_INDENT+depth}); depth++; }
     } else if (rr.kind === 'group_total') {
       const total = rounded(eng.closeGroup(label));
       const xv = rr.computed ? rounded(rr.values) : null;
       if (rr.col === 0) {
+        depth = 0;
         if (BS_GRAND_TOTALS.has(label.toLowerCase())) rows.push({kind:'grand', label, values:total, xeroValues:xv});
         else rows.push({kind:'section', label:label.toUpperCase(), values:null});
-      } else if (rr.col === 1) rows.push({kind:'total', label, values:total, xeroValues:xv});
-      else rows.push({kind:'account', label, values:total, xeroValues:xv});
+      } else if (rr.col === 1) { depth = 0; rows.push({kind:'total', label, values:total, xeroValues:xv}); }
+      else {
+        depth = Math.max(0, depth-1);
+        rows.push({kind:'grouptotal', label, values:total, xeroValues:xv, indent:ACCOUNT_INDENT+depth});
+      }
     } else if (rr.computed && !eng.inRealGroup) {  // e.g. Net Assets
-      rows.push({kind:'account', label, values:rounded(rr.values), computed:true});
+      rows.push({kind:'account', label, values:rounded(rr.values), computed:true,
+                 indent: depth ? ACCOUNT_INDENT+depth : undefined});
     } else {
       eng.addAccount(rr.values || []);
-      rows.push({kind:'account', label, values:rr.values});
+      rows.push({kind:'account', label, values:rr.values,
+                 indent: depth ? ACCOUNT_INDENT+depth : undefined});
     }
   }
   return { kind:'balance', sheetName:'Balance Sheet', title:'Balance Sheet',
-    periodLine:raw.periodLine, columns, rows };
+    periodLine:raw.periodLine, columns, rows,
+    periodicity: periodicity || bsPeriodicityFrom(raw.columns) };
 }
 
 function transformPack(reports, cfg){
   cfg = cfg || {};
   const sheets = [];
-  if (reports.summary) sheets.push(transformSummary(reports.summary, cfg));
-  if (reports.detail) sheets.push(transformDetail(reports.detail));
-  if (reports.balance) sheets.push(transformBalance(reports.balance, cfg));
+  // one cadence for the whole pack — the P&L period line is the authority
+  // (the Balance Sheet's 'as at' dates are only a fallback)
+  const src = reports.summary || reports.detail;
+  const cadence = src ? periodicityFrom(src.columns, src.periodLine) : null;
+  if (reports.summary) sheets.push(transformSummary(reports.summary, cfg, cadence));
+  if (reports.detail) sheets.push(transformDetail(reports.detail, cfg, cadence));
+  if (reports.balance) sheets.push(transformBalance(reports.balance, cfg, cadence));
   const clientName = cfg.client_name ||
     (Object.values(reports)[0] ? Object.values(reports)[0].orgName : '');
   return { clientName, sheets };
@@ -940,7 +1142,7 @@ function checkBalanceSheet(balance, summary, fails){
   for (const r of balance.rows) {
     if (r.kind==='section') inHp = (r.label||'').includes('HIRE PURCHASE');
     if (!r.values) continue;
-    if (!inHp && r.kind==='account' && r.label && r.label.toLowerCase().includes('hire purchase')) faceHp.push(r.values);
+    if (!inHp && (r.kind==='account'||r.kind==='grouptotal') && r.label && r.label.toLowerCase().includes('hire purchase')) faceHp.push(r.values);
     if (inHp && r.kind==='total') hpTotals.push([r.label, r.values]);
   }
   if (hpTotals.length) {
@@ -979,7 +1181,7 @@ function checkBalanceSheet(balance, summary, fails){
   // accumulated depreciation vs cost (WARN)
   let prev = null;
   for (const r of balance.rows) {
-    if (r.kind!=='account' || !r.values || !r.label) continue;
+    if ((r.kind!=='account' && r.kind!=='grouptotal') || !r.values || !r.label) continue;
     if (r.label.toLowerCase().startsWith('accumulated depreciation')) {
       if (prev) {
         for (let i=0;i<cols.length;i++){
@@ -1043,6 +1245,11 @@ function twoLine(label){
 }
 function mkFont(size,bold,italic,argb){ return {name:'Arial',size,bold:!!bold,italic:!!italic,color:{argb}}; }
 function mkFill(argb){ return {type:'pattern',pattern:'solid',fgColor:{argb}}; }
+// The reference workbook rules its subtotal rows and underlines the column
+// headers in TEAL_MID; both were lost when the writer was first built (the diff
+// tools didn't compare borders), so they're restored here.
+const TOP_RULE = {top:{style:'thin', color:{argb:TEAL_MID}}};
+const HEADER_RULE = {bottom:{style:'medium', color:{argb:TEAL_MID}}};
 
 function buildWorkbook(pack){
   const wb = new ExcelJS.Workbook();
@@ -1055,11 +1262,20 @@ function buildWorkbook(pack){
 }
 
 function buildSheet(ws, clientName, sheet, logoId){
-  const geom = GEOMETRY[sheet.kind];
+  const geom = geometryFor(sheet.kind, sheet.periodicity);
   const ncols = geom.labelCols + sheet.columns.length;
 
-  geom.labelWidths.forEach((w,i)=>{ ws.getColumn(i+1).width = w; });
-  sheet.columns.forEach((c,j)=>{ ws.getColumn(geom.labelCols+1+j).width = c.width; });
+  // Growing the layout to fill the page is only wanted where Liam asked for it
+  // (the quarterly variants); a monthly sheet is only ever compressed, so the
+  // monthly look stays exactly as it prints today. A pack extracted from a
+  // finished workbook already carries fitted widths and heights.
+  const allowGrow = sheet.periodicity === 'quarterly';
+  let labelWidths = sheet.labelWidths || geom.labelWidths;
+  let dataWidths = sheet.columns.map(c=>c.width);
+  if (geom.fitWidth && !sheet.labelWidths)
+    [labelWidths, dataWidths] = fitWidths(geom, labelWidths, sheet.columns, allowGrow);
+  labelWidths.forEach((w,i)=>{ ws.getColumn(i+1).width = w; });
+  dataWidths.forEach((w,j)=>{ ws.getColumn(geom.labelCols+1+j).width = w; });
 
   // header block (rows 1–4)
   const banner = mkFill(BANNER);
@@ -1083,6 +1299,9 @@ function buildSheet(ws, clientName, sheet, logoId){
     const cell = ws.getCell(HEADER_ROW,c);
     if (!unfilled.has(c)) cell.fill = dark;
     cell.font = mkFont(geom.headerValueSize,true,false,INK_ON_DARK);
+    // underline the header band, but never across a breaker column — a line
+    // running through would read as one block again
+    if (!unfilled.has(c)) cell.border = HEADER_RULE;
     if (c < geom.labelCols) cell.alignment = {horizontal:'left',indent: sheet.kind==='balance'?1:0};
   }
   const acct = ws.getCell(HEADER_ROW, geom.labelCols);
@@ -1099,8 +1318,10 @@ function buildSheet(ws, clientName, sheet, logoId){
   ws.getRow(HEADER_ROW).height = geom.headerHeight;
 
   // body rows
+  const hscale = (geom.fitRows && geom.fitHeight === 1 && !sheet.labelWidths)
+    ? rowScale(geom, sheet.rows, allowGrow) : 1;
   let r = HEADER_ROW;
-  for (const row of sheet.rows) { r++; writeRow(ws, r, row, sheet, geom, ncols, unfilled); }
+  for (const row of sheet.rows) { r++; writeRow(ws, r, row, sheet, geom, ncols, unfilled, hscale); }
 
   // footnote
   r++;
@@ -1123,10 +1344,13 @@ function buildSheet(ws, clientName, sheet, logoId){
   };
 }
 
-function writeRow(ws, r, row, sheet, geom, ncols, unfilled){
+function writeRow(ws, r, row, sheet, geom, ncols, unfilled, hscale){
   const ks = geom.kinds[row.kind];
-  const height = row.height != null ? row.height : ks.height;
-  if (height != null) ws.getRow(r).height = height;
+  let height = row.height != null ? row.height : ks.height;
+  if (height != null) {
+    if (hscale && hscale !== 1) height = round2w(Math.max(height*hscale, minRowHeight(ks)));
+    ws.getRow(r).height = height;
+  }
   if (row.kind === 'blank') return;
 
   const textColor = ks.dark ? INK_ON_DARK : INK;
@@ -1137,7 +1361,13 @@ function writeRow(ws, r, row, sheet, geom, ncols, unfilled){
   const cell = ws.getCell(r, labelCol);
   cell.value = row.label;
   cell.font = mkFont(ks.labelSize, ks.labelBold, ks.labelItalic, textColor);
-  cell.alignment = {horizontal:'left', indent: ks.labelIndent !== undefined ? ks.labelIndent : 1};
+  const indent = row.indent != null ? row.indent
+    : (ks.labelIndent !== undefined ? ks.labelIndent : 1);
+  cell.alignment = {horizontal:'left', indent};
+
+  // a group subtotal is ruled above rather than banner-filled, so the group
+  // reads as a block the way it does in Xero's own report
+  if (ks.topRule) for (let c=labelCol;c<=ncols;c++) ws.getCell(r,c).border = TOP_RULE;
 
   if (ks.mergeFull) { if (!unfilled.size) ws.mergeCells(r,1,r,ncols); return; }
   if (row.kind === 'grand' && geom.grandMergeLabels && geom.labelCols > 1)
@@ -1147,7 +1377,7 @@ function writeRow(ws, r, row, sheet, geom, ncols, unfilled){
   const hasValues = values != null;
   const vfont = mkFont(ks.valueSize||ks.labelSize, ks.valueBold, ks.valueItalic,
                        (hasValues||ks.dark) ? valueColor : INK);
-  const styleData = hasValues || row.kind === 'account';
+  const styleData = hasValues || row.kind === 'account' || row.kind === 'group';
   let vi = 0;
   for (let j=0;j<sheet.columns.length;j++){
     const col = sheet.columns[j];
@@ -1181,7 +1411,8 @@ function buildDigest(pack, checkFailures){
     lines.push('columns: ' + dataColumns(sheet).map(c=>c.label).join(' | '));
     for (const row of sheet.rows) {
       if (row.kind === 'blank') continue;
-      const tag = {section:'#',header:'##',total:'TOTAL',grand:'GRAND',percent:'%'}[row.kind] || '';
+      const tag = {section:'#',header:'##',group:'###',grouptotal:'SUBTOTAL',
+                   total:'TOTAL',grand:'GRAND',percent:'%'}[row.kind] || '';
       const label = tag ? `[${tag}] ${row.label}` : String(row.label);
       if (!row.values) lines.push(label);
       else lines.push(label+': '+row.values.map(v=>fmtDigest(v,row.kind==='percent')).join(' | '));
