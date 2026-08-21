@@ -907,6 +907,21 @@ function renderSummary(){
 }
 
 // ─── Journal tab ─────────────────────────────────────────────────────────────
+// The month-end at which a facility's opening position is struck. This is what
+// the establishment journal classifies, and what the first monthly journal
+// measures its movement from, so the two chain exactly.
+// Driven by the establishment date the user sets, but capped at the month-end
+// BEFORE the first instalment: strike it any later and the first instalment
+// would already be treated as paid, double-handling that month's interest.
+function estabBasis(L){
+  const rows = L._rows||[];
+  if(!rows.length) return null;
+  const cap = eomAdd(rows[0].monthEnd, -1);
+  const d = parseDate(L.estabDate);
+  if(!d) return cap;
+  const me = eomOf(d);
+  return me.getTime() < cap.getTime() ? me : cap;
+}
 function buildJournal(months){
   months = months || 1;
   const p = periodDate(), prev = eomAdd(p, -months);
@@ -915,13 +930,14 @@ function buildJournal(months){
   const intByAcct = {};   // interest expense grouped by facility override code ('' = global acct)
   loans.forEach(L => {
     const rows = L._rows||[];
-    // No journal before the contract's first instalment month — the set-up
-    // entry lives on the Establishment Journal tab instead.
-    if(!rows.length || p.getTime() < rows[0].monthEnd.getTime()) return;
-    // A facility established inside the period measures from its establishment
-    // basis (the month-end before its first instalment), so establishment
-    // entry + this journal chain exactly.
-    const basis = eomAdd(rows[0].monthEnd, -1);
+    if(!rows.length) return;
+    // Nothing to post up to and including the month the facility is set up —
+    // that month is the Establishment Journal's. Note this is NOT "before the
+    // first instalment": a facility settled months ahead of its first payment
+    // still reclassifies unexpired interest through the deferral, and those
+    // months belong here.
+    const basis = estabBasis(L);
+    if(p.getTime() <= basis.getTime()) return;
     const wasME = basis.getTime() > prev.getTime() ? basis : prev;
     const now = positionAt(rows, p), was = positionAt(rows, wasME);
     const act = periodActivity(rows, wasME, p);
@@ -1255,7 +1271,7 @@ function exportCorrectionPDF(){
 function buildEstabLines(L){
   const rows = L._rows||[];
   if(!rows.length) return null;
-  const pos = positionAt(rows, eomAdd(rows[0].monthEnd, -1));
+  const pos = positionAt(rows, estabBasis(L));
   const asset = r2(pos.curHP - pos.curUI + pos.ncHP - pos.ncUI);   // = principal financed
   const lines = [
     { name:'Financed asset',                          code:'',     d:asset,     c:0 },
@@ -1269,8 +1285,10 @@ function buildEstabLines(L){
 let _lastEstabId = null;
 function estabDateChanged(){
   const L = loans.find(x=>x.id===$('estabLoan').value);
-  if(L){ L.estabDate = $('estabDate').value; persist(false); }
-  renderEstab();
+  if(L) L.estabDate = $('estabDate').value;
+  // the date now drives the opening split, which the monthly and quarterly
+  // journals chain from — so refresh everything, not just this tab
+  recalcAll();
 }
 function renderEstab(){
   const L = loans.find(x=>x.id===$('estabLoan').value);
@@ -1284,7 +1302,14 @@ function renderEstab(){
   if(_lastEstabId !== L.id){ _lastEstabId = L.id; $('estabDate').value = L.estabDate || fmtISO(L._rows[0].date); }
   const d = parseDate($('estabDate').value) || L._rows[0].date;
   const { lines, asset } = buildEstabLines(L);
-  note.innerHTML = `<strong>Establishment journal for ${esc(L.name)}${L.financier?' — '+esc(L.financier):''}, dated ${fmtDate(d)}.</strong> Sets up the gross HP liability and unexpired interest at inception, with the financed asset as the balancing item (code it to the asset/clearing account when posting). Post this once, then run the monthly journal from the first instalment month.`;
+  const basis = estabBasis(L), cap = eomAdd(L._rows[0].monthEnd, -1);
+  const capped = basis.getTime() === cap.getTime() && eomOf(d).getTime() > cap.getTime();
+  note.innerHTML = `<strong>Establishment journal for ${esc(L.name)}${L.financier?' — '+esc(L.financier):''}, dated ${fmtDate(d)}.</strong> `
+    + `Sets up the gross HP liability and unexpired interest at inception, with the financed asset as the balancing item (code it to the asset/clearing account when posting). `
+    + `Current / non-current is split as at <strong>${fmtDate(basis)}</strong>, and the monthly journal picks up from there. `
+    + (capped
+        ? `Your date falls in or after the first instalment month (${fmtDate(L._rows[0].date)}), so the split is held at the month-end before it — striking it any later would treat that first instalment as already paid and double-count its interest.`
+        : `Post this once, then run the monthly journal from the following month.`);
   const desc = `Establish ${L.name} — ${fmtDate(d)}`;
   let dr=0, cr=0;
   body.innerHTML = lines.map(l => {
