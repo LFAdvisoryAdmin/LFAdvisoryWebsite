@@ -921,27 +921,23 @@ function buildJournal(months){
     // entry + this journal chain exactly.
     const basis = eomAdd(rows[0].monthEnd, -1);
     const wasME = basis.getTime() > prev.getTime() ? basis : prev;
-    const now = positionAt(rows, p), was = positionAt(rows, wasME);
     const act = periodActivity(rows, wasME, p);
-    // The client's own repayment entry (Dr current HP liability, Cr bank) is
-    // normally already in Xero, so net it off: what's left is the interest
-    // amortisation plus the current / non-current reclassification, which is
-    // all anyone still has to post. Flip the Bank repayment setting to get the
-    // full entry back for a client who hasn't posted it.
-    const posted = settings.bankPosted!==false ? act.net : 0;
     const iKey = (L.aIexp||'').trim();
     if(!intByAcct[iKey]) intByAcct[iKey] = { amt:0, names:[] };
     intByAcct[iKey].amt = r2(intByAcct[iKey].amt + act.interest);
     if(Math.abs(act.interest) > 0.005) intByAcct[iKey].names.push(L.name);
     totNet += act.net;
-    // debit-side movement per account (see derivation): HP liab Cr-normal, UI Dr-normal
-    const items = [
-      { name:`${L.name} — Current HP liability`,        code:L.aChp, dm: r2(was.curHP - now.curHP - posted) },
-      { name:`${L.name} — Current unexpired interest`,  code:L.aCui, dm: r2(now.curUI - was.curUI) },
-      { name:`${L.name} — Non-current HP liability`,    code:L.aNhp, dm: r2(was.ncHP - now.ncHP) },
-      { name:`${L.name} — Non-current unexpired int.`,  code:L.aNui, dm: r2(now.ncUI - was.ncUI) },
-    ];
-    items.forEach(it => { if(Math.abs(it.dm) > 0.005) lines.push(it); });
+    // The period's interest is released out of CURRENT unexpired interest (an
+    // instalment due inside the period always sat inside the 12-month window at
+    // the opening month-end). The current / non-current split is deliberately
+    // NOT moved here — it shifts only when the Trial Balance Check shows Xero
+    // actually needs it, which keeps this entry to the two lines staff post.
+    if(Math.abs(act.interest) > 0.005)
+      lines.push({ name:`${L.name} — Current unexpired interest`, code:L.aCui, dm: r2(-act.interest) });
+    // Where the client has NOT posted the repayment, the gross liability
+    // reduction comes in here and the bank side is added at the end.
+    if(settings.bankPosted===false && Math.abs(act.net) > 0.005)
+      lines.push({ name:`${L.name} — Current HP liability`, code:L.aChp, dm: r2(act.net) });
   });
   Object.keys(intByAcct).forEach(k => {
     const e = intByAcct[k];
@@ -958,8 +954,8 @@ function renderJournalTab(months, noteId, bodyId, footId, checkId){
   const head = months===1 ? `Monthly journal for ${periodLabel()}.` : `Quarterly journal for the 3 months ended ${fmtDate(p)}.`;
   const span = months===1 ? "this month's" : "the quarter's";
   const basis = settings.bankPosted===false
-    ? `Includes the <strong>bank / clearing</strong> line — use this only where the client has <em>not</em> posted the repayment. Review it against how the repayment is coded before posting.`
-    : `The client's own repayment entry (Dr HP liability, Cr bank) is taken as already posted in Xero, so this is only what's left to post: ${span} interest released out of unexpired interest, plus the <strong>current / non-current reclassification</strong> as further instalments fall inside 12 months. Whether Xero actually holds that split is what the Trial Balance Check above tests.`;
+    ? `Includes the gross liability reduction and the <strong>bank / clearing</strong> line — use this only where the client has <em>not</em> posted the repayment. Review it against how the repayment is coded before posting.`
+    : `The client's own repayment entry (Dr HP liability, Cr bank) is taken as already posted in Xero, so all that's left is ${span} interest, released out of current unexpired interest. This entry does <strong>not</strong> reclassify current / non-current — load a trial balance above and the reclassification comes through as its own correction journal, only when Xero actually needs it.`;
   const tail = months===1
     ? `Facilities whose first instalment falls after this month are excluded — post their set-up entry from the Establishment Journal tab.`
     : `Set the Reporting Month-end to the client's quarter end; facilities established mid-quarter measure from their establishment basis, so this follows straight after the Establishment Journal.`;
