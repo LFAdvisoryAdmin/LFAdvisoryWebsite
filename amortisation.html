@@ -109,6 +109,8 @@ tfoot td{font-weight:700;font-family:var(--head);background:var(--light);border-
 .drop{border:2px dashed var(--border);border-radius:10px;padding:1.1rem;text-align:center;cursor:pointer;transition:all .2s;color:var(--mid)}
 .drop:hover,.drop.over{border-color:var(--primary);background:#f0f8fa;color:var(--primary)}
 .drop p{font-family:var(--head);font-weight:600;font-size:.85rem}
+.drop.sm{padding:.6rem;font-size:.8rem}
+.card.card-drop{outline:2px dashed var(--primary);outline-offset:-5px;background:#f7fcfd}
 
 .alert{padding:.85rem 1.1rem;border-radius:8px;margin-bottom:1rem;font-size:.87rem}
 .a-info{background:#e8f4f8;border-left:4px solid var(--primary);color:var(--primary-dark)}
@@ -264,11 +266,11 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
 
   <!-- TAB: JOURNAL -->
   <div class="tc" id="tc-journal">
-    <div class="card" style="margin-bottom:1.2rem">
+    <div class="card" id="tbCard" style="margin-bottom:1.2rem">
       <div class="card-head">
         <span>Xero Trial Balance Check <span id="tbStatus" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--mid);margin-left:.8rem"></span></span>
         <div class="btn-group">
-          <button class="btn btn-outline btn-sm" onclick="if(!currentClient){alert('Select a client first.');}else{document.getElementById('tbFile').click();}">⬆ Load Trial Balance</button>
+          <button class="btn btn-outline btn-sm" onclick="tbPick()">⬆ Load Trial Balance</button>
           <input type="file" id="tbFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadTB(this.files[0])">
           <button class="btn btn-outline btn-sm" id="tbClearBtn" style="display:none" onclick="clearTB()">Clear</button>
         </div>
@@ -998,6 +1000,12 @@ function renderQJournal(){ renderJournalTab(3, 'qjnlNote', 'qjnlBody', 'qjnlFoot
 function loadTB(file){
   if(!file) return;
   if(!currentClient){ alert('Select a client first.'); $('tbFile').value=''; return; }
+  if(!/\.(xlsx|xlsm|xls|csv)$/i.test(file.name)){
+    alert(`“${file.name}” isn't a spreadsheet.
+
+Export the Trial Balance from Xero as Excel or CSV and drop that in.`);
+    $('tbFile').value=''; return;
+  }
   const reader = new FileReader();
   reader.onload = e => {
     try{
@@ -1134,7 +1142,10 @@ function renderTB(){
   const st=$('tbStatus'); $('tbClearBtn').style.display = tb ? '' : 'none';
   if(!tb){
     st.textContent = 'no trial balance loaded';
-    pane.innerHTML = `<div class="alert a-info" style="margin:0">Load the client's Xero <strong>Trial Balance</strong> as at ${fmtDate(periodDate())} to check how the HP accounts are actually split in Xero. Where a pair's total is right but the split is wrong, a reclassification journal is proposed here.</div>`;
+    pane.innerHTML = `<div class="drop" id="tbDrop" onclick="tbPick()">
+        <p>📄 Drop the client's Xero Trial Balance here — or click to choose a file</p>
+        <small>.xlsx, .xls or .csv, as at ${fmtDate(periodDate())}. Checks how the HP accounts are actually split in Xero; where a pair's total is right but the split is wrong, a reclassification journal is proposed here.</small>
+      </div>`;
     return;
   }
   st.textContent = `${tb.fileName} · ${tb.accounts.length} accounts${tb.asAt?` · as at ${tb.asAt}`:''}`;
@@ -1194,8 +1205,41 @@ function renderTB(){
       + `</div>`
       + `<div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:.5rem"><button class="btn btn-outline" onclick="exportCorrectionPDF()">📄 Export Correction PDF</button></div>`;
   }
+  html += `<div class="drop sm" id="tbDrop" onclick="tbPick()" style="margin-top:1rem">
+      <p>📄 Drop a newer trial balance here to replace this one</p></div>`;
   pane.innerHTML = html;
 }
+// Shared by the button and the drop zones.
+function tbPick(){
+  if(!currentClient){ alert('Select a client first.'); return; }
+  $('tbFile').click();
+}
+// Drag & drop is wired to the whole card, not the zone inside it: renderTB
+// rewrites the pane's innerHTML on every recalc, which would throw away
+// listeners bound to anything in there. A depth counter keeps the highlight
+// steady while the pointer crosses child elements.
+(function(){
+  const card = $('tbCard'); if(!card) return;
+  let depth = 0;
+  const hasFiles = e => { const t=e.dataTransfer && e.dataTransfer.types;
+    return !!t && (Array.from(t).includes('Files')); };
+  const paint = on => {
+    card.classList.toggle('card-drop', on);
+    const z = $('tbDrop'); if(z) z.classList.toggle('over', on);
+  };
+  card.addEventListener('dragenter', e => { if(!hasFiles(e)) return; e.preventDefault(); depth++; paint(true); });
+  card.addEventListener('dragover',  e => { if(!hasFiles(e)) return; e.preventDefault(); });
+  // never gated on hasFiles: some browsers report empty types on dragleave,
+  // which would leave the highlight stuck on
+  card.addEventListener('dragleave', () => { depth=Math.max(0,depth-1); if(!depth) paint(false); });
+  card.addEventListener('dragend',   () => { depth=0; paint(false); });
+  card.addEventListener('drop', e => {
+    if(!hasFiles(e)) return;
+    e.preventDefault(); depth=0; paint(false);
+    const f = e.dataTransfer.files[0];
+    if(f) loadTB(f);
+  });
+})();
 function exportCorrectionPDF(){
   const lines = correctionLines();
   if(!lines.length){ alert('No correction needed — the trial balance already agrees with the schedule.'); return; }
