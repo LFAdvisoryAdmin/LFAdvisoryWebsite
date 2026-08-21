@@ -184,6 +184,13 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
         <label>Bank / Repayment Acct</label>
         <input type="text" id="bankAcct" value="" placeholder="e.g. Bank clearing" style="width:150px" onchange="recalcAll()">
       </div>
+      <div class="cg">
+        <label>Bank repayment</label>
+        <select id="bankPosted" onchange="recalcAll()">
+          <option value="1">Already posted by client</option>
+          <option value="0">Not yet posted — include in journal</option>
+        </select>
+      </div>
       <div class="cg" style="margin-left:auto">
         <label>Schedule shows</label>
         <select id="schedLoan" onchange="renderSchedule()"></select>
@@ -257,6 +264,17 @@ footer{text-align:center;color:var(--mid);font-size:.77rem;padding:2rem;margin-t
 
   <!-- TAB: JOURNAL -->
   <div class="tc" id="tc-journal">
+    <div class="card" style="margin-bottom:1.2rem">
+      <div class="card-head">
+        <span>Xero Trial Balance Check <span id="tbStatus" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--mid);margin-left:.8rem"></span></span>
+        <div class="btn-group">
+          <button class="btn btn-outline btn-sm" onclick="if(!currentClient){alert('Select a client first.');}else{document.getElementById('tbFile').click();}">⬆ Load Trial Balance</button>
+          <input type="file" id="tbFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadTB(this.files[0])">
+          <button class="btn btn-outline btn-sm" id="tbClearBtn" style="display:none" onclick="clearTB()">Clear</button>
+        </div>
+      </div>
+      <div id="tbPane"></div>
+    </div>
     <div class="alert a-info" id="jnlNote">–</div>
     <div class="card" style="padding:0;overflow:hidden">
       <div class="tbl-wrap">
@@ -421,7 +439,8 @@ let store = { clients: {} };      // { clients: { "<client name>": { loans, sett
 let currentClient = '';
 let registerClients = [];         // client names read from the workflow register
 let loans = [];                   // working copy of store.clients[currentClient]
-let settings = { interestAcct:'', bankAcct:'' };
+let settings = { interestAcct:'', bankAcct:'', bankPosted:true };
+let tb = null;                    // loaded Xero trial balance for the reporting date
 let modalMode = 'terms';
 let seq = 1;
 
@@ -549,11 +568,14 @@ function defaultPeriod(){ const t = new Date(), d = new Date(t.getFullYear(), t.
 function hydrateClient(){
   const d = (currentClient && store.clients[currentClient]) || null;
   loans = d && d.loans ? JSON.parse(JSON.stringify(d.loans)) : [];
-  settings = d && d.settings ? {...d.settings} : {interestAcct:'', bankAcct:''};
+  settings = d && d.settings ? {...d.settings} : {interestAcct:'', bankAcct:'', bankPosted:true};
+  if(settings.bankPosted === undefined) settings.bankPosted = true;   // pre-existing clients default to "already posted"
+  tb = d && d.tb ? JSON.parse(JSON.stringify(d.tb)) : null;
   seq = d && d.seq ? d.seq : loans.reduce((m,L) => Math.max(m, parseInt(String(L.id).slice(1))||0), 0) + 1;
   $('period').value = defaultPeriod();   // every client opens at the last completed month; change it ad hoc if needed
   $('interestAcct').value = settings.interestAcct || '';
   $('bankAcct').value = settings.bankAcct || '';
+  $('bankPosted').value = settings.bankPosted===false ? '0' : '1';
 }
 function switchClient(name){
   saveCurrentIntoStore();                    // capture the outgoing client first
@@ -721,6 +743,7 @@ function periodActivity(rows, from, to){
 function recalcAll(){
   settings.interestAcct = $('interestAcct').value.trim();
   settings.bankAcct = $('bankAcct').value.trim();
+  settings.bankPosted = $('bankPosted').value !== '0';
   loans.forEach(L => {
     const b = buildSchedule(L);
     L._rows = b.rows; L._err = b.err || null;
@@ -900,6 +923,12 @@ function buildJournal(months){
     const wasME = basis.getTime() > prev.getTime() ? basis : prev;
     const now = positionAt(rows, p), was = positionAt(rows, wasME);
     const act = periodActivity(rows, wasME, p);
+    // The client's own repayment entry (Dr current HP liability, Cr bank) is
+    // normally already in Xero, so net it off: what's left is the interest
+    // amortisation plus the current / non-current reclassification, which is
+    // all anyone still has to post. Flip the Bank repayment setting to get the
+    // full entry back for a client who hasn't posted it.
+    const posted = settings.bankPosted!==false ? act.net : 0;
     const iKey = (L.aIexp||'').trim();
     if(!intByAcct[iKey]) intByAcct[iKey] = { amt:0, names:[] };
     intByAcct[iKey].amt = r2(intByAcct[iKey].amt + act.interest);
@@ -907,7 +936,7 @@ function buildJournal(months){
     totNet += act.net;
     // debit-side movement per account (see derivation): HP liab Cr-normal, UI Dr-normal
     const items = [
-      { name:`${L.name} — Current HP liability`,        code:L.aChp, dm: r2(was.curHP - now.curHP) },
+      { name:`${L.name} — Current HP liability`,        code:L.aChp, dm: r2(was.curHP - now.curHP - posted) },
       { name:`${L.name} — Current unexpired interest`,  code:L.aCui, dm: r2(now.curUI - was.curUI) },
       { name:`${L.name} — Non-current HP liability`,    code:L.aNhp, dm: r2(was.ncHP - now.ncHP) },
       { name:`${L.name} — Non-current unexpired int.`,  code:L.aNui, dm: r2(now.ncUI - was.ncUI) },
@@ -919,15 +948,22 @@ function buildJournal(months){
     if(Math.abs(e.amt) > 0.005)
       lines.push({ name: k ? `Interest expense — ${e.names.join(', ')}` : 'Interest expense', code: k || settings.interestAcct, dm: e.amt });
   });
-  if(Math.abs(totNet) > 0.005) lines.push({ name:'Finance repayments — bank / clearing', code:settings.bankAcct, dm: r2(-totNet) });
+  if(settings.bankPosted===false && Math.abs(totNet) > 0.005)
+    lines.push({ name:'Finance repayments — bank / clearing', code:settings.bankAcct, dm: r2(-totNet) });
   return lines;
 }
 function renderJournalTab(months, noteId, bodyId, footId, checkId){
   const p = periodDate();
   const desc = months===1 ? `${p.toLocaleString('en-AU',{month:'short',year:'numeric'})} movement` : `Qtr to ${fmtDate(p)}`;
-  $(noteId).innerHTML = months===1
-    ? `<strong>Monthly journal for ${periodLabel()}.</strong> Movement in each liability account plus interest expense, computed as this month-end's position less last month-end's. Facilities whose first instalment falls after this month are excluded — post their set-up entry from the Establishment Journal tab. Review the bank / clearing line against how the repayment is coded before posting.`
-    : `<strong>Quarterly journal for the 3 months ended ${fmtDate(p)}.</strong> Set the Reporting Month-end to the client's quarter end — one entry covers the quarter's movement in each liability account plus the quarter's interest expense, instead of three monthly postings. Facilities established mid-quarter measure from their establishment basis, so this follows straight after the Establishment Journal. Review the bank / clearing line against how repayments are coded before posting.`;
+  const head = months===1 ? `Monthly journal for ${periodLabel()}.` : `Quarterly journal for the 3 months ended ${fmtDate(p)}.`;
+  const span = months===1 ? "this month's" : "the quarter's";
+  const basis = settings.bankPosted===false
+    ? `Includes the <strong>bank / clearing</strong> line — use this only where the client has <em>not</em> posted the repayment. Review it against how the repayment is coded before posting.`
+    : `The client's own repayment entry (Dr HP liability, Cr bank) is taken as already posted in Xero, so this is only what's left to post: ${span} interest released out of unexpired interest, plus the <strong>current / non-current reclassification</strong> as further instalments fall inside 12 months. Whether Xero actually holds that split is what the Trial Balance Check above tests.`;
+  const tail = months===1
+    ? `Facilities whose first instalment falls after this month are excluded — post their set-up entry from the Establishment Journal tab.`
+    : `Set the Reporting Month-end to the client's quarter end; facilities established mid-quarter measure from their establishment basis, so this follows straight after the Establishment Journal.`;
+  $(noteId).innerHTML = `<strong>${head}</strong> ${basis} ${tail}`;
   const lines = buildJournal(months);
   const body=$(bodyId), foot=$(footId), ck=$(checkId);
   if(!lines.length){ body.innerHTML='<tr><td colspan="5" class="empty">No movement for this period.</td></tr>'; foot.innerHTML=''; ck.textContent=''; return; }
@@ -943,8 +979,225 @@ function renderJournalTab(months, noteId, bodyId, footId, checkId){
   if(Math.abs(diff) < 0.02){ ck.className='alert a-ok'; ck.textContent = `✅ Journal balances — debits ${fmt$(dr)} = credits ${fmt$(cr)}.`; }
   else { ck.className='alert a-err'; ck.textContent = `⚠ Out of balance by ${fmt$(diff)} — check account codes and pasted figures.`; }
 }
-function renderJournal(){ renderJournalTab(1, 'jnlNote', 'jnlBody', 'jnlFoot', 'jnlCheck'); }
+function renderJournal(){ renderTB(); renderJournalTab(1, 'jnlNote', 'jnlBody', 'jnlFoot', 'jnlCheck'); }
 function renderQJournal(){ renderJournalTab(3, 'qjnlNote', 'qjnlBody', 'qjnlFoot', 'qjnlCheck'); }
+
+// ─── Xero Trial Balance check ────────────────────────────────────────────────
+// Staff drop the client's Xero Trial Balance for the reporting date. The tool
+// already knows the correct current / non-current split, so a difference where
+// the pair's TOTAL is still right is a misposting to fix with a reclassification
+// journal — the two cases that actually happen are a repayment coded to the
+// current account on a facility with more than 12 months to run, and a wholly
+// current facility still carrying a non-current balance. A difference where the
+// total is ALSO out is something else (missed month, wrong facility) and gets
+// flagged rather than posted.
+function loadTB(file){
+  if(!file) return;
+  if(!currentClient){ alert('Select a client first.'); $('tbFile').value=''; return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try{
+      const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:null});
+      const parsed = parseTB(rows);
+      if(!parsed.accounts.length)
+        throw new Error('no account rows found — expected a Xero Trial Balance with an Account column and Debit / Credit columns.');
+      tb = { fileName:file.name, asAt:parsed.asAt||'', accounts:parsed.accounts, loadedAt:Date.now() };
+      persist(false);
+      renderJournal();
+      const bad = tbCompare().pairs.filter(x => x.status!=='ok').length;
+      alert('✅ Loaded ' + parsed.accounts.length + ' accounts from ' + file.name
+        + (parsed.asAt ? '\n   as at ' + parsed.asAt : '') + '\n\n'
+        + (bad ? '⚠ ' + bad + ' account pair' + (bad===1?'':'s') + ' out — see the Trial Balance Check on the Monthly Journal tab.'
+               : '✓ Every HP account pair agrees with the schedule.'));
+    }catch(err){ alert('Could not read the trial balance: ' + (err.message||err)); }
+    $('tbFile').value='';
+  };
+  reader.readAsArrayBuffer(file);
+}
+function clearTB(){ if(!confirm('Remove the loaded trial balance?')) return; tb=null; persist(false); renderJournal(); }
+
+// Tolerant parser: Xero exports the TB with an Account column (code either in a
+// column of its own, leading the name, or parenthesised after it) plus Debit /
+// Credit columns. Balances are held debit-positive, so a credit reads negative.
+function parseTB(rows){
+  let hdr=-1, cAcct=-1, cCode=-1, cDr=-1, cCr=-1, cBal=-1;
+  for(let i=0;i<Math.min(rows.length,40);i++){
+    const r = (rows[i]||[]).map(c => String(c==null?'':c).toLowerCase().trim());
+    const acct = r.findIndex(h => /account/.test(h) && !/code/.test(h));
+    const dr = r.findIndex(h => /debit/.test(h)), cr = r.findIndex(h => /credit/.test(h));
+    const bal = r.findIndex(h => /^(balance|net|ytd)\b/.test(h));
+    if(acct>=0 && (dr>=0 || cr>=0 || bal>=0)){
+      hdr=i; cAcct=acct; cDr=dr; cCr=cr; cBal=bal; cCode=r.findIndex(h => /code/.test(h)); break;
+    }
+  }
+  if(hdr<0) return { accounts:[], asAt:'' };
+  let asAt='';
+  for(let i=0;i<hdr;i++){
+    const m = (rows[i]||[]).map(c => String(c==null?'':c)).join(' ')
+                .match(/as at\s+([0-9]{1,2}\s+\w+\s+[0-9]{4}|[0-9\/\-.]{6,10})/i);
+    if(m){ asAt=m[1].trim(); break; }
+  }
+  const num = v => {
+    if(v==null || v==='') return 0;
+    if(typeof v==='number') return v;
+    const raw = String(v).replace(/[$,\s]/g,''); const neg = /^\(.*\)$/.test(raw);
+    const n = parseFloat(neg ? raw.replace(/[()]/g,'') : raw);
+    return isNaN(n) ? 0 : (neg ? -n : n);
+  };
+  const accounts=[];
+  for(let i=hdr+1;i<rows.length;i++){
+    const r = rows[i]||[];
+    const raw = String(r[cAcct]==null?'':r[cAcct]).trim();
+    if(!raw || /^(total|grand total|net (profit|loss))/i.test(raw)) continue;
+    let code = cCode>=0 ? String(r[cCode]==null?'':r[cCode]).trim() : '';
+    let name = raw;
+    if(!code){
+      const m = raw.match(/\((\d{3,7})\)\s*$/) || raw.match(/^(\d{3,7})\s*[-–—:]?\s+/);
+      if(m){ code=m[1]; name=raw.replace(m[0],'').trim(); }
+    }
+    const bal = cBal>=0 ? num(r[cBal]) : r2(num(r[cDr]) - num(r[cCr]));
+    if(!code && !bal) continue;
+    accounts.push({ code, name, bal:r2(bal) });
+  }
+  return { accounts, asAt };
+}
+// An export can carry more than one row on a code; sum them.
+function tbBal(code){
+  const c = String(code||'').trim();
+  if(!tb || !c) return null;
+  const hits = tb.accounts.filter(a => a.code === c);
+  return hits.length ? { bal:r2(hits.reduce((a,x)=>a+x.bal,0)), name:hits[0].name } : null;
+}
+// Facilities are grouped by their four GL codes — some clients run one set of HP
+// accounts across every facility, others a set per facility — so the expected
+// balance on a code is the sum over every facility that uses it.
+function glGroups(){
+  const p = periodDate(), map = new Map();
+  loans.forEach(L => {
+    const codes = { chp:(L.aChp||'').trim(), cui:(L.aCui||'').trim(), nhp:(L.aNhp||'').trim(), nui:(L.aNui||'').trim() };
+    const key = [codes.chp,codes.cui,codes.nhp,codes.nui].join('|');
+    if(!map.has(key)) map.set(key, { codes, names:[], curHP:0, curUI:0, ncHP:0, ncUI:0 });
+    const g = map.get(key), pos = positionAt(L._rows||[], p);
+    g.names.push(L.name);
+    g.curHP=r2(g.curHP+pos.curHP); g.curUI=r2(g.curUI+pos.curUI);
+    g.ncHP=r2(g.ncHP+pos.ncHP);    g.ncUI=r2(g.ncUI+pos.ncUI);
+  });
+  return [...map.values()].filter(g => g.codes.chp || g.codes.nhp);
+}
+// Expected balances are debit-positive: HP liabilities sit in credit (negative),
+// unexpired interest in debit (positive).
+function tbCompare(){
+  const out = { pairs:[], missing:[] };
+  if(!tb) return out;
+  glGroups().forEach(g => {
+    const label = g.names.join(', ');
+    [
+      { kind:'HP liability',       a:{ code:g.codes.chp, exp:r2(-g.curHP), lbl:'Current HP liability' },
+                                   b:{ code:g.codes.nhp, exp:r2(-g.ncHP),  lbl:'Non-current HP liability' } },
+      { kind:'Unexpired interest', a:{ code:g.codes.cui, exp:r2(g.curUI),  lbl:'Current unexpired interest' },
+                                   b:{ code:g.codes.nui, exp:r2(g.ncUI),   lbl:'Non-current unexpired interest' } },
+    ].forEach(pair => {
+      if(!pair.a.code || !pair.b.code) return;
+      const ta = tbBal(pair.a.code), tbb = tbBal(pair.b.code);
+      if(!ta) out.missing.push(pair.a.code);
+      if(!tbb) out.missing.push(pair.b.code);
+      const dA = r2((ta?ta.bal:0) - pair.a.exp), dB = r2((tbb?tbb.bal:0) - pair.b.exp);
+      const tot = r2(dA+dB);
+      const status = (Math.abs(dA)<0.02 && Math.abs(dB)<0.02) ? 'ok' : (Math.abs(tot)<0.02 ? 'split' : 'total');
+      out.pairs.push({ label, kind:pair.kind, tot, status,
+        a:{ ...pair.a, act:ta?ta.bal:0,   diff:dA, tbName:ta?ta.name:null },
+        b:{ ...pair.b, act:tbb?tbb.bal:0, diff:dB, tbName:tbb?tbb.name:null } });
+    });
+  });
+  return out;
+}
+// A split-only difference clears by moving the excess between the pair: post
+// (expected − actual) to each side, which is equal and opposite by definition.
+function correctionLines(){
+  const lines=[];
+  tbCompare().pairs.filter(x => x.status==='split').forEach(x => {
+    [x.a,x.b].forEach(side => {
+      if(Math.abs(side.diff) > 0.005)
+        lines.push({ name:`${x.label} — ${side.lbl}`, code:side.code, dm:r2(-side.diff) });
+    });
+  });
+  return lines;
+}
+function renderTB(){
+  const pane=$('tbPane'); if(!pane) return;
+  const st=$('tbStatus'); $('tbClearBtn').style.display = tb ? '' : 'none';
+  if(!tb){
+    st.textContent = 'no trial balance loaded';
+    pane.innerHTML = `<div class="alert a-info" style="margin:0">Load the client's Xero <strong>Trial Balance</strong> as at ${fmtDate(periodDate())} to check how the HP accounts are actually split in Xero. Where a pair's total is right but the split is wrong, a reclassification journal is proposed here.</div>`;
+    return;
+  }
+  st.textContent = `${tb.fileName} · ${tb.accounts.length} accounts${tb.asAt?` · as at ${tb.asAt}`:''}`;
+  const cmp = tbCompare();
+  if(!cmp.pairs.length){
+    pane.innerHTML = `<div class="alert a-warn" style="margin:0">No facility carries both a current and a non-current GL code, so there's nothing to compare — add the codes with edit ✏️ on the Facilities tab.</div>`;
+    return;
+  }
+  const badge = k => k==='ok'    ? '<span style="color:var(--ok);font-weight:700">✓ correctly split</span>'
+                   : k==='split' ? '<span style="color:var(--warn);font-weight:700">⚠ misclassified — correction below</span>'
+                                 : '<span style="color:var(--danger);font-weight:700">✕ total differs — not a split issue</span>';
+  const nOK=cmp.pairs.filter(x=>x.status==='ok').length,
+        nSplit=cmp.pairs.filter(x=>x.status==='split').length,
+        nTot=cmp.pairs.filter(x=>x.status==='total').length;
+  let html = `<div class="alert ${nTot?'a-err':(nSplit?'a-warn':'a-ok')}">`
+    + `Compared ${cmp.pairs.length} account pair${cmp.pairs.length===1?'':'s'} at ${fmtDate(periodDate())}: `
+    + `<strong>${nOK} correct</strong>${nSplit?`, <strong>${nSplit} misclassified</strong>`:''}${nTot?`, <strong>${nTot} with a total difference</strong>`:''}. `
+    + `Balances read debit-positive, so HP liabilities show negative.`
+    + (cmp.missing.length ? `<br>Not found in the trial balance: <code>${[...new Set(cmp.missing)].map(esc).join('</code> <code>')}</code> — treated as nil; check the code mapping if that's wrong.` : '')
+    + `</div>`;
+  let rows='';
+  cmp.pairs.forEach(x => {
+    rows += `<tr class="sub-row"><td colspan="5"><strong>${esc(x.label)}</strong> — ${esc(x.kind)} &nbsp;&nbsp; ${badge(x.status)}</td></tr>`;
+    [x.a,x.b].forEach(side => {
+      const off = Math.abs(side.diff) > 0.02;
+      rows += `<tr><td>${esc(side.lbl)}${side.tbName?` <span style="color:var(--mid)">· ${esc(side.tbName)}</span>`:` <span style="color:var(--danger)">· not in TB</span>`}</td>`
+        + `<td>${side.code?`<code>${esc(side.code)}</code>`:'—'}</td>`
+        + `<td class="r">${fmt$(side.act)}</td><td class="r">${fmt$(side.exp)}</td>`
+        + `<td class="r"${off?' style="font-weight:700"':''}>${off?fmt$(side.diff):'—'}</td></tr>`;
+    });
+    if(x.status==='total')
+      rows += `<tr><td colspan="5" style="color:var(--danger)">Pair total is out by ${fmt$(x.tot)}, so this isn't a classification error — reconcile the ledger to the schedule before posting anything to these accounts.</td></tr>`;
+  });
+  html += `<div class="tbl-wrap" style="margin-bottom:1rem"><table>`
+    + `<thead><tr><th>Account</th><th>Code</th><th class="r">Per trial balance</th><th class="r">Per schedule</th><th class="r">Difference</th></tr></thead>`
+    + `<tbody>${rows}</tbody></table></div>`;
+
+  const corr = correctionLines();
+  if(corr.length){
+    let dr=0, cr=0;
+    const crows = corr.map(l => {
+      const d = l.dm>0?l.dm:0, c = l.dm<0?-l.dm:0; dr+=d; cr+=c;
+      return `<tr><td>${esc(l.name)}</td><td>${l.code?`<code>${esc(l.code)}</code>`:'—'}</td>`
+        + `<td>Reclassify current / non-current — ${fmtDate(periodDate())}</td>`
+        + `<td class="r dr-amt">${d?fmt$(d):'—'}</td><td class="r cr-amt">${c?fmt$(c):'—'}</td></tr>`;
+    }).join('');
+    dr=r2(dr); cr=r2(cr);
+    const diff=r2(dr-cr);
+    html += `<div class="alert a-info"><strong>Correction journal.</strong> Moves the balances Xero actually holds onto the split the schedule says they should be, dated ${fmtDate(periodDate())}. This is <em>on top of</em> the monthly journal below, not instead of it.</div>`
+      + `<div class="tbl-wrap"><table class="jnl-tbl">`
+      + `<thead><tr><th>Account</th><th>Code</th><th>Description</th><th class="r">Debit</th><th class="r">Credit</th></tr></thead>`
+      + `<tbody>${crows}</tbody>`
+      + `<tfoot><tr><td colspan="3" style="text-transform:uppercase;letter-spacing:.06em">Totals</td><td class="r">${fmt$(dr)}</td><td class="r">${fmt$(cr)}</td></tr></tfoot>`
+      + `</table></div>`
+      + `<div class="alert ${Math.abs(diff)<0.02?'a-ok':'a-err'}" style="margin-top:1rem">`
+      + (Math.abs(diff)<0.02 ? `✅ Correction journal balances — debits ${fmt$(dr)} = credits ${fmt$(cr)}.` : `⚠ Out of balance by ${fmt$(diff)}.`)
+      + `</div>`
+      + `<div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:.5rem"><button class="btn btn-outline" onclick="exportCorrectionPDF()">📄 Export Correction PDF</button></div>`;
+  }
+  pane.innerHTML = html;
+}
+function exportCorrectionPDF(){
+  const lines = correctionLines();
+  if(!lines.length){ alert('No correction needed — the trial balance already agrees with the schedule.'); return; }
+  journalPDF(lines, 'HP CURRENT / NON-CURRENT RECLASSIFICATION',
+    `HP_Reclass_${slug(currentClient)?slug(currentClient)+'_':''}${periodLabel().replace(/ /g,'_')}.pdf`);
+}
 
 // ─── Establishment journal tab ───────────────────────────────────────────────
 // Dr Financed asset (balancing item, no code) + Dr unexpired interest,
@@ -1319,10 +1572,10 @@ function saveCurrentIntoStore(){
   const clean = loans.map(({_rows,_err,_solvedRate,...keep})=>keep);
   const prev = store.clients[currentClient];
   if(!clean.length && !prev) return;   // merely selecting a client shouldn't create an entry
-  const entry = { loans:clean, settings:{...settings}, period:$('period').value, seq };
+  const entry = { loans:clean, settings:{...settings}, period:$('period').value, seq, tb };
   // Keep the old timestamp when nothing changed, so viewing a client offline can't
   // outrank genuinely newer data from another device in the merge.
-  const same = prev && JSON.stringify({a:prev.loans,b:prev.settings,c:prev.period}) === JSON.stringify({a:entry.loans,b:entry.settings,c:entry.period});
+  const same = prev && JSON.stringify({a:prev.loans,b:prev.settings,c:prev.period,d:prev.tb||null}) === JSON.stringify({a:entry.loans,b:entry.settings,c:entry.period,d:entry.tb||null});
   entry.updatedAt = same ? (prev.updatedAt||0) : Date.now();
   store.clients[currentClient] = entry;
 }
@@ -1549,12 +1802,11 @@ function exportSummaryPDF(){
   row('Total liability','total',true);
   doc.save(`HP_Liability_Summary_${slug(currentClient)?slug(currentClient)+'_':''}${periodLabel().replace(/ /g,'_')}.pdf`);
 }
-function exportJournalPDF(months){
-  months = months||1;
-  if(!loans.length){ alert('Add a facility first.'); return; }
+// Shared Dr/Cr table writer — used by the monthly, quarterly and
+// current/non-current reclassification journals.
+function journalPDF(lines, title, fileName){
   const { jsPDF }=window.jspdf; const doc=new jsPDF(); const W=210;
-  pdfHeader(doc,W, months===1 ? 'HP / LEASE MONTHLY JOURNAL' : 'HP / LEASE QUARTERLY JOURNAL');
-  const lines=buildJournal(months);
+  pdfHeader(doc,W,title);
   let y=36; doc.setFont(undefined,'bold'); doc.setFontSize(8.5);
   doc.text('Account',14,y); doc.text('Code',120,y); doc.text('Debit',170,y,{align:'right'}); doc.text('Credit',196,y,{align:'right'});
   y+=3; doc.setLineWidth(0.4); doc.line(14,y,196,y); y+=6; doc.setFont(undefined,'normal'); doc.setFontSize(7.5);
@@ -1570,7 +1822,13 @@ function exportJournalPDF(months){
   });
   y+=1; doc.setLineWidth(0.4); doc.line(14,y,196,y); y+=6; doc.setFont(undefined,'bold');
   doc.text('TOTALS',14,y); doc.text(fmt$(r2(dr)).replace('$',''),170,y,{align:'right'}); doc.text(fmt$(r2(cr)).replace('$',''),196,y,{align:'right'});
-  doc.save(`HP_Journal_${months===3?'Qtr_':''}${slug(currentClient)?slug(currentClient)+'_':''}${periodLabel().replace(/ /g,'_')}.pdf`);
+  doc.save(fileName);
+}
+function exportJournalPDF(months){
+  months = months||1;
+  if(!loans.length){ alert('Add a facility first.'); return; }
+  journalPDF(buildJournal(months), months===1 ? 'HP / LEASE MONTHLY JOURNAL' : 'HP / LEASE QUARTERLY JOURNAL',
+    `HP_Journal_${months===3?'Qtr_':''}${slug(currentClient)?slug(currentClient)+'_':''}${periodLabel().replace(/ /g,'_')}.pdf`);
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
